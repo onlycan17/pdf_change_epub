@@ -15,7 +15,7 @@ import Error from './pages/Error'
 import Payment from './pages/Payment'
 import './App.css'
 
-// Protected Route Component
+// Protected Route Component (for premium features)
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth()
 
@@ -71,36 +71,18 @@ const AppRoutes: React.FC = () => {
         <Route path="/payment" element={<Payment />} />
         <Route path="/error" element={<Error />} />
 
-        {/* Protected routes */}
+        {/* Public routes (무료 기능) */}
+        <Route path="/" element={<Home />} />
+        <Route path="/upload" element={<FileUpload />} />
+        <Route path="/convert" element={<ConversionProgress />} />
+        <Route path="/download" element={<Download />} />
+
+        {/* Protected routes (프리미엄 기능) */}
         <Route
-          path="/"
+          path="/payment"
           element={
             <ProtectedRoute>
-              <Home />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/upload"
-          element={
-            <ProtectedRoute>
-              <FileUpload />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/convert"
-          element={
-            <ProtectedRoute>
-              <ConversionProgress />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/download"
-          element={
-            <ProtectedRoute>
-              <Download />
+              <Payment />
             </ProtectedRoute>
           }
         />

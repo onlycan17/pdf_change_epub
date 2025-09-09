@@ -80,6 +80,9 @@ const Header: React.FC = () => {
 
           {/* User Menu */}
           <div className="flex items-center space-x-4">
+            {/* Dark Mode Toggle */}
+            <DarkModeToggle />
+
             {user ? (
               <>
                 {/* Premium Badge */}
@@ -123,12 +126,22 @@ const Header: React.FC = () => {
                 </div>
               </>
             ) : (
-              <Link
-                to="/login"
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
-                로그인
-              </Link>
+              <>
+                {/* 무료 사용자를 위한 로그인 유도 */}
+                <Link
+                  to="/premium"
+                  className="hidden sm:inline-flex items-center text-sm text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                >
+                  <Crown className="w-4 h-4 mr-1" />
+                  프리미엄
+                </Link>
+                <Link
+                  to="/login"
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  로그인
+                </Link>
+              </>
             )}
 
             {/* Mobile menu button */}
