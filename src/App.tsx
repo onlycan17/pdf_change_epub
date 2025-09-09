@@ -1,7 +1,9 @@
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
+import { ThemeProvider } from './contexts/ThemeContext'
 import { useAuth } from './hooks/useAuth'
+import Header from './components/layout/Header'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import AuthCallback from './pages/AuthCallback'
@@ -45,74 +47,79 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 const AppRoutes: React.FC = () => {
   return (
-    <Routes>
-      {/* Public routes */}
-      <Route
-        path="/login"
-        element={
-          <PublicRoute>
-            <Login />
-          </PublicRoute>
-        }
-      />
-      <Route
-        path="/auth/callback"
-        element={
-          <PublicRoute>
-            <AuthCallback />
-          </PublicRoute>
-        }
-      />
-      <Route path="/premium" element={<Premium />} />
-      <Route path="/payment" element={<Payment />} />
-      <Route path="/error" element={<Error />} />
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+      <Header />
+      <Routes>
+        {/* Public routes */}
+        <Route
+          path="/login"
+          element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          }
+        />
+        <Route
+          path="/auth/callback"
+          element={
+            <PublicRoute>
+              <AuthCallback />
+            </PublicRoute>
+          }
+        />
+        <Route path="/premium" element={<Premium />} />
+        <Route path="/payment" element={<Payment />} />
+        <Route path="/error" element={<Error />} />
 
-      {/* Protected routes */}
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Home />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/upload"
-        element={
-          <ProtectedRoute>
-            <FileUpload />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/convert"
-        element={
-          <ProtectedRoute>
-            <ConversionProgress />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/download"
-        element={
-          <ProtectedRoute>
-            <Download />
-          </ProtectedRoute>
-        }
-      />
+        {/* Protected routes */}
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Home />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/upload"
+          element={
+            <ProtectedRoute>
+              <FileUpload />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/convert"
+          element={
+            <ProtectedRoute>
+              <ConversionProgress />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/download"
+          element={
+            <ProtectedRoute>
+              <Download />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Catch all route */}
-      <Route path="*" element={<Navigate to="/error" replace />} />
-    </Routes>
+        {/* Catch all route */}
+        <Route path="*" element={<Navigate to="/error" replace />} />
+      </Routes>
+    </div>
   )
 }
 
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <AppRoutes />
-      </Router>
+      <ThemeProvider>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </ThemeProvider>
     </AuthProvider>
   )
 }

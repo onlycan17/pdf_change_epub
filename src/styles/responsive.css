@@ -1,0 +1,1284 @@
+/* Responsive Design Utilities */
+
+/* Breakpoints */
+@custom-media --mobile (max-width: 640px);
+@custom-media --tablet (min-width: 641px) and (max-width: 1024px);
+@custom-media --desktop (min-width: 1025px);
+
+/* Mobile First Responsive Utilities */
+@media (max-width: 640px) {
+  .mobile\:hidden {
+    display: none !important;
+  }
+
+  .mobile\:block {
+    display: block !important;
+  }
+
+  .mobile\:flex {
+    display: flex !important;
+  }
+
+  .mobile\:flex-col {
+    flex-direction: column !important;
+  }
+
+  .mobile\:w-full {
+    width: 100% !important;
+  }
+
+  .mobile\:text-sm {
+    font-size: 0.875rem !important;
+  }
+
+  .mobile\:text-xs {
+    font-size: 0.75rem !important;
+  }
+
+  .mobile\:px-4 {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  .mobile\:py-3 {
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.75rem !important;
+  }
+
+  .mobile\:space-y-4 > * + * {
+    margin-top: 1rem !important;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .tablet\:hidden {
+    display: none !important;
+  }
+
+  .tablet\:block {
+    display: block !important;
+  }
+
+  .tablet\:flex {
+    display: flex !important;
+  }
+
+  .tablet\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (min-width: 1025px) {
+  .desktop\:hidden {
+    display: none !important;
+  }
+
+  .desktop\:block {
+    display: block !important;
+  }
+
+  .desktop\:flex {
+    display: flex !important;
+  }
+
+  .desktop\:grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Touch-friendly sizing */
+.touch-friendly {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Responsive typography */
+.responsive-text {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+.responsive-heading {
+  font-size: clamp(1.5rem, 4vw, 2.5rem);
+}
+
+/* Responsive spacing */
+.responsive-padding {
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.responsive-margin {
+  margin: clamp(1rem, 3vw, 2rem);
+}
+
+/* Responsive grid */
+.responsive-grid {
+  display: grid;
+  gap: clamp(1rem, 2vw, 2rem);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+}
+
+/* Responsive cards */
+.responsive-card {
+  padding: clamp(1rem, 3vw, 2rem);
+  border-radius: clamp(0.5rem, 2vw, 1rem);
+}
+
+/* Responsive buttons */
+.responsive-button {
+  padding: clamp(0.5rem, 2vw, 1rem) clamp(1rem, 3vw, 2rem);
+  font-size: clamp(0.875rem, 2vw, 1rem);
+  min-height: 44px;
+}
+
+/* Responsive images */
+.responsive-image {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Responsive tables */
+.responsive-table {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.responsive-table table {
+  min-width: 640px;
+}
+
+/* Responsive forms */
+.responsive-form {
+  max-width: 100%;
+}
+
+.responsive-form input,
+.responsive-form select,
+.responsive-form textarea {
+  max-width: 100%;
+}
+
+/* Responsive navigation */
+.responsive-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .responsive-nav {
+    flex-direction: column;
+  }
+}
+
+/* Responsive hero section */
+.responsive-hero {
+  padding: clamp(2rem, 8vw, 6rem) clamp(1rem, 4vw, 3rem);
+}
+
+.responsive-hero h1 {
+  font-size: clamp(2rem, 6vw, 4rem);
+}
+
+.responsive-hero p {
+  font-size: clamp(1rem, 3vw, 1.25rem);
+}
+
+/* Responsive footer */
+.responsive-footer {
+  padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 3vw, 2rem);
+}
+
+/* Responsive modal */
+.responsive-modal {
+  max-width: min(90vw, 600px);
+  max-height: min(90vh, 800px);
+  margin: clamp(1rem, 3vw, 2rem);
+}
+
+/* Responsive sidebar */
+.responsive-sidebar {
+  width: clamp(250px, 30vw, 350px);
+}
+
+@media (max-width: 640px) {
+  .responsive-sidebar {
+    width: 100%;
+  }
+}
+
+/* Responsive progress bars */
+.responsive-progress {
+  height: clamp(4px, 1vw, 8px);
+}
+
+/* Responsive loading spinners */
+.responsive-spinner {
+  width: clamp(20px, 5vw, 40px);
+  height: clamp(20px, 5vw, 40px);
+}
+
+/* Responsive icons */
+.responsive-icon {
+  width: clamp(16px, 4vw, 24px);
+  height: clamp(16px, 4vw, 24px);
+}
+
+/* Responsive spacing utilities */
+.responsive-gap {
+  gap: clamp(0.5rem, 2vw, 1rem);
+}
+
+.responsive-mx {
+  margin-left: clamp(1rem, 3vw, 2rem);
+  margin-right: clamp(1rem, 3vw, 2rem);
+}
+
+.responsive-my {
+  margin-top: clamp(1rem, 3vw, 2rem);
+  margin-bottom: clamp(1rem, 3vw, 2rem);
+}
+
+/* Responsive text alignment */
+.responsive-text-center {
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .mobile-text-center {
+    text-align: center !important;
+  }
+
+  .mobile-text-left {
+    text-align: left !important;
+  }
+
+  .mobile-text-right {
+    text-align: right !important;
+  }
+}
+
+/* Responsive overflow handling */
+.responsive-overflow {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Responsive flexbox */
+.responsive-flex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+}
+
+.responsive-flex-col {
+  flex-direction: column;
+}
+
+@media (min-width: 641px) {
+  .responsive-flex-col {
+    flex-direction: row;
+  }
+}
+
+/* Responsive grid layouts */
+.responsive-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: clamp(1rem, 2vw, 2rem);
+}
+
+.responsive-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: clamp(1rem, 2vw, 2rem);
+}
+
+.responsive-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: clamp(1rem, 2vw, 2rem);
+}
+
+@media (min-width: 1025px) {
+  .responsive-grid-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Responsive card layouts */
+.responsive-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: clamp(1rem, 2vw, 2rem);
+}
+
+/* Responsive button groups */
+.responsive-button-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 1vw, 1rem);
+}
+
+.responsive-button-group button {
+  flex: 1;
+  min-width: 120px;
+}
+
+@media (max-width: 640px) {
+  .responsive-button-group {
+    flex-direction: column;
+  }
+
+  .responsive-button-group button {
+    width: 100%;
+  }
+}
+
+/* Responsive form layouts */
+.responsive-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.5rem, 1vw, 1rem);
+}
+
+@media (min-width: 641px) {
+  .responsive-form-group {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .responsive-form-group label {
+    flex: 0 0 120px;
+  }
+
+  .responsive-form-group input,
+  .responsive-form-group select,
+  .responsive-form-group textarea {
+    flex: 1;
+  }
+}
+
+/* Responsive table layouts */
+.responsive-table-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -1rem;
+  padding: 0 1rem;
+}
+
+@media (min-width: 641px) {
+  .responsive-table-container {
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* Responsive image galleries */
+.responsive-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(150px, 20vw, 250px), 1fr));
+  gap: clamp(0.5rem, 2vw, 1rem);
+}
+
+/* Responsive video containers */
+.responsive-video {
+  position: relative;
+  padding-bottom: 56.25%; /* 16:9 aspect ratio */
+  height: 0;
+  overflow: hidden;
+}
+
+.responsive-video iframe,
+.responsive-video video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Responsive charts */
+.responsive-chart {
+  width: 100%;
+  height: clamp(200px, 40vw, 400px);
+}
+
+/* Responsive maps */
+.responsive-map {
+  width: 100%;
+  height: clamp(250px, 50vw, 500px);
+}
+
+/* Responsive calendars */
+.responsive-calendar {
+  font-size: clamp(0.75rem, 2vw, 1rem);
+}
+
+/* Responsive sliders */
+.responsive-slider {
+  width: 100%;
+  height: clamp(4px, 1vw, 8px);
+}
+
+/* Responsive dropdowns */
+.responsive-dropdown {
+  min-width: clamp(200px, 50vw, 300px);
+}
+
+/* Responsive tooltips */
+.responsive-tooltip {
+  max-width: clamp(200px, 50vw, 300px);
+  font-size: clamp(0.75rem, 2vw, 0.875rem);
+}
+
+/* Responsive alerts */
+.responsive-alert {
+  padding: clamp(0.75rem, 2vw, 1rem);
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+/* Responsive badges */
+.responsive-badge {
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+  padding: clamp(0.25rem, 1vw, 0.5rem) clamp(0.5rem, 2vw, 0.75rem);
+}
+
+/* Responsive breadcrumbs */
+.responsive-breadcrumb {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+  flex-wrap: wrap;
+  gap: clamp(0.25rem, 1vw, 0.5rem);
+}
+
+/* Responsive pagination */
+.responsive-pagination {
+  flex-wrap: wrap;
+  gap: clamp(0.25rem, 1vw, 0.5rem);
+}
+
+.responsive-pagination button {
+  min-width: clamp(32px, 8vw, 40px);
+  min-height: clamp(32px, 8vw, 40px);
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+/* Responsive tabs */
+.responsive-tabs {
+  flex-wrap: wrap;
+  gap: clamp(0.25rem, 1vw, 0.5rem);
+}
+
+.responsive-tabs button {
+  flex: 1;
+  min-width: clamp(100px, 25vw, 150px);
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+/* Responsive accordions */
+.responsive-accordion {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+.responsive-accordion button {
+  padding: clamp(0.75rem, 2vw, 1rem);
+}
+
+/* Responsive modals */
+.responsive-modal-content {
+  max-height: clamp(300px, 70vh, 600px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Responsive carousels */
+.responsive-carousel {
+  height: clamp(200px, 50vw, 400px);
+}
+
+/* Responsive timelines */
+.responsive-timeline {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+/* Responsive step indicators */
+.responsive-steps {
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+}
+
+.responsive-steps .step {
+  flex: 1;
+  min-width: clamp(150px, 30vw, 200px);
+}
+
+/* Responsive loading states */
+.responsive-loading {
+  padding: clamp(2rem, 10vw, 4rem);
+}
+
+.responsive-loading .spinner {
+  width: clamp(24px, 6vw, 48px);
+  height: clamp(24px, 6vw, 48px);
+}
+
+.responsive-loading .text {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+/* Responsive empty states */
+.responsive-empty {
+  padding: clamp(3rem, 15vw, 6rem) clamp(1rem, 5vw, 3rem);
+}
+
+.responsive-empty .icon {
+  width: clamp(48px, 12vw, 96px);
+  height: clamp(48px, 12vw, 96px);
+}
+
+.responsive-empty .title {
+  font-size: clamp(1.125rem, 3vw, 1.5rem);
+}
+
+.responsive-empty .description {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+/* Responsive error states */
+.responsive-error {
+  padding: clamp(3rem, 15vw, 6rem) clamp(1rem, 5vw, 3rem);
+}
+
+.responsive-error .icon {
+  width: clamp(48px, 12vw, 96px);
+  height: clamp(48px, 12vw, 96px);
+}
+
+.responsive-error .title {
+  font-size: clamp(1.25rem, 4vw, 2rem);
+}
+
+.responsive-error .description {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+/* Responsive success states */
+.responsive-success {
+  padding: clamp(3rem, 15vw, 6rem) clamp(1rem, 5vw, 3rem);
+}
+
+.responsive-success .icon {
+  width: clamp(48px, 12vw, 96px);
+  height: clamp(48px, 12vw, 96px);
+}
+
+.responsive-success .title {
+  font-size: clamp(1.25rem, 4vw, 2rem);
+}
+
+.responsive-success .description {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+/* Responsive info states */
+.responsive-info {
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.responsive-info .icon {
+  width: clamp(24px, 6vw, 48px);
+  height: clamp(24px, 6vw, 48px);
+}
+
+.responsive-info .title {
+  font-size: clamp(1rem, 2.5vw, 1.25rem);
+}
+
+.responsive-info .description {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+/* Responsive warning states */
+.responsive-warning {
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.responsive-warning .icon {
+  width: clamp(24px, 6vw, 48px);
+  height: clamp(24px, 6vw, 48px);
+}
+
+.responsive-warning .title {
+  font-size: clamp(1rem, 2.5vw, 1.25rem);
+}
+
+.responsive-warning .description {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+/* Responsive stats */
+.responsive-stat {
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.responsive-stat .value {
+  font-size: clamp(1.5rem, 4vw, 2.5rem);
+}
+
+.responsive-stat .label {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+/* Responsive progress indicators */
+.responsive-progress-indicator {
+  width: clamp(200px, 50vw, 400px);
+  height: clamp(8px, 2vw, 16px);
+}
+
+/* Responsive range sliders */
+.responsive-range {
+  width: 100%;
+  height: clamp(4px, 1vw, 8px);
+}
+
+.responsive-range::-webkit-slider-thumb {
+  width: clamp(16px, 4vw, 24px);
+  height: clamp(16px, 4vw, 24px);
+}
+
+.responsive-range::-moz-range-thumb {
+  width: clamp(16px, 4vw, 24px);
+  height: clamp(16px, 4vw, 24px);
+}
+
+/* Responsive color pickers */
+.responsive-color-picker {
+  width: clamp(32px, 8vw, 48px);
+  height: clamp(32px, 8vw, 48px);
+}
+
+/* Responsive file inputs */
+.responsive-file-input {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+.responsive-file-input::file-selector-button {
+  padding: clamp(0.5rem, 2vw, 1rem) clamp(1rem, 3vw, 2rem);
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+/* Responsive search inputs */
+.responsive-search {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+  padding: clamp(0.5rem, 2vw, 1rem) clamp(1rem, 3vw, 2rem);
+}
+
+.responsive-search::placeholder {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+/* Responsive select dropdowns */
+.responsive-select {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+  padding: clamp(0.5rem, 2vw, 1rem);
+}
+
+/* Responsive textareas */
+.responsive-textarea {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+  padding: clamp(0.5rem, 2vw, 1rem);
+  min-height: clamp(100px, 20vw, 200px);
+}
+
+/* Responsive checkboxes and radio buttons */
+.responsive-checkbox,
+.responsive-radio {
+  width: clamp(16px, 4vw, 24px);
+  height: clamp(16px, 4vw, 24px);
+}
+
+.responsive-checkbox + label,
+.responsive-radio + label {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+  padding-left: clamp(0.5rem, 2vw, 1rem);
+}
+
+/* Responsive labels */
+.responsive-label {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+  margin-bottom: clamp(0.25rem, 1vw, 0.5rem);
+}
+
+/* Responsive help text */
+.responsive-help-text {
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+  margin-top: clamp(0.25rem, 1vw, 0.5rem);
+}
+
+/* Responsive validation messages */
+.responsive-validation {
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+  margin-top: clamp(0.25rem, 1vw, 0.5rem);
+}
+
+/* Responsive character counters */
+.responsive-char-counter {
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+  margin-top: clamp(0.25rem, 1vw, 0.5rem);
+}
+
+/* Responsive input groups */
+.responsive-input-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+}
+
+.responsive-input-group > * {
+  flex: 1;
+  min-width: clamp(200px, 50vw, 300px);
+}
+
+@media (min-width: 641px) {
+  .responsive-input-group {
+    flex-wrap: nowrap;
+  }
+
+  .responsive-input-group > * {
+    min-width: auto;
+  }
+}
+
+/* Responsive input addons */
+.responsive-input-addon {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+}
+
+.responsive-input-addon > * {
+  flex: 1;
+}
+
+@media (min-width: 641px) {
+  .responsive-input-addon {
+    flex-wrap: nowrap;
+  }
+}
+
+/* Responsive form layouts */
+.responsive-form-layout {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1rem, 3vw, 2rem);
+}
+
+@media (min-width: 641px) {
+  .responsive-form-layout {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: clamp(1rem, 3vw, 2rem);
+  }
+}
+
+/* Responsive form sections */
+.responsive-form-section {
+  margin-bottom: clamp(2rem, 5vw, 4rem);
+}
+
+.responsive-form-section-title {
+  font-size: clamp(1.125rem, 3vw, 1.5rem);
+  margin-bottom: clamp(1rem, 3vw, 2rem);
+}
+
+/* Responsive form actions */
+.responsive-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+  justify-content: flex-end;
+  margin-top: clamp(2rem, 5vw, 4rem);
+}
+
+@media (max-width: 640px) {
+  .responsive-form-actions {
+    flex-direction: column;
+  }
+
+  .responsive-form-actions button {
+    width: 100%;
+  }
+}
+
+/* Responsive multi-step forms */
+.responsive-step-form {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2rem, 5vw, 4rem);
+}
+
+.responsive-step-indicator {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+  justify-content: center;
+}
+
+.responsive-step-indicator .step {
+  flex: 1;
+  min-width: clamp(100px, 25vw, 150px);
+  text-align: center;
+}
+
+/* Responsive wizard forms */
+.responsive-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2rem, 5vw, 4rem);
+}
+
+.responsive-wizard-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+  justify-content: space-between;
+  align-items: center;
+}
+
+.responsive-wizard-content {
+  min-height: clamp(300px, 60vh, 600px);
+}
+
+.responsive-wizard-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+  justify-content: space-between;
+  align-items: center;
+}
+
+@media (max-width: 640px) {
+  .responsive-wizard-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Responsive inline forms */
+.responsive-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+  align-items: flex-end;
+}
+
+.responsive-inline-form > * {
+  flex: 1;
+  min-width: clamp(150px, 35vw, 200px);
+}
+
+@media (max-width: 640px) {
+  .responsive-inline-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Responsive stacked forms */
+.responsive-stacked-form {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1rem, 3vw, 2rem);
+}
+
+.responsive-stacked-form > * {
+  width: 100%;
+}
+
+/* Responsive horizontal forms */
+.responsive-horizontal-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(1rem, 3vw, 2rem);
+  align-items: flex-start;
+}
+
+.responsive-horizontal-form > * {
+  flex: 1;
+  min-width: clamp(250px, 60vw, 350px);
+}
+
+@media (max-width: 640px) {
+  .responsive-horizontal-form {
+    flex-direction: column;
+  }
+}
+
+/* Responsive vertical forms */
+.responsive-vertical-form {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1rem, 3vw, 2rem);
+}
+
+.responsive-vertical-form > * {
+  width: 100%;
+}
+
+/* Responsive inline fields */
+.responsive-inline-field {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+  align-items: center;
+}
+
+.responsive-inline-field > * {
+  flex: 1;
+  min-width: clamp(100px, 25vw, 150px);
+}
+
+@media (max-width: 640px) {
+  .responsive-inline-field {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Responsive field groups */
+.responsive-field-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+}
+
+.responsive-field-group > * {
+  flex: 1;
+  min-width: clamp(120px, 30vw, 180px);
+}
+
+@media (max-width: 640px) {
+  .responsive-field-group {
+    flex-direction: column;
+  }
+}
+
+/* Responsive form grids */
+.responsive-form-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: clamp(1rem, 3vw, 2rem);
+}
+
+.responsive-form-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: clamp(1rem, 3vw, 2rem);
+}
+
+.responsive-form-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: clamp(1rem, 3vw, 2rem);
+}
+
+@media (min-width: 1025px) {
+  .responsive-form-grid-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Responsive form lists */
+.responsive-form-list {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.5rem, 2vw, 1rem);
+}
+
+.responsive-form-list-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+  align-items: center;
+}
+
+@media (max-width: 640px) {
+  .responsive-form-list-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Responsive form tables */
+.responsive-form-table {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.5rem, 2vw, 1rem);
+}
+
+.responsive-form-table-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+  align-items: center;
+  padding: clamp(0.5rem, 2vw, 1rem);
+  border-bottom: 1px solid #e5e7eb;
+}
+
+@media (max-width: 640px) {
+  .responsive-form-table-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Responsive form cards */
+.responsive-form-card {
+  padding: clamp(1rem, 3vw, 2rem);
+  border-radius: clamp(0.5rem, 2vw, 1rem);
+  box-shadow:
+    0 1px 3px 0 rgba(0, 0, 0, 0.1),
+    0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+.responsive-form-card-header {
+  margin-bottom: clamp(1rem, 3vw, 2rem);
+  padding-bottom: clamp(1rem, 3vw, 2rem);
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.responsive-form-card-title {
+  font-size: clamp(1.125rem, 3vw, 1.5rem);
+  margin-bottom: clamp(0.5rem, 1.5vw, 1rem);
+}
+
+.responsive-form-card-content {
+  margin-bottom: clamp(1rem, 3vw, 2rem);
+}
+
+.responsive-form-card-footer {
+  padding-top: clamp(1rem, 3vw, 2rem);
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 2vw, 1rem);
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .responsive-form-card-footer {
+    flex-direction: column;
+  }
+
+  .responsive-form-card-footer button {
+    width: 100%;
+  }
+}
+
+/* Responsive form sections */
+.responsive-form-section {
+  margin-bottom: clamp(2rem, 6vw, 4rem);
+}
+
+.responsive-form-section-header {
+  margin-bottom: clamp(1rem, 3vw, 2rem);
+  padding-bottom: clamp(0.5rem, 1.5vw, 1rem);
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.responsive-form-section-title {
+  font-size: clamp(1.25rem, 3.5vw, 1.75rem);
+  margin-bottom: clamp(0.5rem, 1.5vw, 1rem);
+}
+
+.responsive-form-section-description {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+  color: #6b7280;
+}
+
+/* Responsive form dividers */
+.responsive-form-divider {
+  margin: clamp(2rem, 5vw, 4rem) 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+/* Responsive form spacers */
+.responsive-form-spacer {
+  height: clamp(1rem, 3vw, 2rem);
+}
+
+/* Responsive form helpers */
+.responsive-form-helper {
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+  color: #6b7280;
+  margin-top: clamp(0.25rem, 1vw, 0.5rem);
+}
+
+/* Responsive form errors */
+.responsive-form-error {
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+  color: #ef4444;
+  margin-top: clamp(0.25rem, 1vw, 0.5rem);
+}
+
+/* Responsive form warnings */
+.responsive-form-warning {
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+  color: #f59e0b;
+  margin-top: clamp(0.25rem, 1vw, 0.5rem);
+}
+
+/* Responsive form success */
+.responsive-form-success {
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+  color: #10b981;
+  margin-top: clamp(0.25rem, 1vw, 0.5rem);
+}
+
+/* Responsive form info */
+.responsive-form-info {
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+  color: #3b82f6;
+  margin-top: clamp(0.25rem, 1vw, 0.5rem);
+}
+
+/* Responsive form required */
+.responsive-form-required {
+  color: #ef4444;
+}
+
+/* Responsive form optional */
+.responsive-form-optional {
+  color: #6b7280;
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+}
+
+/* Responsive form disabled */
+.responsive-form-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Responsive form readonly */
+.responsive-form-readonly {
+  background-color: #f3f4f6;
+  cursor: default;
+}
+
+/* Responsive form focus states */
+.responsive-form-focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Responsive form hover states */
+.responsive-form-hover:hover {
+  background-color: #f9fafb;
+}
+
+/* Responsive form active states */
+.responsive-form-active:active {
+  background-color: #f3f4f6;
+}
+
+/* Responsive form selected states */
+.responsive-form-selected {
+  background-color: #dbeafe;
+  border-color: #3b82f6;
+}
+
+/* Responsive form invalid states */
+.responsive-form-invalid {
+  border-color: #ef4444;
+}
+
+.responsive-form-invalid:focus {
+  outline-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+/* Responsive form valid states */
+.responsive-form-valid {
+  border-color: #10b981;
+}
+
+.responsive-form-valid:focus {
+  outline-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+/* Responsive form pending states */
+.responsive-form-pending {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+/* Responsive form loading states */
+.responsive-form-loading {
+  position: relative;
+  overflow: hidden;
+}
+
+.responsive-form-loading::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+/* Dark mode support for responsive utilities */
+@media (prefers-color-scheme: dark) {
+  .dark\:responsive-form-readonly {
+    background-color: #374151;
+  }
+
+  .dark\:responsive-form-hover:hover {
+    background-color: #4b5563;
+  }
+
+  .dark\:responsive-form-active:active {
+    background-color: #374151;
+  }
+
+  .dark\:responsive-form-selected {
+    background-color: #1e40af;
+    border-color: #3b82f6;
+  }
+
+  .dark\:responsive-form-loading::after {
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  }
+}
+
+.dark .responsive-form-readonly {
+  background-color: #374151;
+}
+
+.dark .responsive-form-hover:hover {
+  background-color: #4b5563;
+}
+
+.dark .responsive-form-active:active {
+  background-color: #374151;
+}
+
+.dark .responsive-form-selected {
+  background-color: #1e40af;
+  border-color: #3b82f6;
+}
+
+.dark .responsive-form-loading::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+}
