@@ -1,4 +1,4 @@
-export { default as Button } from './Button'
-export { default as FileUpload } from './FileUpload'
-export { default as ProgressTracker } from './ProgressTracker'
-export { default as UsageIndicator } from './UsageIndicator'
+export { default as Button } from './Button.tsx'
+export { default as FileUpload } from './FileUpload.tsx'
+export { default as ProgressTracker } from './ProgressTracker.tsx'
+export { default as UsageIndicator } from './UsageIndicator.tsx'

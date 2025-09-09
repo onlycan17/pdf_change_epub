@@ -17,7 +17,7 @@ interface ProgressTrackerProps {
 const ProgressTracker: React.FC<ProgressTrackerProps> = ({
   steps,
   currentStep,
-  className = ''
+  className = '',
 }) => {
   const getStepIcon = (status: ProgressStep['status']) => {
     switch (status) {
@@ -64,15 +64,17 @@ const ProgressTracker: React.FC<ProgressTrackerProps> = ({
           <div key={step.id} className="flex items-start space-x-4">
             {/* Step Icon */}
             <div className="flex-shrink-0">
-              <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${
-                step.status === 'completed'
-                  ? 'bg-green-100 border-green-600'
-                  : step.status === 'processing'
-                  ? 'bg-blue-100 border-blue-600'
-                  : step.status === 'error'
-                  ? 'bg-red-100 border-red-600'
-                  : 'bg-gray-100 border-gray-300'
-              }`}>
+              <div
+                className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${
+                  step.status === 'completed'
+                    ? 'bg-green-100 border-green-600'
+                    : step.status === 'processing'
+                      ? 'bg-blue-100 border-blue-600'
+                      : step.status === 'error'
+                        ? 'bg-red-100 border-red-600'
+                        : 'bg-gray-100 border-gray-300'
+                }`}
+              >
                 {getStepIcon(step.status)}
               </div>
             </div>
@@ -80,18 +82,12 @@ const ProgressTracker: React.FC<ProgressTrackerProps> = ({
             {/* Step Content */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between">
-                <h3 className={`text-sm font-medium ${getStepColor(step.status)}`}>
-                  {step.label}
-                </h3>
+                <h3 className={`text-sm font-medium ${getStepColor(step.status)}`}>{step.label}</h3>
                 {step.status === 'processing' && (
                   <span className="text-xs text-blue-600 font-medium">진행 중...</span>
                 )}
               </div>
-              {step.description && (
-                <p className="text-sm text-gray-600 mt-1">
-                  {step.description}
-                </p>
-              )}
+              {step.description && <p className="text-sm text-gray-600 mt-1">{step.description}</p>}
             </div>
 
             {/* Connector Line (except for last item) */}
@@ -116,7 +112,7 @@ const ProgressTracker: React.FC<ProgressTrackerProps> = ({
           <div
             className="bg-blue-600 h-2 rounded-full transition-all duration-300"
             style={{
-              width: `${(steps.filter(step => step.status === 'completed').length / steps.length) * 100}%`
+              width: `${(steps.filter(step => step.status === 'completed').length / steps.length) * 100}%`,
             }}
           ></div>
         </div>

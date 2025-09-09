@@ -12,7 +12,7 @@ const UsageIndicator: React.FC<UsageIndicatorProps> = ({
   dailyUsage,
   dailyLimit,
   isPremium,
-  className = ''
+  className = '',
 }) => {
   const usagePercentage = (dailyUsage / dailyLimit) * 100
   const isNearLimit = usagePercentage >= 80
@@ -20,14 +20,12 @@ const UsageIndicator: React.FC<UsageIndicatorProps> = ({
 
   if (isPremium) {
     return (
-      <div className={`flex items-center space-x-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg ${className}`}>
+      <div
+        className={`flex items-center space-x-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg ${className}`}
+      >
         <Crown className="h-4 w-4 text-yellow-600" />
-        <span className="text-sm font-medium text-yellow-800">
-          프리미엄 플랜 활성화
-        </span>
-        <span className="text-xs text-yellow-600">
-          무제한 LLM 사용
-        </span>
+        <span className="text-sm font-medium text-yellow-800">프리미엄 플랜 활성화</span>
+        <span className="text-xs text-yellow-600">무제한 LLM 사용</span>
       </div>
     )
   }
@@ -36,7 +34,9 @@ const UsageIndicator: React.FC<UsageIndicatorProps> = ({
     <div className={`space-y-2 ${className}`}>
       <div className="flex items-center justify-between text-sm">
         <span className="text-gray-600">오늘 사용량 (DeepSeek Free)</span>
-        <span className={`font-medium ${isOverLimit ? 'text-red-600' : isNearLimit ? 'text-orange-600' : 'text-gray-900'}`}>
+        <span
+          className={`font-medium ${isOverLimit ? 'text-red-600' : isNearLimit ? 'text-orange-600' : 'text-gray-900'}`}
+        >
           {dailyUsage} / {dailyLimit}회
         </span>
       </div>
@@ -44,11 +44,7 @@ const UsageIndicator: React.FC<UsageIndicatorProps> = ({
       <div className="w-full bg-gray-200 rounded-full h-2">
         <div
           className={`h-2 rounded-full transition-all duration-300 ${
-            isOverLimit
-              ? 'bg-red-600'
-              : isNearLimit
-              ? 'bg-orange-500'
-              : 'bg-blue-600'
+            isOverLimit ? 'bg-red-600' : isNearLimit ? 'bg-orange-500' : 'bg-blue-600'
           }`}
           style={{ width: `${Math.min(usagePercentage, 100)}%` }}
         ></div>

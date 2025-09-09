@@ -32,7 +32,9 @@ export interface Conversion {
 export const supabaseService = {
   // 사용자 관련 함수들
   async getCurrentUser() {
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     return user
   },
 
@@ -40,8 +42,8 @@ export const supabaseService = {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`
-      }
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
     })
     return { data, error }
   },
@@ -53,11 +55,7 @@ export const supabaseService = {
 
   // 변환 기록 관련 함수들
   async createConversion(conversion: Omit<Conversion, 'id' | 'created_at'>) {
-    const { data, error } = await supabase
-      .from('conversions')
-      .insert(conversion)
-      .select()
-      .single()
+    const { data, error } = await supabase.from('conversions').insert(conversion).select().single()
     return { data, error }
   },
 
@@ -74,7 +72,7 @@ export const supabaseService = {
   async updateConversionStatus(id: string, status: Conversion['status'], errorMessage?: string) {
     const updateData: Partial<Conversion> = {
       status,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     }
     if (errorMessage) {
       updateData.error_message = errorMessage
@@ -87,5 +85,16 @@ export const supabaseService = {
       .select()
       .single()
     return { data, error }
-  }
+  },
+
+  // 사용자 프리미엄 상태 업데이트
+  async updateUserPremiumStatus(userId: string, isPremium: boolean) {
+    const { data, error } = await supabase
+      .from('users')
+      .update({ is_premium: isPremium })
+      .eq('id', userId)
+      .select()
+      .single()
+    return { data, error }
+  },
 }
