@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useEffect, useState } from 'react'
 import { supabase, supabaseService } from '../services/supabase'
+import { logger } from '../utils/logger'
 
 interface User {
   id: string
@@ -32,8 +33,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(data)
       }
     } catch (error) {
-      // TODO: Add proper error handling and logging
-      // console.error('Error fetching user data:', error)
+      logger.error('Error fetching user data:', error)
     } finally {
       setLoading(false)
     }
@@ -50,8 +50,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(false)
       }
     } catch (error) {
-      // TODO: Add proper error handling and logging
-      // console.error('Error checking user:', error)
+      logger.error('Error checking user:', error)
       setLoading(false)
     }
   }, [])

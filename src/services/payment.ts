@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+export { STRIPE_PRICE_IDS } from '../constants/stripe'
 
 export interface PaymentIntent {
   id: string
@@ -93,10 +94,7 @@ export const paymentService = {
 }
 
 // Stripe 가격 ID 상수
-export const STRIPE_PRICE_IDS = {
-  PREMIUM_MONTHLY: 'price_premium_monthly', // 실제 Stripe 가격 ID로 교체 필요
-  PREMIUM_YEARLY: 'price_premium_yearly', // 실제 Stripe 가격 ID로 교체 필요
-}
+// STRIPE_PRICE_IDS는 src/constants/stripe.ts에서 관리합니다.
 
 // 구독 상태 상수
 export const SUBSCRIPTION_STATUS = {

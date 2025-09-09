@@ -22,10 +22,13 @@
   └── assets/        # 정적 자산
   ```
 
-- [ ] **ESLint 및 Prettier 설정 (소분류)**
-  - ESLint 설정: Airbnb 스타일 가이드 적용
-  - Prettier 설정: 일관된 코드 포맷팅 규칙 설정
-  - Husky를 사용한 Git hook 설정: 커밋 전 자동 린트 및 포맷팅
+- [x] **ESLint 및 Prettier 설정 (소분류)**
+  - ESLint/Prettier 규칙 정리 및 훅 통과 확인
+  - Prettier 설정 유지(semi: false 등), 코드 전반 자동 포맷팅 적용
+  - Husky + lint-staged로 커밋 전 자동 린트/포맷 실행
+  - pre-push 훅 추가: `npm run check` 실행으로 원격 푸시 전 전체 검사
+  - 타입 검사 스크립트 추가: `npm run typecheck` (tsc --noEmit)
+  - 통합 체크 스크립트: `npm run check` (format:check + lint + typecheck)
 
 - [x] **Git 저장소 초기화 및 .gitignore 설정 (소분류)**
   - Git 초기화: `git init`

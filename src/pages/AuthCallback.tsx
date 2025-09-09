@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../services/supabase'
+import { logger } from '../utils/logger'
 
 const AuthCallback: React.FC = () => {
   const navigate = useNavigate()
@@ -12,8 +13,7 @@ const AuthCallback: React.FC = () => {
         const { data, error } = await supabase.auth.getSession()
 
         if (error) {
-          // TODO: Add proper error handling and logging
-          // console.error('Auth callback error:', error)
+          logger.error('Auth callback error:', error)
           navigate('/login?error=auth_failed')
           return
         }
@@ -27,8 +27,7 @@ const AuthCallback: React.FC = () => {
           navigate('/login?error=no_session')
         }
       } catch (error) {
-        // TODO: Add proper error handling and logging
-        // console.error('Unexpected error in auth callback:', error)
+        logger.error('Unexpected error in auth callback:', error)
         navigate('/login?error=unexpected')
       }
     }

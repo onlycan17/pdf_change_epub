@@ -15,17 +15,20 @@ PDF 문서를 EPUB 전자책으로 자동 변환하는 웹 애플리케이션입
 ## 🛠 기술 스택
 
 ### 프론트엔드
+
 - **React 18** - 사용자 인터페이스
 - **TypeScript** - 타입 안전성
 - **Vite** - 빌드 도구
-- **Tailwind CSS** - 스타일링
+- **Custom CSS(Design System + Dark Mode)** - 스타일링
 
 ### 백엔드
+
 - **Supabase** - 데이터베이스 및 인증
 - **OpenRouter** - LLM API (DeepSeek-V3.1)
 - **Tesseract.js** - OCR 엔진
 
 ### 기타
+
 - **Stripe** - 결제 처리
 - **Google AdSense** - 광고 수익화
 
@@ -39,17 +42,20 @@ PDF 문서를 EPUB 전자책으로 자동 변환하는 웹 애플리케이션입
 ## 🚀 설치 및 실행
 
 ### 1. 프로젝트 클론
+
 ```bash
 git clone https://github.com/onlycan17/pdf_change_epub.git
 cd pdf_change_epub
 ```
 
 ### 2. 의존성 설치
+
 ```bash
 npm install
 ```
 
 ### 3. 환경 변수 설정
+
 `.env` 파일을 생성하고 다음 변수를 설정하세요:
 
 ```env
@@ -65,11 +71,13 @@ VITE_STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key
 ```
 
 ### 4. Supabase 데이터베이스 설정
+
 1. Supabase 대시보드에서 새 프로젝트 생성
 2. SQL 편집기에서 `docs/database_schema.sql` 실행
 3. Storage 버킷 설정 (pdf-files, epub-files)
 
 ### 5. 개발 서버 실행
+
 ```bash
 npm run dev
 ```
@@ -96,7 +104,7 @@ src/
 │   ├── openrouter.ts   # OpenRouter API
 │   └── stripe.ts       # Stripe 결제
 ├── utils/              # 유틸리티 함수
-├── styles/             # 전역 스타일
+├── styles/             # 전역 스타일 (design-system.css, dark-mode.css, responsive.css)
 └── assets/             # 정적 자산
 ```
 
@@ -110,12 +118,14 @@ src/
 ## 📊 데이터베이스 스키마
 
 ### 주요 테이블
+
 - **users**: 사용자 정보 및 프리미엄 상태
 - **conversions**: 변환 기록 및 상태 추적
 - **usage_tracking**: DeepSeek-V3.1 Free 사용량 모니터링
 - **file_metadata**: 파일 메타데이터 저장
 
 ### Storage 버킷
+
 - **pdf-files**: 업로드된 PDF 파일 저장
 - **epub-files**: 변환된 EPUB 파일 저장
 
@@ -136,12 +146,14 @@ src/
 ## 🚀 배포
 
 ### Vercel 배포 (프론트엔드)
+
 ```bash
 npm install -g vercel
 vercel --prod
 ```
 
 ### Supabase 배포 (백엔드)
+
 Supabase 대시보드에서 자동 배포되며, 추가 설정 필요 없음.
 
 ## 🤝 기여하기
