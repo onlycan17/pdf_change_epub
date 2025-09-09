@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './contexts/AuthContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { useAuth } from './hooks/useAuth'
-import Header from './components/layout/Header'
+import MainLayout from './components/layout/MainLayout'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import AuthCallback from './pages/AuthCallback'
@@ -47,50 +47,56 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 const AppRoutes: React.FC = () => {
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-      <Header />
-      <Routes>
-        {/* Public routes */}
-        <Route
-          path="/login"
-          element={
-            <PublicRoute>
-              <Login />
-            </PublicRoute>
-          }
-        />
-        <Route
-          path="/auth/callback"
-          element={
-            <PublicRoute>
-              <AuthCallback />
-            </PublicRoute>
-          }
-        />
-        <Route path="/premium" element={<Premium />} />
-        <Route path="/payment" element={<Payment />} />
-        <Route path="/error" element={<Error />} />
+    <Routes>
+      {/* Public routes without layout */}
+      <Route
+        path="/login"
+        element={
+          <PublicRoute>
+            <Login />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/auth/callback"
+        element={
+          <PublicRoute>
+            <AuthCallback />
+          </PublicRoute>
+        }
+      />
 
-        {/* Public routes (무료 기능) */}
-        <Route path="/" element={<Home />} />
-        <Route path="/upload" element={<FileUpload />} />
-        <Route path="/convert" element={<ConversionProgress />} />
-        <Route path="/download" element={<Download />} />
+      {/* Routes with main layout */}
+      <Route
+        path="/*"
+        element={
+          <MainLayout>
+            <Routes>
+              {/* Public routes (무료 기능) */}
+              <Route path="/" element={<Home />} />
+              <Route path="/upload" element={<FileUpload />} />
+              <Route path="/convert" element={<ConversionProgress />} />
+              <Route path="/download" element={<Download />} />
+              <Route path="/premium" element={<Premium />} />
+              <Route path="/error" element={<Error />} />
 
-        {/* Protected routes (프리미엄 기능) */}
-        <Route
-          path="/payment"
-          element={
-            <ProtectedRoute>
-              <Payment />
-            </ProtectedRoute>
-          }
-        />
+              {/* Protected routes (프리미엄 기능) */}
+              <Route
+                path="/payment"
+                element={
+                  <ProtectedRoute>
+                    <Payment />
+                  </ProtectedRoute>
+                }
+              />
 
-        {/* Catch all route */}
-        <Route path="*" element={<Navigate to="/error" replace />} />
-      </Routes>
-    </div>
+              {/* Catch all route */}
+              <Route path="*" element={<Navigate to="/error" replace />} />
+            </Routes>
+          </MainLayout>
+        }
+      />
+    </Routes>
   )
 }
 

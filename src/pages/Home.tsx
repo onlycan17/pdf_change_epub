@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FileUpload, UsageIndicator } from '../components/common/index.ts'
 import { useAuth } from '../hooks/useAuth'
+import { Star, Zap, Shield, Clock, BookOpen, ArrowRight, Check } from 'lucide-react'
 
 const Home: React.FC = () => {
   const { user } = useAuth()
@@ -12,132 +13,299 @@ const Home: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // For now, set default values. In a real app, you'd fetch this from your API
     if (user) {
-      setIsPremium(false) // This would come from your user data
-      setDailyUsage(2) // This would come from your usage tracking
+      setIsPremium(false)
+      setDailyUsage(2)
     }
     setIsLoading(false)
   }, [user])
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file)
-    // 파일 선택 후 변환 페이지로 이동
     navigate('/upload', { state: { file } })
   }
 
-  // These functions are now handled by the Header component
-  // const handleGoogleLogin = async () => {
-  //   navigate('/login')
-  // }
-
-  // const handleLogout = async () => {
-  //   try {
-  //     await signOut()
-  //   } catch (error) {
-  //     // TODO: Add proper error handling
-  //   }
-  // }
-
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800">
+        <div className="loading-spinner"></div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* 메인 콘텐츠 */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* 히어로 섹션 */}
-        <div className="text-center mb-12">
-          <h2 className="text-4xl font-bold text-gray-900 mb-4">PDF를 EPUB으로 쉽게 변환하세요</h2>
-          <p className="text-xl text-gray-600 mb-8">
-            OCR과 AI를 활용하여 고품질의 전자책을 만들어보세요
-          </p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800">
+      {/* Hero Section */}
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 opacity-10 dark:opacity-20"></div>
+        <div className="absolute inset-0">
+          <div className="absolute top-0 left-0 w-96 h-96 bg-blue-500 rounded-full filter blur-3xl opacity-20 animate-pulse"></div>
+          <div className="absolute bottom-0 right-0 w-96 h-96 bg-purple-500 rounded-full filter blur-3xl opacity-20 animate-pulse delay-1000"></div>
         </div>
 
-        {/* 파일 업로드 영역 */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-8 mb-8">
-          <FileUpload
-            onFileSelect={handleFileSelect}
-            maxSize={isPremium ? 300 : 10}
-            className="mb-6"
-          />
+        <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-16 lg:pt-32 lg:pb-24">
+          <div className="text-center max-w-4xl mx-auto">
+            <div className="mb-6">
+              <span className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white text-sm font-medium rounded-full">
+                <Zap className="w-4 h-4 mr-2" />
+                AI-Powered Conversion
+              </span>
+            </div>
 
-          {selectedFile && (
-            <div className="text-center">
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                선택된 파일: {selectedFile.name}
-              </p>
+            <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold text-slate-900 dark:text-white mb-6 leading-tight">
+              Transform PDFs into
+              <span className="text-gradient-primary block mt-2">Beautiful EPUBs</span>
+            </h1>
+
+            <p className="text-xl lg:text-2xl text-slate-600 dark:text-slate-300 mb-8 max-w-2xl mx-auto leading-relaxed">
+              Experience the future of document conversion with AI-powered OCR, intelligent
+              formatting, and stunning design preservation.
+            </p>
+
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
               <button
-                onClick={() => handleFileSelect(selectedFile)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+                onClick={() =>
+                  document.getElementById('upload-section')?.scrollIntoView({ behavior: 'smooth' })
+                }
+                className="btn btn-primary btn-lg group"
               >
-                변환 시작
+                Start Converting
+                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </button>
+
+              <button onClick={() => navigate('/premium')} className="btn btn-outline btn-lg group">
+                <Star className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+                Upgrade to Premium
               </button>
             </div>
-          )}
-        </div>
-
-        {/* 플랜 비교 및 사용량 표시 */}
-        <div className="grid md:grid-cols-2 gap-8 mb-12">
-          {/* 무료 플랜 */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">무료 플랜</h3>
-            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400 mb-4">
-              <li>• 최대 10MB 파일</li>
-              <li>• 기본 텍스트 추출</li>
-              <li>• 제한된 이미지 처리</li>
-              <li>• DeepSeek Free (일일 5회)</li>
-            </ul>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">무료</p>
           </div>
+        </div>
+      </section>
 
-          {/* 프리미엄 플랜 */}
-          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/10 rounded-lg shadow-sm p-6 border-2 border-yellow-200">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              프리미엄 플랜
-            </h3>
-            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400 mb-4">
-              <li>• 최대 300MB 파일</li>
-              <li>• 고급 OCR 기능 (한글/영어)</li>
-              <li>• 고해상도 이미지 처리</li>
-              <li>• 무제한 LLM 사용</li>
-              <li>• 광고 제거</li>
-            </ul>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">
-              $9.99<span className="text-sm font-normal">/월</span>
+      {/* Features Section */}
+      <section className="py-16 lg:py-24 bg-white/50 dark:bg-slate-800/50 backdrop-blur">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 lg:mb-16">
+            <h2 className="text-3xl lg:text-4xl font-bold text-slate-900 dark:text-white mb-4">
+              Why Choose Our Converter?
+            </h2>
+            <p className="text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+              Advanced technology meets elegant design for the perfect conversion experience
             </p>
-            <button
-              onClick={() => navigate('/premium')}
-              className="mt-4 w-full bg-yellow-500 hover:bg-yellow-600 text-black px-4 py-2 rounded-lg font-medium transition-colors"
-            >
-              프리미엄 시작하기
-            </button>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
+            {[
+              {
+                icon: Zap,
+                title: 'Lightning Fast',
+                description: 'Convert documents in seconds with optimized processing',
+                color: 'text-blue-500',
+              },
+              {
+                icon: Shield,
+                title: 'Secure & Private',
+                description: 'Your documents are processed securely and never stored',
+                color: 'text-green-500',
+              },
+              {
+                icon: BookOpen,
+                title: 'Smart OCR',
+                description: 'Advanced OCR technology for perfect text recognition',
+                color: 'text-purple-500',
+              },
+              {
+                icon: Clock,
+                title: '24/7 Available',
+                description: 'Convert documents anytime, anywhere you need',
+                color: 'text-orange-500',
+              },
+            ].map((feature, index) => (
+              <div key={index} className="card hover-lift text-center group">
+                <div className="card-body">
+                  <div
+                    className={`w-16 h-16 ${feature.color} bg-gradient-to-br from-current/20 to-current/10 rounded-2xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform`}
+                  >
+                    <feature.icon className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
+                    {feature.title}
+                  </h3>
+                  <p className="text-slate-600 dark:text-slate-300">{feature.description}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
+      </section>
 
-        {/* 사용량 표시 (무료 사용자만) */}
-        {!isPremium && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-8">
-            <UsageIndicator dailyUsage={dailyUsage} dailyLimit={5} isPremium={isPremium} />
-          </div>
-        )}
+      {/* Upload Section */}
+      <section id="upload-section" className="py-16 lg:py-24">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-4xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl lg:text-4xl font-bold text-slate-900 dark:text-white mb-4">
+                Start Your Conversion
+              </h2>
+              <p className="text-lg text-slate-600 dark:text-slate-300">
+                Drop your PDF file here or click to browse
+              </p>
+            </div>
 
-        {/* 최근 변환 기록 */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            최근 변환 기록
-          </h3>
-          <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-            <p>아직 변환한 파일이 없습니다.</p>
-            <p className="text-sm mt-2">PDF 파일을 업로드하여 첫 번째 EPUB를 만들어보세요!</p>
+            <div className="card hover-lift">
+              <div className="card-body p-8 lg:p-12">
+                <FileUpload
+                  onFileSelect={handleFileSelect}
+                  maxSize={isPremium ? 300 : 10}
+                  className="mb-6"
+                />
+
+                {selectedFile && (
+                  <div className="text-center mt-6">
+                    <button
+                      onClick={() => handleFileSelect(selectedFile)}
+                      className="btn btn-primary btn-lg group"
+                    >
+                      Convert Now
+                      <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
-      </main>
+      </section>
+
+      {/* Pricing Section */}
+      <section className="py-16 lg:py-24 bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-800 dark:to-slate-700">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 lg:mb-16">
+            <h2 className="text-3xl lg:text-4xl font-bold text-slate-900 dark:text-white mb-4">
+              Choose Your Plan
+            </h2>
+            <p className="text-lg text-slate-600 dark:text-slate-300">
+              Start free and upgrade when you need more power
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8 lg:gap-12 max-w-5xl mx-auto">
+            {/* Free Plan */}
+            <div className="card hover-lift">
+              <div className="card-body p-8">
+                <div className="text-center mb-6">
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Free</h3>
+                  <div className="text-4xl font-bold text-slate-900 dark:text-white mb-1">$0</div>
+                  <p className="text-slate-600 dark:text-slate-300">Perfect for casual users</p>
+                </div>
+
+                <ul className="space-y-3 mb-8">
+                  {[
+                    'Up to 10MB files',
+                    'Basic OCR',
+                    'Standard support',
+                    '5 conversions per day',
+                  ].map((feature, index) => (
+                    <li
+                      key={index}
+                      className="flex items-center text-slate-600 dark:text-slate-300"
+                    >
+                      <Check className="w-5 h-5 text-green-500 mr-3 flex-shrink-0" />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+
+                <button className="btn btn-secondary btn-block">Current Plan</button>
+              </div>
+            </div>
+
+            {/* Premium Plan */}
+            <div className="card hover-lift relative border-2 border-gradient-primary">
+              <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                <span className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-4 py-1 rounded-full text-sm font-medium">
+                  Most Popular
+                </span>
+              </div>
+
+              <div className="card-body p-8">
+                <div className="text-center mb-6">
+                  <h3 className="text-2xl font-bold text-gradient-primary mb-2">Premium</h3>
+                  <div className="text-4xl font-bold text-slate-900 dark:text-white mb-1">
+                    $9.99
+                  </div>
+                  <p className="text-slate-600 dark:text-slate-300">per month</p>
+                </div>
+
+                <ul className="space-y-3 mb-8">
+                  {[
+                    'Up to 300MB files',
+                    'Advanced OCR (Korean/English)',
+                    'Priority support',
+                    'Unlimited conversions',
+                    'High-resolution images',
+                    'No ads',
+                  ].map((feature, index) => (
+                    <li
+                      key={index}
+                      className="flex items-center text-slate-600 dark:text-slate-300"
+                    >
+                      <Check className="w-5 h-5 text-green-500 mr-3 flex-shrink-0" />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+
+                <button
+                  onClick={() => navigate('/premium')}
+                  className="btn btn-primary btn-block group"
+                >
+                  Upgrade to Premium
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Usage Section */}
+      {!isPremium && (
+        <section className="py-16 lg:py-24 bg-white/30 dark:bg-slate-800/30 backdrop-blur">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="max-w-2xl mx-auto">
+              <div className="card">
+                <div className="card-body p-8">
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-6 text-center">
+                    Daily Usage
+                  </h3>
+                  <UsageIndicator dailyUsage={dailyUsage} dailyLimit={5} isPremium={isPremium} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* CTA Section */}
+      <section className="py-16 lg:py-24 bg-gradient-to-r from-blue-600 to-purple-600">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl lg:text-4xl font-bold text-white mb-4">
+            Ready to Transform Your Documents?
+          </h2>
+          <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
+            Join thousands of users who trust our AI-powered conversion technology
+          </p>
+          <button
+            onClick={() =>
+              document.getElementById('upload-section')?.scrollIntoView({ behavior: 'smooth' })
+            }
+            className="btn btn-secondary btn-lg bg-white text-blue-600 hover:bg-white/90"
+          >
+            Get Started Now
+          </button>
+        </div>
+      </section>
     </div>
   )
 }

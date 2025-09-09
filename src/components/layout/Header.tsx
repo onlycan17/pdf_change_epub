@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { supabaseService } from '../../services/supabase'
 import DarkModeToggle from '../common/DarkModeToggle'
-import { Menu, X, User, Crown, LogOut, Settings, FileText } from 'lucide-react'
+import Avatar from '../common/Avatar'
+import { Menu, X, Crown, LogOut, Settings, FileText } from 'lucide-react'
 
 const Header: React.FC = () => {
   const { user, loading } = useAuth()
@@ -99,7 +100,7 @@ const Header: React.FC = () => {
                     onClick={toggleUserMenu}
                     className="flex items-center space-x-2 text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 p-2 rounded-lg transition-colors"
                   >
-                    <User className="h-5 w-5" />
+                    <Avatar email={user.email} size={28} />
                     <span className="hidden sm:block text-sm font-medium">
                       {user.email?.split('@')[0]}
                     </span>

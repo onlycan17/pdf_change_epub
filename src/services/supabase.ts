@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import type { ConversionStatus } from '../constants/status'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -22,7 +23,7 @@ export interface Conversion {
   user_id: string
   filename: string
   file_size: number
-  status: 'pending' | 'processing' | 'completed' | 'failed'
+  status: ConversionStatus
   created_at: string
   updated_at?: string
   error_message?: string

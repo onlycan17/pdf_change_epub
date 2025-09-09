@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { ProgressTracker } from '../components/common'
-import { FileText, Brain, Download, Clock, AlertCircle } from 'lucide-react'
+import { FileText, Brain, Download, Clock, AlertCircle, Crown } from 'lucide-react'
 
 interface ConversionStep {
   id: string
@@ -169,117 +169,228 @@ const ConversionProgress: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* 헤더 */}
-      <header className="bg-white shadow-sm">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* 헤더 - 더 컴팩트하게 */}
+      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <button onClick={handleCancel} className="text-red-600 hover:text-red-700 font-medium">
+          <div className="flex justify-between items-center py-3">
+            <button
+              onClick={handleCancel}
+              className="flex items-center text-red-600 hover:text-red-700 font-medium transition-colors"
+            >
+              <div className="w-8 h-8 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center mr-2">
+                <span className="text-red-600 dark:text-red-400">✕</span>
+              </div>
               취소
             </button>
-            <h1 className="text-2xl font-bold text-gray-900">변환 진행 중</h1>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3">
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">PDF 변환 중</h1>
               {isPremium && (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-yellow-400 to-orange-400 text-white">
+                  <Crown className="w-3 h-3 mr-1" />
                   프리미엄
                 </span>
               )}
             </div>
+            <div className="w-20"></div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* 파일 정보 */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">변환 파일 정보</h2>
-          <div className="grid md:grid-cols-3 gap-4">
-            <div>
-              <p className="text-sm text-gray-600">파일명</p>
-              <p className="font-medium">{file.name}</p>
+      {/* 메인 콘텐츠 - 12단 그리드 레이아웃 */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid lg:grid-cols-12 gap-6">
+          {/* 사이드바 - 현재 단계 정보 */}
+          <div className="lg:col-span-3">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 mb-4 sticky top-6">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                현재 진행 상황
+              </h3>
+              <div className="space-y-2">
+                {steps.map((step, index) => (
+                  <div
+                    key={step.id}
+                    className={`flex items-center p-2 rounded-lg text-xs ${
+                      step.status === 'completed'
+                        ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                        : step.status === 'processing'
+                          ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-700'
+                          : 'bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full flex items-center justify-center mr-2 text-xs font-bold ${
+                        step.status === 'completed'
+                          ? 'bg-green-500 text-white'
+                          : step.status === 'processing'
+                            ? 'bg-blue-500 text-white animate-pulse'
+                            : 'bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-400'
+                      }`}
+                    >
+                      {step.status === 'completed' ? '✓' : index + 1}
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium">{step.label}</div>
+                      <div className="text-xs opacity-75">{step.description}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-gray-600">파일 크기</p>
-              <p className="font-medium">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">예상 소요 시간</p>
-              <p className="font-medium flex items-center">
-                <Clock className="w-4 h-4 mr-1" />
-                {Math.ceil(estimatedTime / 1000)}초
-              </p>
-            </div>
-          </div>
-        </div>
 
-        {/* 진행 상황 */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">변환 진행 상황</h2>
-          <ProgressTracker steps={steps} currentStep={steps[currentStep]?.id} />
-        </div>
-
-        {/* 광고 (무료 사용자만) */}
-        {!isPremium && (
-          <div className="bg-gray-100 rounded-lg p-6 mb-8 text-center">
-            <p className="text-gray-600 mb-4">광고</p>
-            <div className="bg-white rounded p-8 border-2 border-dashed border-gray-300">
-              <p className="text-gray-500">Google AdSense 광고가 표시됩니다</p>
-            </div>
-            <p className="text-sm text-gray-500 mt-4">
-              광고를 제거하고 더 나은 경험을 원하신다면 프리미엄으로 업그레이드하세요.
-            </p>
-          </div>
-        )}
-
-        {/* 옵션 정보 */}
-        {(options.ocr || options.llm || options.highQualityImages) && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
-            <h3 className="text-lg font-semibold text-blue-900 mb-3">적용된 프리미엄 옵션</h3>
-            <div className="space-y-2">
-              {options.ocr && (
-                <div className="flex items-center text-blue-800">
-                  <FileText className="w-4 h-4 mr-2" />
-                  <span>OCR 텍스트 인식 활성화</span>
+            {/* 파일 정보 요약 */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                파일 정보
+              </h3>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">파일명:</span>
+                  <span className="font-medium text-gray-900 dark:text-white truncate ml-2">
+                    {file.name}
+                  </span>
                 </div>
-              )}
-              {options.llm && (
-                <div className="flex items-center text-blue-800">
-                  <Brain className="w-4 h-4 mr-2" />
-                  <span>AI 문맥 개선 활성화</span>
+                <div className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">크기:</span>
+                  <span className="font-medium text-gray-900 dark:text-white">
+                    {(file.size / (1024 * 1024)).toFixed(1)} MB
+                  </span>
                 </div>
-              )}
-              {options.highQualityImages && (
-                <div className="flex items-center text-blue-800">
-                  <Download className="w-4 h-4 mr-2" />
-                  <span>고해상도 이미지 처리 활성화</span>
+                <div className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">예상 시간:</span>
+                  <span className="font-medium text-gray-900 dark:text-white flex items-center">
+                    <Clock className="w-3 h-3 mr-1" />
+                    {Math.ceil(estimatedTime / 1000)}초
+                  </span>
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* 에러 메시지 */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-8">
-            <div className="flex items-center">
-              <AlertCircle className="w-5 h-5 text-red-600 mr-2" />
-              <div>
-                <h3 className="text-lg font-semibold text-red-800">변환 실패</h3>
-                <p className="text-red-700">{error}</p>
               </div>
             </div>
           </div>
-        )}
 
-        {/* 완료 메시지 */}
-        {!isProcessing && !error && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-6 text-center">
-            <h3 className="text-lg font-semibold text-green-800 mb-2">변환 완료!</h3>
-            <p className="text-green-700">
-              변환이 성공적으로 완료되었습니다. 잠시 후 다운로드 페이지로 이동합니다...
-            </p>
+          {/* 메인 콘텐츠 영역 */}
+          <div className="lg:col-span-9">
+            {/* 진행 상황 메인 패널 */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                  변환 진행 상황
+                </h2>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">처리 중</span>
+                </div>
+              </div>
+
+              {/* 진행률 바 */}
+              <div className="mb-6">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    전체 진행률
+                  </span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {Math.round(((currentStep + 1) / steps.length) * 100)}%
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                  <div
+                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              {/* 상세 진행 트래커 */}
+              <ProgressTracker steps={steps} currentStep={steps[currentStep]?.id} />
+            </div>
+
+            {/* 옵션 정보 & 상태 메시지를 한 줄에 */}
+            <div className="grid md:grid-cols-2 gap-6 mb-6">
+              {/* 옵션 정보 */}
+              {(options.ocr || options.llm || options.highQualityImages) && (
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-3">
+                    프리미엄 옵션
+                  </h3>
+                  <div className="space-y-2">
+                    {options.ocr && (
+                      <div className="flex items-center text-blue-800 dark:text-blue-400 text-sm">
+                        <FileText className="w-4 h-4 mr-2" />
+                        <span>OCR 텍스트 인식</span>
+                      </div>
+                    )}
+                    {options.llm && (
+                      <div className="flex items-center text-blue-800 dark:text-blue-400 text-sm">
+                        <Brain className="w-4 h-4 mr-2" />
+                        <span>AI 문맥 개선</span>
+                      </div>
+                    )}
+                    {options.highQualityImages && (
+                      <div className="flex items-center text-blue-800 dark:text-blue-400 text-sm">
+                        <Download className="w-4 h-4 mr-2" />
+                        <span>고해상도 이미지</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 상태 메시지 영역 */}
+              <div className="space-y-4">
+                {/* 에러 메시지 */}
+                {error && (
+                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4">
+                    <div className="flex items-center">
+                      <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mr-2" />
+                      <div>
+                        <h3 className="text-sm font-semibold text-red-800 dark:text-red-300">
+                          변환 실패
+                        </h3>
+                        <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 완료 메시지 */}
+                {!isProcessing && !error && (
+                  <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
+                    <div className="flex items-center">
+                      <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center mr-2">
+                        <span className="text-white text-xs">✓</span>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold text-green-800 dark:text-green-300">
+                          변환 완료!
+                        </h3>
+                        <p className="text-sm text-green-700 dark:text-green-400">
+                          곧 다운로드 페이지로 이동합니다...
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 광고 (무료 사용자만) - 더 컴팩트하게 */}
+            {!isPremium && (
+              <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4 text-center">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">광고</p>
+                  <button
+                    onClick={() => navigate('/premium')}
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    광고 제거하기
+                  </button>
+                </div>
+                <div className="bg-white dark:bg-gray-600 rounded p-4 border-2 border-dashed border-gray-300 dark:border-gray-500">
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">Google AdSense</p>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </main>
     </div>
   )

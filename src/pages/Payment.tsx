@@ -7,6 +7,7 @@ import { Button } from '../components/common'
 import { paymentService, STRIPE_PRICE_IDS } from '../services/payment'
 import { supabaseService } from '../services/supabase'
 import { CreditCard, Shield, CheckCircle, AlertCircle } from 'lucide-react'
+import { logAndGetUserMessage } from '../utils/error'
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
 
@@ -59,8 +60,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ onSuccess, onError }) => {
         onSuccess()
       }
     } catch (error) {
-      // console.error('결제 처리 실패:', error)
-      onError('결제 처리 중 오류가 발생했습니다.')
+      onError(logAndGetUserMessage(error, '결제 처리 중 오류가 발생했습니다.'))
     } finally {
       setIsProcessing(false)
     }

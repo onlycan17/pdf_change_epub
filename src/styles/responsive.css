@@ -1,9 +1,63 @@
-/* Responsive Design Utilities */
+/* Responsive Design Utilities - Desktop First Approach */
 
 /* Breakpoints */
 @custom-media --mobile (max-width: 640px);
 @custom-media --tablet (min-width: 641px) and (max-width: 1024px);
 @custom-media --desktop (min-width: 1025px);
+@custom-media --large-desktop (min-width: 1280px);
+@custom-media --extra-large-desktop (min-width: 1536px);
+
+/* Desktop First Base Styles */
+.container {
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+/* Desktop containers */
+@media (min-width: 1025px) {
+  .container {
+    max-width: 1024px;
+  }
+
+  .container-lg {
+    max-width: 1280px;
+  }
+
+  .container-xl {
+    max-width: 1536px;
+  }
+}
+
+/* Large desktop containers */
+@media (min-width: 1280px) {
+  .container {
+    max-width: 1280px;
+  }
+
+  .container-lg {
+    max-width: 1536px;
+  }
+
+  .container-xl {
+    max-width: 1792px;
+  }
+}
+
+/* Extra large desktop containers */
+@media (min-width: 1536px) {
+  .container {
+    max-width: 1536px;
+  }
+
+  .container-lg {
+    max-width: 1792px;
+  }
+
+  .container-xl {
+    max-width: 2048px;
+  }
+}
 
 /* Mobile First Responsive Utilities */
 @media (max-width: 640px) {
@@ -1268,6 +1322,288 @@
 
 .dark .responsive-form-hover:hover {
   background-color: #4b5563;
+}
+
+/* Desktop Sidebar Styles */
+.desktop-sidebar {
+  width: 256px;
+  background: white;
+  border-right: 1px solid #e5e7eb;
+  height: 100vh;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 50;
+  overflow-y: auto;
+}
+
+.dark .desktop-sidebar {
+  background: #1f2937;
+  border-right-color: #374151;
+}
+
+.desktop-sidebar-header {
+  padding: 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.dark .desktop-sidebar-header {
+  border-bottom-color: #374151;
+}
+
+.desktop-sidebar-nav {
+  padding: 1rem;
+}
+
+.desktop-sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  margin: 0.25rem 0;
+  border-radius: 0.5rem;
+  color: #6b7280;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.desktop-sidebar-nav-item:hover {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.dark .desktop-sidebar-nav-item {
+  color: #9ca3af;
+}
+
+.dark .desktop-sidebar-nav-item:hover {
+  background-color: #374151;
+  color: #e5e7eb;
+}
+
+.desktop-sidebar-nav-item.active {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.dark .desktop-sidebar-nav-item.active {
+  background-color: #1e3a8a;
+  color: #93c5fd;
+}
+
+.desktop-sidebar-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.dark .desktop-sidebar-footer {
+  border-top-color: #374151;
+}
+
+/* Main content with sidebar */
+.main-content-with-sidebar {
+  margin-left: 256px;
+  min-height: 100vh;
+}
+
+/* Desktop Grid Layouts */
+.desktop-grid-2 {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 2rem;
+}
+
+.desktop-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+}
+
+.desktop-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2rem;
+}
+
+/* Desktop Card Styles */
+.desktop-card {
+  background: white;
+  border-radius: 1rem;
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  padding: 2rem;
+}
+
+.dark .desktop-card {
+  background: #1f2937;
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.3),
+    0 2px 4px -1px rgba(0, 0, 0, 0.2);
+}
+
+/* Desktop Button Styles */
+.desktop-button {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.desktop-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Desktop Typography */
+.desktop-heading-1 {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.desktop-heading-2 {
+  font-size: 2.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.desktop-heading-3 {
+  font-size: 1.875rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.desktop-text-lg {
+  font-size: 1.125rem;
+  line-height: 1.75;
+}
+
+/* Desktop Form Styles */
+.desktop-form-group {
+  margin-bottom: 1.5rem;
+}
+
+.desktop-form-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.dark .desktop-form-label {
+  color: #d1d5db;
+}
+
+.desktop-form-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.desktop-form-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.dark .desktop-form-input {
+  background-color: #374151;
+  border-color: #4b5563;
+  color: #f9fafb;
+}
+
+.dark .desktop-form-input:focus {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+}
+
+/* Desktop Navigation */
+.desktop-nav {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.desktop-nav-item {
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  color: #6b7280;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.desktop-nav-item:hover {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.dark .desktop-nav-item {
+  color: #9ca3af;
+}
+
+.dark .desktop-nav-item:hover {
+  background-color: #374151;
+  color: #e5e7eb;
+}
+
+/* Responsive breakpoints for desktop styles */
+@media (max-width: 1024px) {
+  .desktop-sidebar {
+    display: none;
+  }
+
+  .main-content-with-sidebar {
+    margin-left: 0;
+  }
+
+  .desktop-grid-2,
+  .desktop-grid-3,
+  .desktop-grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Large desktop optimizations */
+@media (min-width: 1280px) {
+  .desktop-heading-1 {
+    font-size: 3.5rem;
+  }
+
+  .desktop-heading-2 {
+    font-size: 2.5rem;
+  }
+
+  .desktop-card {
+    padding: 2.5rem;
+  }
+}
+
+/* Extra large desktop optimizations */
+@media (min-width: 1536px) {
+  .desktop-heading-1 {
+    font-size: 4rem;
+  }
+
+  .desktop-heading-2 {
+    font-size: 3rem;
+  }
+
+  .desktop-grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .desktop-grid-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }
 
 .dark .responsive-form-active:active {
