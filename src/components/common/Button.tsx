@@ -40,8 +40,6 @@ const Button: React.FC<ButtonProps> = ({
     transition-all duration-200 ease-in-out
     focus:outline-none focus:ring-2 focus:ring-offset-2
     disabled:opacity-50 disabled:cursor-not-allowed
-    hover:transform hover:-translate-y-0.5 hover:shadow-lg
-    active:transform active:translate-y-0 active:shadow-md
   `
 
   const variantClasses = {

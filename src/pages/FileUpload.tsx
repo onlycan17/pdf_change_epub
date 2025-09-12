@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { FileUpload as FileUploadComponent, Button } from '../components/common'
-import { Crown, FileText, Image, Brain } from 'lucide-react'
+import { Crown, FileText, Image, Brain, Upload, Zap, Shield } from 'lucide-react'
 
 const FileUpload: React.FC = () => {
   const { user } = useAuth()
@@ -69,29 +69,42 @@ const FileUpload: React.FC = () => {
       })
     } catch (error) {
       // TODO: 에러 처리
-      // console.error('변환 시작 실패:', error)
+      console.error('변환 시작 실패:', error)
     } finally {
       setIsProcessing(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* 데스크탑 헤더 - 더 넓은 레이아웃으로 정보 밀도 향상 */}
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800">
+      {/* Enhanced Header */}
+      <header className="bg-white/80 dark:bg-slate-800/80 backdrop-blur border-b border-slate-200 dark:border-slate-700 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 lg:px-12">
           <div className="flex items-center justify-between h-16">
+            {/* Logo and Title */}
             <div className="flex items-center space-x-4">
               <button
                 onClick={() => navigate('/')}
                 className="flex items-center text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition-colors"
               >
-                ← 홈으로
+                <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                  />
+                </svg>
+                홈으로
               </button>
-              <h1 className="text-xl font-semibold text-gray-900 dark:text-white">PDF 변환</h1>
+              <div className="hidden lg:block">
+                <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
+                  PDF 파일 업로드
+                </h1>
+              </div>
             </div>
 
-            {/* 데스크탑용 사용자 상태 표시 - 헤더로 이동 */}
+            {/* User Status */}
             <div className="flex items-center space-x-4">
               {!user ? (
                 <Button
@@ -102,14 +115,21 @@ const FileUpload: React.FC = () => {
                   로그인
                 </Button>
               ) : (
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">{user.email}</span>
+                <div className="flex items-center space-x-3">
                   {isPremium && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-200">
-                      <Crown className="w-3 h-3 mr-1" />
-                      프리미엄
-                    </span>
+                    <div className="badge badge-premium flex items-center space-x-1">
+                      <Crown className="w-3 h-3" />
+                      <span>프리미엄</span>
+                    </div>
                   )}
+
+                  <div className="text-sm text-slate-600 dark:text-slate-400 hidden sm:block">
+                    {user.email}
+                  </div>
+
+                  <Button variant="ghost" size="sm">
+                    로그아웃
+                  </Button>
                 </div>
               )}
             </div>
@@ -117,23 +137,23 @@ const FileUpload: React.FC = () => {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* 파일 크기 제한 안내 - 더 컴팩트하게 */}
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3 mb-6">
+      <main className="max-w-7xl mx-auto px-6 lg:px-12 py-8">
+        {/* Enhanced File Size Notice */}
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-xl p-4 mb-8">
           <div className="flex items-center">
-            <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
+            <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400 mr-3" />
             <p className="text-sm text-blue-800 dark:text-blue-300">
-              {isPremium ? `최대 300MB PDF 파일` : `최대 10MB PDF 파일 (프리미엄: 300MB)`}
+              {isPremium ? `최대 300MB PDF 파일 지원` : `최대 10MB PDF 파일 (프리미엄: 300MB)`}
             </p>
           </div>
         </div>
 
-        {/* 게스트 모드 안내 - 모바일에서만 표시 */}
+        {/* Enhanced Guest Notice */}
         {!user && (
-          <div className="lg:hidden bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4 mb-6">
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-xl p-6 mb-8">
             <div className="flex items-center justify-between">
               <div className="flex items-center">
-                <Crown className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mr-2" />
+                <Crown className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mr-3" />
                 <div>
                   <h4 className="font-medium text-yellow-800 dark:text-yellow-300">게스트 모드</h4>
                   <p className="text-sm text-yellow-700 dark:text-yellow-400">
@@ -152,20 +172,21 @@ const FileUpload: React.FC = () => {
           </div>
         )}
 
-        {/* 데스크탑 2단 레이아웃 - 더 넓은 공간 활용 */}
+        {/* Enhanced 2-Column Layout */}
         <div className="grid lg:grid-cols-12 gap-8">
-          {/* 메인 업로드 영역 - 더 넓은 공간 */}
+          {/* Main Upload Area */}
           <div className="lg:col-span-8">
-            {/* 업로드 영역 - 더 큰 드롭존 */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-8 mb-6 min-h-[400px] flex flex-col justify-center">
-              <div className="text-center mb-6">
-                <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">
+            {/* Enhanced Upload Zone */}
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-8 lg:p-12 mb-6 min-h-[450px] flex flex-col justify-center">
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
                   PDF 파일 업로드
                 </h2>
-                <p className="text-gray-600 dark:text-gray-400">
+                <p className="text-lg text-slate-600 dark:text-slate-400">
                   변환할 PDF 파일을 드래그 앤 드롭하거나 클릭하여 선택하세요
                 </p>
               </div>
+
               <FileUploadComponent
                 onFileSelect={handleFileSelect}
                 maxSize={maxFileSize}
@@ -173,26 +194,26 @@ const FileUpload: React.FC = () => {
               />
             </div>
 
-            {/* 선택된 파일 정보 - 더 컴팩트하게 */}
+            {/* Enhanced File Info */}
             {selectedFile && (
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
                     <div className="flex-shrink-0">
-                      <FileText className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                      <FileText className="w-10 h-10 text-blue-600 dark:text-blue-400" />
                     </div>
                     <div>
-                      <h3 className="font-medium text-gray-900 dark:text-white">
+                      <h3 className="font-semibold text-slate-900 dark:text-white">
                         {selectedFile.name}
                       </h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                      <p className="text-sm text-slate-500 dark:text-gray-400">
                         {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • {selectedFile.type}
                       </p>
                     </div>
                   </div>
                   <button
                     onClick={() => setSelectedFile(null)}
-                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    className="text-slate-400 hover:text-slate-600 dark:hover:text-gray-300 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
@@ -208,116 +229,130 @@ const FileUpload: React.FC = () => {
             )}
           </div>
 
-          {/* 옵션 설정 - 더 컴팩트한 사이드바 */}
+          {/* Options Sidebar */}
           <div className="lg:col-span-4">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">변환 옵션</h3>
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-6">
+              <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
+                변환 옵션
+              </h3>
 
-              {/* 옵션들을 더 컴팩트하게 배치 */}
-              <div className="space-y-3">
-                {/* 기본 옵션 (무료) */}
-                <div className="flex items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <input type="checkbox" defaultChecked disabled className="mr-3" />
+              <div className="space-y-4">
+                {/* Basic Option (Free) */}
+                <div className="flex items-center p-4 bg-slate-50 dark:bg-slate-700 rounded-xl">
+                  <input type="checkbox" defaultChecked disabled className="w-5 h-5 mr-4" />
                   <div className="flex-1">
-                    <div className="flex items-center">
-                      <FileText className="w-4 h-4 mr-2 text-gray-600 dark:text-gray-400" />
-                      <span className="font-medium text-gray-900 dark:text-white text-sm">
+                    <div className="flex items-center mb-2">
+                      <FileText className="w-4 h-4 mr-3 text-slate-600 dark:text-gray-400" />
+                      <span className="font-medium text-slate-900 dark:text-white">
                         기본 텍스트 추출
                       </span>
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <p className="text-sm text-slate-500 dark:text-gray-400">
                       PDF의 텍스트 내용 추출
                     </p>
                   </div>
                 </div>
 
-                {/* OCR 옵션 */}
+                {/* OCR Option */}
                 <div
-                  className={`flex items-center p-3 rounded-lg ${!isPremium ? 'bg-gray-100 dark:bg-gray-700 opacity-50' : 'bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600'}`}
+                  className={`flex items-center p-4 rounded-xl transition-all ${!isPremium ? 'bg-slate-100 dark:bg-slate-700 opacity-60' : 'bg-white dark:bg-slate-700 border border-slate-200 dark:border-gray-600 hover:shadow-md'}`}
                 >
                   <input
                     type="checkbox"
                     checked={selectedOptions.ocr}
                     onChange={() => handleOptionChange('ocr')}
                     disabled={!isPremium}
-                    className="mr-3"
+                    className="w-5 h-5 mr-4"
                   />
                   <div className="flex-1">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center">
-                        <FileText className="w-4 h-4 mr-2 text-gray-600 dark:text-gray-400" />
-                        <span className="font-medium text-gray-900 dark:text-white text-sm">
+                        <FileText className="w-4 h-4 mr-3 text-slate-600 dark:text-gray-400" />
+                        <span className="font-medium text-slate-900 dark:text-white">
                           OCR 텍스트 인식
                         </span>
                       </div>
                       {!isPremium && <Crown className="w-4 h-4 text-yellow-500" />}
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <p className="text-sm text-slate-500 dark:text-gray-400">
                       스캔된 문서의 텍스트 추출
                     </p>
                   </div>
                 </div>
 
-                {/* LLM 옵션 */}
+                {/* LLM Option */}
                 <div
-                  className={`flex items-center p-3 rounded-lg ${!isPremium ? 'bg-gray-100 dark:bg-gray-700 opacity-50' : 'bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600'}`}
+                  className={`flex items-center p-4 rounded-xl transition-all ${!isPremium ? 'bg-slate-100 dark:bg-slate-700 opacity-60' : 'bg-white dark:bg-slate-700 border border-slate-200 dark:border-gray-600 hover:shadow-md'}`}
                 >
                   <input
                     type="checkbox"
                     checked={selectedOptions.llm}
                     onChange={() => handleOptionChange('llm')}
                     disabled={!isPremium}
-                    className="mr-3"
+                    className="w-5 h-5 mr-4"
                   />
                   <div className="flex-1">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center">
-                        <Brain className="w-4 h-4 mr-2 text-gray-600 dark:text-gray-400" />
-                        <span className="font-medium text-gray-900 dark:text-white text-sm">
+                        <Brain className="w-4 h-4 mr-3 text-slate-600 dark:text-gray-400" />
+                        <span className="font-medium text-slate-900 dark:text-white">
                           AI 문맥 개선
                         </span>
                       </div>
                       {!isPremium && <Crown className="w-4 h-4 text-yellow-500" />}
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <p className="text-sm text-slate-500 dark:text-gray-400">
                       DeepSeek AI로 문맥 연결
                     </p>
                   </div>
                 </div>
 
-                {/* 고해상도 이미지 */}
+                {/* High Quality Images */}
                 <div
-                  className={`flex items-center p-3 rounded-lg ${!isPremium ? 'bg-gray-100 dark:bg-gray-700 opacity-50' : 'bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600'}`}
+                  className={`flex items-center p-4 rounded-xl transition-all ${!isPremium ? 'bg-slate-100 dark:bg-slate-700 opacity-60' : 'bg-white dark:bg-slate-700 border border-slate-200 dark:border-gray-600 hover:shadow-md'}`}
                 >
                   <input
                     type="checkbox"
                     checked={selectedOptions.highQualityImages}
                     onChange={() => handleOptionChange('highQualityImages')}
                     disabled={!isPremium}
-                    className="mr-3"
+                    className="w-5 h-5 mr-4"
                   />
                   <div className="flex-1">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center">
-                        <Image className="w-4 h-4 mr-2 text-gray-600 dark:text-gray-400" />
-                        <span className="font-medium text-gray-900 dark:text-white text-sm">
+                        <Image className="w-4 h-4 mr-3 text-slate-600 dark:text-gray-400" />
+                        <span className="font-medium text-slate-900 dark:text-white">
                           고해상도 이미지
                         </span>
                       </div>
                       {!isPremium && <Crown className="w-4 h-4 text-yellow-500" />}
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <p className="text-sm text-slate-500 dark:text-gray-400">
                       최대 품질 이미지 유지
                     </p>
                   </div>
                 </div>
               </div>
+
+              {/* Quick Info */}
+              <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
+                <div className="flex items-center mb-2">
+                  <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400 mr-2" />
+                  <span className="text-sm font-medium text-slate-900 dark:text-white">
+                    빠른 변환
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-gray-400">
+                  평균 변환 시간: 30초 - 2분 (파일 크기에 따라 다름)
+                </p>
+              </div>
             </div>
 
-            {/* 프리미엄 업그레이드 안내 - 더 미니멀하게 */}
+            {/* Premium Upgrade Notice */}
             {!isPremium && (
-              <div className="bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-2">
+              <div className="bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 border border-yellow-200 dark:border-yellow-700 rounded-xl p-6">
+                <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center">
                     <Crown className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mr-2" />
                     <h4 className="font-medium text-yellow-800 dark:text-yellow-300">
@@ -325,12 +360,24 @@ const FileUpload: React.FC = () => {
                     </h4>
                   </div>
                 </div>
-                <p className="text-sm text-yellow-700 dark:text-yellow-400 mb-3">
+                <p className="text-sm text-yellow-700 dark:text-yellow-400 mb-4">
                   AI 기술로 더 나은 변환 결과를 얻으세요
                 </p>
+
+                <div className="space-y-3 mb-6">
+                  <div className="flex items-center text-sm">
+                    <Shield className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mr-2" />
+                    <span>고급 OCR 기능</span>
+                  </div>
+                  <div className="flex items-center text-sm">
+                    <Brain className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mr-2" />
+                    <span>AI 문맥 개선</span>
+                  </div>
+                </div>
+
                 <Button
                   variant="premium"
-                  size="sm"
+                  size="lg"
                   onClick={() => navigate('/premium')}
                   className="w-full"
                 >
@@ -341,18 +388,34 @@ const FileUpload: React.FC = () => {
           </div>
         </div>
 
-        {/* 변환 시작 버튼 - 더 눈에 띄게 */}
+        {/* Enhanced Convert Button */}
         {selectedFile && (
-          <div className="mt-8 text-center">
+          <div className="mt-12 text-center">
             <Button
               onClick={handleStartConversion}
               disabled={isProcessing}
               isLoading={isProcessing}
-              size="lg"
-              className="px-12 py-4 text-lg"
+              size="xl"
+              className="px-16 py-5 text-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all"
             >
-              {isProcessing ? '변환 준비 중...' : '변환 시작'}
+              {isProcessing ? (
+                <>
+                  <div className="loading-spinner w-5 h-5 mr-3"></div>
+                  변환 준비 중...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-5 h-5 mr-3" />
+                  변환 시작
+                </>
+              )}
             </Button>
+
+            {!isProcessing && (
+              <p className="mt-4 text-sm text-slate-600 dark:text-gray-400">
+                선택된 옵션에 따라 변환 시간이 달라질 수 있습니다
+              </p>
+            )}
           </div>
         )}
       </main>
