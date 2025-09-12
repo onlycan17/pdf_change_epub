@@ -69,6 +69,7 @@ const FileUpload: React.FC = () => {
       })
     } catch (error) {
       // TODO: 에러 처리
+      // eslint-disable-next-line no-console
       console.error('변환 시작 실패:', error)
     } finally {
       setIsProcessing(false)

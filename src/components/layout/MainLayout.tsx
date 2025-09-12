@@ -18,6 +18,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       await supabaseService.signOut()
       navigate('/login')
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('로그아웃 실패:', error)
     }
   }
