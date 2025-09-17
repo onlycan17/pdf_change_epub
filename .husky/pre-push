@@ -1,5 +1,12 @@
 #!/bin/sh
 . "$(dirname "$0")/_/husky.sh"
 
-echo "Running pre-push checks..."
-npm run check
+if [ -d ".venv" ]; then
+  PYTHON_CMD=".venv/bin/python"
+else
+  PYTHON_CMD="python3"
+fi
+
+echo "[husky] pre-push using $PYTHON_CMD"
+PYTHON="$PYTHON_CMD" make lint || exit 1
+PYTHON="$PYTHON_CMD" make test || exit 1

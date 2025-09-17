@@ -1,4 +1,13 @@
 #!/bin/sh
 . "$(dirname "$0")/_/husky.sh"
 
-npx lint-staged
+if [ -d ".venv" ]; then
+  PYTHON_CMD=".venv/bin/python"
+else
+  PYTHON_CMD="python3"
+fi
+
+printf "[husky] using %s for quality checks\n" "$PYTHON_CMD"
+PYTHON="$PYTHON_CMD" make fmt || exit 1
+PYTHON="$PYTHON_CMD" make lint || exit 1
+PYTHON="$PYTHON_CMD" make test || exit 1
