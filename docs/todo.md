@@ -6,13 +6,14 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
 ### 현재 상태
 - 기본 프로젝트 구조 및 품질 인프라 완료
 - Python 백엔드 개발 시작 단계
+- 핵심 라이브러리 목록 업데이트 완료 (requirements.txt)
 
 ---
 
 ## 현재 작업 (M0: 프로젝트 초기 설정 및 설계 확정)
 
 ### 아키텍처 설계
-- [x] 기술 스택 선정 (Python, FastAPI, React, PyPDF2/Tesseract, ebooklib)
+- [x] 기술 스택 선정 (Python, FastAPI, React, PyPDF2/PaddleOCR, ebooklib)
 - [ ] 상세 아키텍처 다이어그래 작성 (서비스/도메인 레이어 분리)
 - [ ] 데이터 흐름 정의 (PDF 추출 → OCR 처리 → EPUB 생성)
 - [ ] 의존성 주입 방식 결정 (FastAPI의 `Depends` 활용)
@@ -21,6 +22,7 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
 ### 개발 환경 완성
 - [ ] Python 가상 환경 설정 (.venv)
 - [x] 품질 도구 설치 (`make fmt`, `make lint`, `make test` 확인)
+- [x] 핵심 라이브러리 의존성 정의 완료 (requirements.txt 업데이트)
 - [ ] IDE/개발 환경 최적화 (VSCode Python 확장자 설정)
 - [ ] 디버깅 환경 구축 (logging, breakpoint 설정)
 
@@ -40,8 +42,8 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
 
 **OCR 모듈 개발**
 - [ ] 스캔 PDF 자동 감지 알고리즘 구현
-- [ ] Tesseract/Pytesseract 연동 모듈 개발
-- [ ] 한국어 OCR 언어팱 설정 및 테스트
+- [ ] PaddleOCR 연동 모듈 개발 (한국어 특화)
+- [ ] 한국어 OCR 언어팩 설정 및 테스트
 - [ ] DPI 자동 최적화 기능 (300dpi 권장)
 - [ ] OCR 결과 후처리 (특수문자, 줄바꿈 정규화)
 - [ ] 영어/한국어 혼합 문서 처리 최적화
@@ -217,4 +219,5 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
 
 ## 업데이트 로그
 - **2024-09-17**: 초기 버전 작성, 프로젝트 개요 및 M0 단계 정의
+- **2024-09-17**: 핵심 라이브러리 목록 업데이트 (PaddleOCR로 변경, 의존성 추가)
 - **2024-09-XX**: [추후 업데이트]
