@@ -12,7 +12,7 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
 ## 현재 작업 (M0: 프로젝트 초기 설정 및 설계 확정)
 
 ### 아키텍처 설계
-- [x] 기술 스acks 선정 (Python, FastAPI, React, PyPDF2/Tesseract, ebooklib)
+- [x] 기술 스택 선정 (Python, FastAPI, React, PyPDF2/Tesseract, ebooklib)
 - [ ] 상세 아키텍처 다이어그래 작성 (서비스/도메인 레이어 분리)
 - [ ] 데이터 흐름 정의 (PDF 추출 → OCR 처리 → EPUB 생성)
 - [ ] 의존성 주입 방식 결정 (FastAPI의 `Depends` 활용)
