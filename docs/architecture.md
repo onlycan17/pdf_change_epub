@@ -1,7 +1,7 @@
-# 아키텍처 설계서 (MVP)
+# 아키텍처 설계서 (MVP v2)
 
 ## 1. 개요
-이 문서는 PDF를 EPUB으로 변환하는 서비스의 MVP(Minimum Viable Product) 아키텍처를 정의합니다. **React, FastAPI, Supabase**를 핵심 기술 스택으로 사용하여 개발을 간소화하고 확장성을 확보하는 것을 목표로 합니다.
+이 문서는 PDF to EPUB 변환 서비스의 아키텍처를 정의합니다. 사용자 등급(무료/유료)을 도입하고, LLM을 활용한 변환 품질 향상을 목표로 합니다.
 
 ## 2. 전체 아키텍처
 
@@ -11,7 +11,7 @@ graph TD
         A[React Web App]
     end
 
-    subgraph "Supabase (BaaS)"
+    subgraph "BaaS (Supabase)"
         B[Auth]
         C[Storage]
         D[Postgres DB]
@@ -20,90 +20,102 @@ graph TD
 
     subgraph Backend
         F[FastAPI Processing Service]
+        G[LLM API]
+        H[Intermediate<br>Markdown Storage]
     end
 
-    A -- Login/Signup --> B
+    A -- Login (Optional) --> B
     A -- Upload PDF --> C
-    A -- Read/Write Job Status --> D
+    A -- Write Job Record --> D
 
     C -- on:upload trigger --> E
     E -- HTTP Request --> F
 
-    F -- Read PDF from Storage URL --> C
-    F -- Update Job Status/Progress --> D
-    F -- Write EPUB to Storage --> C
+    F -- 1. Get Job Info --> D
+    F -- 2. Read PDF --> C
+    F -- 3. Write MD --> H
+    F -- 4. Read MD --> H
+    F -- 5. Send to LLM --> G
+    G -- 6. Return Corrected Text --> F
+    F -- 7. Write Corrected MD --> H
+    F -- 8. Read Final MD --> H
+    F -- 9. Write EPUB --> C
+    F -- 10. Update Job Status --> D
 ```
 
 ### 데이터 흐름 (Data Flow)
 
-1.  **사용자 인증**: 사용자는 React 앱을 통해 Supabase Auth를 사용하여 회원가입 및 로그인을 처리합니다.
-2.  **파일 업로드**: 인증된 사용자는 PDF 파일을 React 앱에서 Supabase Storage로 직접 업로드합니다.
-3.  **작업 생성**: 파일이 업로드되면, 클라이언트는 `conversion_jobs` 테이블에 새로운 작업(job) 레코드를 생성합니다.
-4.  **변환 요청 (Trigger)**: Supabase Storage에 파일이 업로드되거나, `conversion_jobs` 테이블에 새로운 행이 삽입되면, 이를 트리거로 Supabase Edge Function이 호출됩니다.
-5.  **PDF 처리**: Edge Function은 변환 로직을 담고 있는 FastAPI 처리 서비스의 API를 호출합니다. 이때 PDF 파일의 Storage URL과 작업 ID를 전달합니다.
-6.  **변환 실행**: FastAPI 서비스는 전달받은 URL로 PDF 파일을 다운로드하여 OCR 및 EPUB 변환을 실행합니다. 처리 과정에서 작업 상태와 진행률(`progress`)을 Supabase DB에 주기적으로 업데이트합니다.
-7.  **결과 저장**: 변환이 완료되면, 생성된 EPUB 파일을 Supabase Storage에 업로드하고, `conversion_jobs` 테이블에 결과 파일의 URL과 함께 상태를 'completed'로 업데이트합니다.
-8.  **결과 확인**: React 앱은 Supabase의 실시간 구독(Realtime Subscription) 기능을 사용하여 작업 상태 변경을 감지하고, 변환이 완료되면 사용자에게 다운로드 링크를 제공합니다.
+1.  **사용자 및 파일 업로드**:
+    *   **로그인 사용자**: React 앱에서 Supabase Auth로 인증합니다.
+    *   **익명 사용자**: 별도 인증 없이 진행합니다.
+    *   사용자는 PDF 파일을 Supabase Storage에 업로드하고, 클라이언트는 `conversion_jobs` 테이블에 작업 레코드를 생성합니다. (익명 사용자의 경우 `user_id`는 NULL, `session_id`에 클라이언트 생성 UUID 저장)
+
+2.  **변환 작업 트리거**:
+    *   Supabase Edge Function이 Storage 업로드 이벤트를 감지하여 FastAPI 처리 서비스의 API(`/convert`)를 호출합니다. 작업 ID(job_id)를 전달합니다.
+
+3.  **FastAPI 처리 파이프라인**:
+    1.  **PDF 분석**: 전달받은 `job_id`로 DB에서 작업 정보를 조회합니다. PDF가 텍스트 기반인지 스캔본인지 분석합니다.
+    2.  **1차 추출 (PDF → Markdown)**: PDF를 분석하여 텍스트와 이미지를 추출하고, 중간 단계인 마크다운(.md) 파일로 `Intermediate Markdown Storage`에 저장합니다. 이 때 사용자의 OCR 선택 옵션을 반영합니다.
+    3.  **2차 보정 (LLM 호출)**: 저장된 마크다운의 텍스트 콘텐츠를 **LLM API**에 전송하여 문맥 교정 및 OCR 오타 수정을 요청합니다.
+    4.  **마크다운 업데이트**: LLM으로부터 받은 보정된 텍스트로 마크다운 파일을 업데이트합니다.
+    5.  **최종 생성 (Markdown → EPUB)**: 보정된 마크다운 파일을 기반으로 최종 EPUB 파일을 생성합니다.
+    6.  **결과 저장 및 상태 업데이트**: 생성된 EPUB을 Supabase Storage에 업로드하고, `conversion_jobs` 테이블의 `epub_file_url`과 `status`('completed')를 업데이트합니다.
+
+4.  **결과 확인**: React 앱은 Supabase Realtime으로 작업 상태 변경을 감지하고, 'completed' 상태가 되면 사용자에게 다운로드 링크를 제공합니다.
 
 ## 3. 컴포넌트 상세
 
-### 3.1. 프론트엔드 (React)
-- **역할**: 사용자 인터페이스, Supabase와의 직접 통신.
-- **주요 기능**:
-    - Supabase JS Client를 이용한 인증 및 데이터 관리.
-    - Supabase Storage로 파일 업로드.
-    - 실시간 구독을 통한 변환 상태 모니터링.
-- **기술 스택**: React, TypeScript, Vite, Supabase-js.
+### 3.1. 백엔드 서비스 (Supabase)
+- **Database (PostgreSQL)**: 익명 사용자를 지원하도록 스키마가 확장됩니다. RLS 정책은 `user_id`가 일치하거나, `user_id`가 NULL이고 `session_id`가 일치하는 경우에만 접근을 허용하도록 수정됩니다.
 
-### 3.2. 백엔드 서비스 (Supabase)
-- **역할**: 인증, 데이터베이스, 파일 저장, 서버리스 함수 실행 등 백엔드 인프라 제공.
+### 3.2. 처리 서비스 (FastAPI)
+- **역할**: LLM 연동을 포함한 전체 변환 파이프라인을 오케스트레이션합니다.
 - **주요 기능**:
-    - **Auth**: 사용자 회원가입, 로그인, 세션 관리.
-    - **Database (PostgreSQL)**: 작업 정보, 사용자 데이터, 로그 등 저장. RLS(Row Level Security)를 통해 데이터 접근 제어.
-    - **Storage**: 원본 PDF 및 결과 EPUB 파일 저장.
-    - **Edge Functions**: 스토리지 또는 DB 이벤트를 기반으로 FastAPI 처리 서비스를 호출하는 경량 로직 수행.
+    - PDF 분석 및 마크다운으로 1차 변환.
+    - **LLM 연동**: 외부 LLM API(예: OpenAI, Gemini)와 통신하여 텍스트 보정.
+    - 보정된 마크다운을 EPUB으로 최종 변환.
 
-### 3.3. 처리 서비스 (FastAPI)
-- **역할**: 실제 PDF to EPUB 변환 로직을 수행하는 컴퓨팅 집약적 서비스.
-- **주요 기능**:
-    - PDF 파싱 및 텍스트/이미지 추출.
-    - PaddleOCR을 이용한 다국어(한/영) OCR 처리.
-    - EPUB 파일 생성 및 검증.
-- **기술 스택**: Python, FastAPI, PaddleOCR, ebooklib.
-- **배포**: 독립적인 서버 또는 서버리스 환경(예: Google Cloud Run, AWS Fargate)에 배포하여 Supabase와 분리.
+### 3.3. LLM API
+- **역할**: 텍스트의 문맥을 자연스럽게 연결하고 OCR 과정에서 발생한 오타를 수정하여 변환 품질을 향상시킵니다.
 
 ## 4. 데이터베이스 스키마 (Supabase)
-
-`conversion_jobs` 테이블을 중심으로 사용자 정보와 작업 상태를 관리합니다.
 
 ```sql
 -- 변환 작업을 관리하는 테이블
 CREATE TABLE public.conversion_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
-    progress INTEGER NOT NULL DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL, -- 익명 사용자를 위해 NULL 허용
+    session_id TEXT, -- 익명 사용자를 위한 세션 식별자
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'analyzing', 'processing', 'correcting', 'generating', 'completed', 'failed')),
+    progress INTEGER NOT NULL DEFAULT 0,
     file_name TEXT NOT NULL,
     file_size BIGINT NOT NULL,
-    original_pdf_url TEXT,  -- Supabase Storage 원본 PDF URL
-    epub_file_url TEXT,     -- 생성된 EPUB 파일 URL
-    language TEXT NOT NULL DEFAULT 'kor' CHECK (language IN ('kor', 'eng')), -- OCR 처리 언어
-    ocr_used BOOLEAN NOT NULL DEFAULT FALSE,
+    original_pdf_url TEXT,
+    epub_file_url TEXT,
+    intermediate_md_path TEXT, -- 중간 마크다운 파일 경로
+    ocr_user_choice TEXT NOT NULL DEFAULT 'auto' CHECK (ocr_user_choice IN ('auto', 'force', 'off')), -- 사용자 OCR 선택
+    llm_used BOOLEAN NOT NULL DEFAULT FALSE, -- LLM 보정 사용 여부
     error_message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at TIMESTAMPTZ
 );
 
+-- 익명 사용자 추적을 위한 session_id 인덱스
+CREATE INDEX idx_jobs_session_id ON public.conversion_jobs (session_id);
+
 -- Row Level Security (RLS) 활성화
 ALTER TABLE public.conversion_jobs ENABLE ROW LEVEL SECURITY;
 
--- 정책: 사용자는 자신의 작업만 보고 생성/수정할 수 있다.
+-- 정책: 로그인 사용자는 자신의 작업만, 익명 사용자는 자신의 세션 작업만 관리 가능
 CREATE POLICY "User can manage their own conversion jobs"
 ON public.conversion_jobs FOR ALL
-USING (auth.uid() = user_id);
+USING (
+  (auth.uid() = user_id) OR
+  (user_id IS NULL AND session_id = current_setting('request.headers.x-session-id', true))
+);
 
--- updated_at 필드 자동 갱신을 위한 트리거
+-- updated_at 필드 자동 갱신 트리거 (기존과 동일)
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -118,6 +130,5 @@ FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 ```
 
 ## 5. 보안
-- **인증**: 모든 API 요청은 Supabase Auth를 통해 발급된 JWT로 인증됩니다.
-- **인가**: 데이터베이스 접근은 RLS 정책을 통해 엄격히 통제되며, 사용자는 자신의 데이터에만 접근할 수 있습니다.
-- **파일 접근**: Supabase Storage의 파일은 서명된 URL(Signed URL) 또는 RLS와 연계된 정책을 통해 접근을 제어하여 허가된 사용자만 다운로드할 수 있도록 설정합니다.
+- **익명 사용자 접근**: 익명 사용자의 요청은 클라이언트에서 생성한 고유 `session_id`를 HTTP 헤더(`x-session-id`)에 담아 전송하고, RLS 정책을 통해 해당 세션 ID를 가진 작업에만 접근하도록 제한합니다.
+- **API 비용 제어**: 무료 사용자의 LLM 및 OCR API 호출 횟수와 사용량을 제한하는 로직을 FastAPI 서비스 내에 구현합니다.

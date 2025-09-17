@@ -28,6 +28,7 @@
     - **PDF 처리**: PyPDF2 또는 pdfminer.six
     - **OCR 처리**: PaddleOCR (한국어 특화 모델)
     - **EPUB 생성**: ebooklib
+    - **LLM 연동**: OpenAI / Google Generative AI (문맥 및 오타 보정)
 
 ## 4. 개발 및 운영 (DevOps)
 - **컨테이너화**: Docker
