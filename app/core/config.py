@@ -54,9 +54,7 @@ class LLMSettings(BaseSettings):
     """LLM (Large Language Model) 설정"""
 
     model_config = SettingsConfigDict(
-        env_prefix="LLM_", 
-        env_file_encoding="utf-8",
-        protected_namespaces=()
+        env_prefix="LLM_", env_file_encoding="utf-8", protected_namespaces=()
     )
 
     provider: str = Field(default="openrouter", description="LLM 제공업체")

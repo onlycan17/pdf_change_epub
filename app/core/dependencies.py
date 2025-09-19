@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import Optional, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, HTTPException, Request, Response
+from fastapi.params import Depends as DependsParam
 from fastapi.security import APIKeyHeader  # type: ignore
 
 from app.core.config import Settings, get_settings
@@ -190,12 +192,17 @@ def create_dependency_chain(*dependencies):
         results = []
         for dependency in dependencies:
             if callable(dependency) and not isinstance(dependency, type):
-                # 의존성 함수 호출
-                result = await dependency(*args, **kwargs)
-                results.append(result)
-            else:
-                # 클래스 타입의 의존성은 FastAPI가 처리
+                # 의존성 함수 결과가 동기/비동기인지 판단해 처리
+                outcome = dependency(*args, **kwargs)
+                if inspect.isawaitable(outcome):
+                    outcome = await outcome
+                results.append(outcome)
+            elif isinstance(dependency, DependsParam):
+                # 이미 Depends 인스턴스인 경우 그대로 사용
                 results.append(dependency)
+            else:
+                # 클래스 타입의 의존성은 FastAPI가 처리하도록 Depends로 감싸기
+                results.append(Depends(dependency))
         return results
 
     return chained_dependency

@@ -19,14 +19,43 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
     - **텍스트 PDF**: PDF 텍스트/이미지 직접 추출 → 1차 마크다운 생성 → LLM 텍스트 보정 → 2차 마크다운 업데이트 → EPUB 생성
     - **스캔 PDF**: 에이전트 기반 처리 (멀티모달 LLM으로 이미지 분석 + OCR로 텍스트 추출) → 1차 마크다운 생성 → LLM 텍스트 보정 → 2차 마크다운 업데이트 → EPUB 생성
 - [x] 의존성 주입 방식 결정 (FastAPI의 `Depends` 활용)
-- [ ] 설정 관리 시스템 설계 (pydantic-settings 사용)
 
 ### 개발 환경 완성
-- [ ] Python 가상 환경 설정 (.venv)
+- [x] Python 가상 환경 설정 (.venv)
 - [x] 품질 도구 설치 (`make fmt`, `make lint`, `make test` 확인)
 - [x] 핵심 라이브러리 의존성 정의 완료 (requirements.txt 업데이트)
-- [ ] IDE/개발 환경 최적화 (VSCode Python 확장자 설정)
+- [x] IDE/개발 환경 최적화 (VSCode Python 확장자 설정)
 - [ ] 디버깅 환경 구축 (logging, breakpoint 설정)
+
+### 버그 수정: create_dependency_chain awaitable 오류
+- [ ] 대분류: 원인 분석
+  - [ ] 중분류: Pylance 경고 재현 및 로그 수집
+  - [x] 중분류: 동기 의존성 사용 사례 확인 (예: `get_settings_dependency`)
+- [ ] 대분류: 해결책 설계
+  - [x] 중분류: 비동기/동기 분기 처리 필요성 정의
+  - [x] 중분류: 결과 타입(설정 객체, `Depends`) 혼합 처리 전략 정리
+- [ ] 대분류: 구현 및 검증
+  - [x] 중분류: `create_dependency_chain` 로직 수정
+  - [x] 중분류: `make fmt && make test && make lint` 실행
+  - [x] 중분류: 문서 최신화 및 회고 기록
+
+#### 진행 로그
+- 2025-09-19: `inspect.isawaitable`을 사용해 동기/비동기 의존성을 모두 처리하도록 `create_dependency_chain`을 보완하고, `Depends` 객체 직접 전달 시 재포장하지 않도록 분기 추가.
+
+### 버그 수정: Pylance isinstance 타입 오류
+- [ ] 대분류: 원인 분석
+  - [x] 중분류: `Depends` 타입 정의 확인
+  - [x] 중분류: 기존 isinstance 분기 동작 방식 점검
+- [ ] 대분류: 해결책 설계
+  - [x] 중분류: FastAPI 실제 `Depends` 클래스 타입 확인 방법 정리
+  - [x] 중분류: 대체 검사 방식(예: `fastapi.params.Depends`) 결정
+- [ ] 대분류: 구현 및 검증
+  - [x] 중분류: `create_dependency_chain`의 `Depends` 분기 수정
+  - [x] 중분류: `make fmt && make test && make lint` 재실행
+  - [x] 중분류: 문서 최신화 및 회고 기록
+
+#### 진행 로그
+- 2025-09-19: FastAPI `Depends` 타입을 `fastapi.params.Depends`로 식별하도록 수정하고 정적 분석/테스트를 재실행하여 경고가 사라짐을 확인.
 
 ---
 
@@ -218,4 +247,4 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
 ## 업데이트 로그
 - **2024-09-17**: 초기 버전 작성, 프로젝트 개요 및 M0 단계 정의
 - **2024-09-17**: 핵심 라이브러리 목록 업데이트 (PaddleOCR로 변경, 의존성 추가)
-- **2024-09-XX**: [추후 업데이트]
+- **2024-09-19**: VSCode Python 개발 환경 최적화 완료 (.vscode 설정 파일 구성, 코드 품질 도구 설치 및 검증)
