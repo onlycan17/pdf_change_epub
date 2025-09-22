@@ -15,14 +15,39 @@ from app.core.dependencies import (
     validate_request,
     get_service_dependencies,
 )
+from app.core.logging_config import setup_logging, configure_debug_logging
 from app.api.v1 import auth, conversion
 
 
-# 로깅 설정
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+# 로깅 설정 초기화
+def setup_app_logging():
+    """애플리케이션 로깅 설정 초기화"""
+    settings = get_settings()
+
+    # 커스텀 로깅 설정 적용
+    setup_logging(
+        settings=settings,
+        log_level=getattr(settings, "log_level", "INFO"),
+        json_logs=not settings.debug,  # 개발 환경에서는 상세 로그
+    )
+
+    # 디버그 모드인 경우 추가 설정 적용
+    if settings.debug:
+        configure_debug_logging()
+
+    # 애플리케이션 로거 생성
+    logger = logging.getLogger(__name__)
+
+    # 성능 모니터링 로거 설정
+    from app.core.logging_config import setup_performance_logging
+
+    setup_performance_logging()
+
+    return logger
+
+
+# 로깅 설정 적용 및 로거 생성
+logger = setup_app_logging()
 
 
 @asynccontextmanager
@@ -38,8 +63,17 @@ async def lifespan(app: FastAPI):
     # 애플리케이션 시작 시 실행될 작업
     settings = get_settings()
 
-    logger.info(f"Starting {settings.app_name} v{settings.version}")
-    logger.info("Application starting up...")
+    # 시작 로깅 (구조화된 로거 사용)
+    from app.core.logging_config import get_logger
+
+    app_logger = get_logger("app.lifespan")
+
+    app_logger.info(
+        "Application starting",
+        service_name=settings.app_name,
+        version=settings.version,
+        environment="development" if settings.debug else "production",
+    )
 
     # 서비스 의존성 초기화
     await get_service_dependencies(settings)
@@ -47,7 +81,11 @@ async def lifespan(app: FastAPI):
     yield
 
     # 애플리케이션 종료 시 실행될 작업
-    logger.info("Application shutting down...")
+    app_logger.info(
+        "Application shutting down",
+        service_name=settings.app_name,
+        version=settings.version,
+    )
 
 
 # FastAPI 애플리케이션 인스턴스 생성

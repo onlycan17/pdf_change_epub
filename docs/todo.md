@@ -25,16 +25,16 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
 - [x] 품질 도구 설치 (`make fmt`, `make lint`, `make test` 확인)
 - [x] 핵심 라이브러리 의존성 정의 완료 (requirements.txt 업데이트)
 - [x] IDE/개발 환경 최적화 (VSCode Python 확장자 설정)
-- [ ] 디버깅 환경 구축 (logging, breakpoint 설정)
+- [x] 디버깅 환경 구축 (logging, breakpoint 설정) - 2025-09-19 완료
 
 ### 버그 수정: create_dependency_chain awaitable 오류
-- [ ] 대분류: 원인 분석
-  - [ ] 중분류: Pylance 경고 재현 및 로그 수집
+- [x] 대분류: 원인 분석
+  - [x] 중분류: Pylance 경고 재현 및 로그 수집
   - [x] 중분류: 동기 의존성 사용 사례 확인 (예: `get_settings_dependency`)
-- [ ] 대분류: 해결책 설계
+- [x] 대분류: 해결책 설계
   - [x] 중분류: 비동기/동기 분기 처리 필요성 정의
   - [x] 중분류: 결과 타입(설정 객체, `Depends`) 혼합 처리 전략 정리
-- [ ] 대분류: 구현 및 검증
+- [x] 대분류: 구현 및 검증
   - [x] 중분류: `create_dependency_chain` 로직 수정
   - [x] 중분류: `make fmt && make test && make lint` 실행
   - [x] 중분류: 문서 최신화 및 회고 기록
@@ -43,19 +43,34 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
 - 2025-09-19: `inspect.isawaitable`을 사용해 동기/비동기 의존성을 모두 처리하도록 `create_dependency_chain`을 보완하고, `Depends` 객체 직접 전달 시 재포장하지 않도록 분기 추가.
 
 ### 버그 수정: Pylance isinstance 타입 오류
-- [ ] 대분류: 원인 분석
+- [x] 대분류: 원인 분석
   - [x] 중분류: `Depends` 타입 정의 확인
   - [x] 중분류: 기존 isinstance 분기 동작 방식 점검
-- [ ] 대분류: 해결책 설계
+- [x] 대분류: 해결책 설계
   - [x] 중분류: FastAPI 실제 `Depends` 클래스 타입 확인 방법 정리
   - [x] 중분류: 대체 검사 방식(예: `fastapi.params.Depends`) 결정
-- [ ] 대분류: 구현 및 검증
+- [x] 대분류: 구현 및 검증
   - [x] 중분류: `create_dependency_chain`의 `Depends` 분기 수정
   - [x] 중분류: `make fmt && make test && make lint` 재실행
   - [x] 중분류: 문서 최신화 및 회고 기록
 
 #### 진행 로그
 - 2025-09-19: FastAPI `Depends` 타입을 `fastapi.params.Depends`로 식별하도록 수정하고 정적 분석/테스트를 재실행하여 경고가 사라짐을 확인.
+
+### 버그 수정: PDFAnalyzer bytes.read 경고 처리
+- [x] 대분류: 원인 분석
+  - [x] 중분류: Pylance 경고 발생 위치(`analyze_pdf`) 확인
+  - [x] 중분류: `Union[bytes, BytesIO]` 분기 제한 사항 정리
+- [x] 대분류: 해결책 설계
+  - [x] 중분류: 안전한 타입 가드/사용자 정의 프로토콜 도입 여부 결정
+  - [x] 중분류: `isinstance` 기반 분기와 예외 처리 전략 확정
+- [x] 대분류: 구현 및 검증
+  - [x] 중분류: `analyze_pdf` 분기 수정 및 정적 검사 재실행
+  - [x] 중분류: 회귀 테스트(`make fmt && make test && make lint`) 실행
+  - [x] 중분류: 문서 최신화 및 회고 기록
+
+#### 진행 로그
+- 2025-09-22: `PDFContentSource` 타입 별칭과 `_read_pdf_bytes` 헬퍼로 입력 분기를 표준화하고, `PDFAnalyzer`/`PDFExtractor`에 적용 후 `make fmt && make test && make lint`로 검증 완료.
 
 ---
 
@@ -65,7 +80,7 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
 **목표**: PDF 추출, OCR 처리, EPUB 생성 기본 기능 완성
 
 **코어 추출 모듈 개발**
-- [ ] PDF 분석 모듈 설계 (텍스트 기반 vs. 스캔 기반 자동 감지)
+- [x] PDF 분석 모듈 설계 (텍스트 기반 vs. 스캔 기반 자동 감지)
 - [ ] **워크플로우 A (텍스트 PDF)**: PyPDF2/pdfminer.six를 사용한 텍스트 및 이미지 직접 추출 기능 구현
 - [ ] **워크플로우 B (스캔 PDF)**: 에이전트 기반 처리 모듈 설계
     - [ ] OpenRouter 연동 멀티모달 LLM 에이전트 개발 (이미지 컨텍스트 분석 및 설명 생성)
@@ -248,3 +263,4 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
 - **2024-09-17**: 초기 버전 작성, 프로젝트 개요 및 M0 단계 정의
 - **2024-09-17**: 핵심 라이브러리 목록 업데이트 (PaddleOCR로 변경, 의존성 추가)
 - **2024-09-19**: VSCode Python 개발 환경 최적화 완료 (.vscode 설정 파일 구성, 코드 품질 도구 설치 및 검증)
+- **2025-09-19**: 디버깅 환경 구축 완료 - 로깅 모듈(`app/core/logging_config.py`) 생성, `main.py`에 적용, VSCode 설정 보완, 테스트 및 코드 품질 검사 통과

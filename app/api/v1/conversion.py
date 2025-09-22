@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
+import logging
 from typing import Dict, Union
 from io import BytesIO
 import zipfile
@@ -13,6 +14,10 @@ from fastapi.responses import StreamingResponse  # type: ignore
 
 from app.core.config import Settings, get_settings
 from app.core.dependencies import api_key_header
+from app.services.pdf_service import create_pdf_analyzer, PDFType
+
+# 로거 설정
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(
@@ -250,6 +255,78 @@ async def cancel_conversion(conversion_id: str, api_key: str = Depends(api_key_h
         "message": "변환 작업이 취소되었습니다.",
         "conversion_id": conversion_id,
     }
+
+
+# PDF 분석 엔드포인트
+@router.post("/analyze", response_model=Dict)
+async def analyze_pdf_structure(
+    file: UploadFile = File(..., description="분석할 PDF 파일"),
+    api_key: str = Depends(api_key_header),
+):
+    """PDF 구조 및 유형 분석 엔드포인트
+
+    Args:
+        file: 분석할 PDF 파일
+        api_key: API 키
+
+    Returns:
+        Dict: PDF 분석 결과
+    """
+    # 파일 형식 검증
+    if not validate_file_type(file):
+        raise HTTPException(
+            status_code=422,
+            detail="지원하지 않는 파일 형식입니다. PDF 파일만 업로드 가능합니다.",
+        )
+
+    # 파일 크기 검증
+    if not validate_file_size(file, 50 * 1024 * 1024):  # 50MB 제한
+        raise HTTPException(
+            status_code=413,
+            detail="파일 크기가 너무 큽니다. 최대 50MB까지 업로드 가능합니다.",
+        )
+
+    try:
+        # PDF 파일 읽기
+        pdf_content = await file.read()
+
+        # 분석기 생성
+        analyzer = create_pdf_analyzer(get_settings())
+
+        # PDF 분석 수행
+        analysis_result = analyzer.analyze_pdf(pdf_content)
+
+        return {
+            "success": True,
+            "message": "PDF 분석이 완료되었습니다.",
+            "data": {
+                "pdf_type": analysis_result.pdf_type.value,
+                "total_pages": analysis_result.total_pages,
+                "overall_confidence": analysis_result.overall_confidence,
+                "text_based": {
+                    "pages_count": len(analysis_result.get_text_pages()),
+                    "page_numbers": analysis_result.get_text_pages(),
+                },
+                "scanned_based": {
+                    "pages_count": len(analysis_result.get_scanned_pages()),
+                    "page_numbers": analysis_result.get_scanned_pages(),
+                },
+                "mixed_ratio": (
+                    analysis_result.mixed_ratio
+                    if analysis_result.pdf_type == PDFType.MIXED
+                    else None
+                ),
+                "pages_analysis": [
+                    page.to_dict() for page in analysis_result.pages_analysis
+                ],
+            },
+        }
+
+    except Exception as e:
+        logger.error(f"PDF 분석 중 오류 발생: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"PDF 분석 중 오류가 발생했습니다: {str(e)}"
+        )
 
 
 # 변환 작업 목록 조회 엔드포인트
