@@ -12,6 +12,11 @@ from app.services.conversion_orchestrator import (
     JobState,
     get_orchestrator,
 )
+from app.services.pdf_service import (
+    PDFType,
+    PDFAnalysisResult,
+    PageAnalysisResult,
+)
 
 
 def make_dummy_pdf_bytes() -> bytes:
@@ -26,25 +31,36 @@ async def test_start_and_status_and_download(monkeypatch):
     # Create orchestrator
     orch = ConversionOrchestrator(settings)
 
-    # Patch PDFAnalyzer.analyze_pdf to return a simple object with pdf_type attribute
-    class DummyAnalysis:
-        def __init__(self):
-            from app.services.pdf_service import PDFType
-
-            self.pdf_type = PDFType.TEXT_BASED
-
+    # Patch PDFAnalyzer.analyze_pdf to return a properly-typed PDFAnalysisResult
     monkeypatch.setattr(orch, "pdf_analyzer", AsyncMock())
-    orch.pdf_analyzer.analyze_pdf = lambda _b: DummyAnalysis()
+    pdf_analysis = PDFAnalysisResult(
+        pdf_type=PDFType.TEXT_BASED,
+        total_pages=1,
+        pages_analysis=[
+            PageAnalysisResult(page_number=1, has_text=True, text_content="Hello")
+        ],
+        overall_confidence=1.0,
+        mixed_ratio=0.0,
+    )
 
-    # Patch PDFExtractor.extract_text_from_pdf
+    orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
+
+    # Patch PDFExtractor.extract_text_from_pdf with correct signature
     monkeypatch.setattr(orch, "pdf_extractor", AsyncMock())
-    orch.pdf_extractor.extract_text_from_pdf = lambda _b: {
-        "total_text": "Hello World",
-        "page_texts": [{"page": "1", "text": "Hello World"}],
-    }
 
-    # Patch EpubGenerator to return simple bytes
-    orch.epub.create_epub_bytes = lambda **kw: b"EPUBBYTES"
+    def fake_extract_text_from_pdf(pdf_content, page_numbers=None):
+        return {
+            "total_text": "Hello World",
+            "page_texts": [{"page": "1", "text": "Hello World"}],
+        }
+
+    orch.pdf_extractor.extract_text_from_pdf = fake_extract_text_from_pdf
+
+    # Patch EpubGenerator.create_epub_bytes with correct signature
+    def fake_create_epub_bytes(title: str, author: str, chapters, uid=None, include_legacy_ncx=True, auto_toc_from_headings=True):
+        return b"EPUBBYTES"
+
+    orch.epub.create_epub_bytes = fake_create_epub_bytes
 
     conversion_id = str(uuid.uuid4())
     pdf_bytes = make_dummy_pdf_bytes()
