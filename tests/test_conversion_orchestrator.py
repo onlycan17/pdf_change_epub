@@ -57,7 +57,14 @@ async def test_start_and_status_and_download(monkeypatch):
     orch.pdf_extractor.extract_text_from_pdf = fake_extract_text_from_pdf
 
     # Patch EpubGenerator.create_epub_bytes with correct signature
-    def fake_create_epub_bytes(title: str, author: str, chapters, uid=None, include_legacy_ncx=True, auto_toc_from_headings=True):
+    def fake_create_epub_bytes(
+        title: str,
+        author: str,
+        chapters,
+        uid=None,
+        include_legacy_ncx=True,
+        auto_toc_from_headings=True,
+    ):
         return b"EPUBBYTES"
 
     orch.epub.create_epub_bytes = fake_create_epub_bytes

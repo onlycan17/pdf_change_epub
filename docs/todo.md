@@ -16,43 +16,21 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
 - [x] 기술 스택 선정 (Python, FastAPI, React, PyPDF2/PaddleOCR, ebooklib)
 - [x] 상세 아키텍처 다이어그램 작성 (서비스/도메인 레이어 분리)
 - [x] 데이터 흐름 정의 (아래 두 워크플로우로 구체화)
-    - **텍스트 PDF**: PDF 텍스트/이미지 직접 추출 → 1차 마크다운 생성 → LLM 텍스트 보정 → 2차 마크다운 업데이트 → EPUB 생성
     - **스캔 PDF**: 에이전트 기반 처리 (멀티모달 LLM으로 이미지 분석 + OCR로 텍스트 추출) → 1차 마크다운 생성 → LLM 텍스트 보정 → 2차 마크다운 업데이트 → EPUB 생성
 - [x] 의존성 주입 방식 결정 (FastAPI의 `Depends` 활용)
-
-### 개발 환경 완성
 - [x] Python 가상 환경 설정 (.venv)
-- [x] 품질 도구 설치 (`make fmt`, `make lint`, `make test` 확인)
 - [x] 핵심 라이브러리 의존성 정의 완료 (requirements.txt 업데이트)
 - [x] IDE/개발 환경 최적화 (VSCode Python 확장자 설정)
 - [x] 디버깅 환경 구축 (logging, breakpoint 설정) - 2025-09-19 완료
 
-### 버그 수정: create_dependency_chain awaitable 오류
-- [x] 대분류: 원인 분석
-  - [x] 중분류: Pylance 경고 재현 및 로그 수집
-  - [x] 중분류: 동기 의존성 사용 사례 확인 (예: `get_settings_dependency`)
-- [x] 대분류: 해결책 설계
   - [x] 중분류: 비동기/동기 분기 처리 필요성 정의
   - [x] 중분류: 결과 타입(설정 객체, `Depends`) 혼합 처리 전략 정리
-- [x] 대분류: 구현 및 검증
-  - [x] 중분류: `create_dependency_chain` 로직 수정
-  - [x] 중분류: `make fmt && make test && make lint` 실행
-  - [x] 중분류: 문서 최신화 및 회고 기록
-
 #### 진행 로그
 - 2025-09-19: `inspect.isawaitable`을 사용해 동기/비동기 의존성을 모두 처리하도록 `create_dependency_chain`을 보완하고, `Depends` 객체 직접 전달 시 재포장하지 않도록 분기 추가.
 
-### 버그 수정: Pylance isinstance 타입 오류
-- [x] 대분류: 원인 분석
-  - [x] 중분류: `Depends` 타입 정의 확인
-  - [x] 중분류: 기존 isinstance 분기 동작 방식 점검
 - [x] 대분류: 해결책 설계
   - [x] 중분류: FastAPI 실제 `Depends` 클래스 타입 확인 방법 정리
   - [x] 중분류: 대체 검사 방식(예: `fastapi.params.Depends`) 결정
-- [x] 대분류: 구현 및 검증
-  - [x] 중분류: `create_dependency_chain`의 `Depends` 분기 수정
-  - [x] 중분류: `make fmt && make test && make lint` 재실행
-  - [x] 중분류: 문서 최신화 및 회고 기록
 
 #### 진행 로그
 - 2025-09-19: FastAPI `Depends` 타입을 `fastapi.params.Depends`로 식별하도록 수정하고 정적 분석/테스트를 재실행하여 경고가 사라짐을 확인.
@@ -60,30 +38,15 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
 ### 버그 수정: PDFAnalyzer bytes.read 경고 처리
 - [x] 대분류: 원인 분석
   - [x] 중분류: Pylance 경고 발생 위치(`analyze_pdf`) 확인
-  - [x] 중분류: `Union[bytes, BytesIO]` 분기 제한 사항 정리
 - [x] 대분류: 해결책 설계
   - [x] 중분류: 안전한 타입 가드/사용자 정의 프로토콜 도입 여부 결정
   - [x] 중분류: `isinstance` 기반 분기와 예외 처리 전략 확정
 - [x] 대분류: 구현 및 검증
-  - [x] 중분류: `analyze_pdf` 분기 수정 및 정적 검사 재실행
-  - [x] 중분류: 회귀 테스트(`make fmt && make test && make lint`) 실행
-  - [x] 중분류: 문서 최신화 및 회고 기록
-
-#### 진행 로그
-- 2025-09-22: `PDFContentSource` 타입 별칭과 `_read_pdf_bytes` 헬퍼로 입력 분기를 표준화하고, `PDFAnalyzer`/`PDFExtractor`에 적용 후 `make fmt && make test && make lint`로 검증 완료.
 
 ---
-
-## 다음 단계 후보
-
-### M1: 코어 파이프라인 구현 (2주)
 **목표**: PDF 추출, OCR 처리, EPUB 생성 기본 기능 완성
 
-**코어 추출 모듈 개발**
-- [x] PDF 분석 모듈 설계 (텍스트 기반 vs. 스캔 기반 자동 감지)
-- [x] **워크플로우 A (텍스트 PDF)**: PyPDF2/pdfminer.six를 사용한 텍스트 및 이미지 직접 추출 기능 구현
 - [x] **워크플로우 B (스캔 PDF)**: 에이전트 기반 처리 모듈 설계
-    - [x] OpenRouter 연동 멀티모달 LLM 에이전트 개발 (이미지 컨텍스트 분석 및 설명 생성)
     - [x] PaddleOCR 연동 에이전트 개발 (페이지별 텍스트 추출)
     - [x] 에이전트 결과 종합 및 마크다운 생성 로직 구현
 - [x] 메타데이터 (제목, 저자 등) 추출 기능
@@ -102,50 +65,24 @@ Python 기반 PDF → EPUB 변환기로, 한국어 처리에 최적화되고 Rea
 
 **변환 오케이스트레이션**
 - [x] 변환 파이프라인 통합 관리자 개발
-- [ ] 단계별 진행 상태 추적 시스템
 - [ ] 에러 핸들링 및 복구 메커니즘
 - [ ] 대용량 문서를 위한 청크 단위 처리 로직 구현
 - [ ] 메모리 사용량 최적화 (대용량 PDF 지원)
 
-**CLI 인터페이스**
-- [ ] Click 프레임워크 기반 CLI 개발
-- [ ] 명령행 옵션 설계 (파일 경로, 언어 선택 등)
-- [ ] 진행 상황 프로그레스 바 표시
 - [ ] 결과 파일 저장 위치 옵션
 
-### M2: API 및 웹 프론트엔드 (3주)
-**목표**: FastAPI 기반 API, React 웹 인터페이스 완성
-
-**REST API 개발 및 결제**
 - [ ] FastAPI 애플리케이션 구조 설계
 - [ ] 파일 업로드 엔드포인트 (`/api/upload`)
-- [ ] 변환 처리 엔드포인트 (`/api/convert`)
-- [ ] 상태 조회 엔드포인트 (`/api/status/{task_id}`)
-- [ ] 결과 다운로드 엔드포인트 (`/api/download/{task_id}`)
-- [ ] 지원 언어 목록 엔드포인트 (`/api/languages`)
 - [ ] 비동기 처리를 위한 Celery/RQ 도입
-- [ ] API 인증 시스템 (기본 토큰 기반)
 - [ ] 요청/응답 데이터 검증 (Pydantic 활용)
 - [ ] LLM 사용량 기반 가격 산정 모델 설계
 - [ ] 결제 시스템 연동 (Stripe/포트원)
 
-**React 웹 인터페이스**
-- [ ] Vite + React 프로젝트 설정
-- [ ] 컴포넌트 구조 설계 (페이지별 분리)
 - [ ] 파일 드래그 앤 드롭 컴포넌트
 - [ ] 변환 상태 실시간 표시 (WebSocket/SSE)
-- [ ] 결과 미리보기 및 다운로드 UI
-- [ ] 언어 선택 기능 (한국어/영어)
-- [ ] 다크 모드 테마 구현
-- [ ] 반응형 디자인 (모바일 지원)
 - [ ] 접근성 보장 (a11y 최적화)
-
 ### M3: 고급 기능 및 품질 보증 (2주)
 **목표**: 성능 최적화, 보안 강화, 테스트 커버리지 향상
-
-**성능 최적화**
-- [ ] 병렬 처리 도입 (multiprocessing)
-- [ ] OCR 작업 큐 관리 Celery/RQ
 - [ ] 대용량 PDF 처리 스트리밍 최적화
 - [ ] 이미지/텍스트 캐싱 시스템 (Redis)
 - [ ] 메모리 누수 방지 및 가비지 컬렉션

@@ -24,6 +24,7 @@ from app.services.pdf_service import (
 )
 from app.services.epub_service import EpubGenerator, Chapter
 from app.services.epub_validator import validate_epub_bytes
+from app.services.progress_tracker import ProgressTracker
 
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,7 @@ class ConversionOrchestrator:
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self.settings = settings or get_settings()
         self.store = ConversionJobStore()
+        self.tracker = ProgressTracker()
         self.pdf_analyzer: PDFAnalyzer = create_pdf_analyzer(self.settings)
         self.pdf_extractor: PDFExtractor = create_pdf_extractor(self.settings)
         self.epub = EpubGenerator(language="ko")
@@ -162,6 +164,8 @@ class ConversionOrchestrator:
         async def set_step(step: str, progress: int, message: str = "") -> None:
             job = await self.store.get(conversion_id)
             job.steps.append(JobStep(name=step, progress=progress, message=message))
+            # persist to tracker as well
+            await self.tracker.set_step(conversion_id, step, progress, message)
             await self.store.update(
                 conversion_id,
                 current_step=step,

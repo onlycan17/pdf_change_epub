@@ -175,6 +175,10 @@ async def get_conversion_status(
             "conversion_id": job.conversion_id,
             "status": job.state.value,
             "progress": job.progress,
+            "steps": [
+                {"name": s.name, "progress": s.progress, "message": s.message}
+                for s in job.steps
+            ],
             "current_step": job.current_step,
             "filename": job.filename,
             "created_at": job.created_at,
