@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import uuid
 import logging
-from typing import Dict, Union
+from typing import Dict
 from io import BytesIO
 import zipfile
 
@@ -467,122 +467,132 @@ async def get_conversion_settings_info(
 
 # 모의 EPUB 파일 생성 함수 (실제 구현에서는 제거)
 def create_mock_epub(conversion_id: str) -> bytes:
-    """모의 EPUB 파일 생성 (테스트용)
+    """EPUB3 표준에 맞춘 최소 구조의 EPUB 생성 (테스트용)
 
-    Args:
-        conversion_id: 변환 작업 ID
-
-    Returns:
-        bytes: EPUB 파일 바이트 데이터
+    - mimetype 파일은 반드시 첫 항목이며 비압축으로 저장
+    - META-INF/container.xml에서 OEBPS/content.opf를 가리킴
+    - content.opf는 version="3.0"이며 nav.xhtml을 포함
+    - nav 문서는 properties="nav"를 갖는 XHTML로 생성
     """
-    # 간단한 EPUB 구조 생성
-    epub_structure: Dict[str, Union[bytes, str]] = {
-        "mimetype": b"application/epub+zip",
-        "META-INF/container.xml": create_container_xml(),
-        "content.opf": create_content_opf(conversion_id),
-        "toc.ncx": create_toc_ncx(),
-        "chapter1.xhtml": create_chapter_xhtml(conversion_id),
-    }
-
-    # 실제 EPUB 파일 생성 로직은 ebooklib 라이브러리 사용
-    # 여기서는 간단한 바이트 데이터 반환
     epub_buffer = BytesIO()
 
-    with zipfile.ZipFile(epub_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-        # 각 파일 추가
-        for filename, content in epub_structure.items():
-            if isinstance(content, str):
-                content = content.encode("utf-8")
+    with zipfile.ZipFile(epub_buffer, "w") as zipf:
+        # 1) mimetype: 첫 항목, 비압축(ZIP_STORED)
+        zipf.writestr(
+            zipfile.ZipInfo("mimetype"),
+            b"application/epub+zip",
+            compress_type=zipfile.ZIP_STORED,
+        )
 
-            zipf.writestr(filename, content)
+        # 2) META-INF/container.xml
+        zipf.writestr(
+            "META-INF/container.xml",
+            create_container_xml().encode("utf-8"),
+            compress_type=zipfile.ZIP_DEFLATED,
+        )
+
+        # 3) OEBPS/content.opf
+        zipf.writestr(
+            "OEBPS/content.opf",
+            create_content_opf(conversion_id).encode("utf-8"),
+            compress_type=zipfile.ZIP_DEFLATED,
+        )
+
+        # 4) OEBPS/nav.xhtml (EPUB3 네비게이션 문서)
+        zipf.writestr(
+            "OEBPS/nav.xhtml",
+            create_nav_xhtml().encode("utf-8"),
+            compress_type=zipfile.ZIP_DEFLATED,
+        )
+
+        # 5) OEBPS/chapter1.xhtml (샘플 컨텐츠)
+        zipf.writestr(
+            "OEBPS/chapter1.xhtml",
+            create_chapter_xhtml(conversion_id).encode("utf-8"),
+            compress_type=zipfile.ZIP_DEFLATED,
+        )
 
     return epub_buffer.getvalue()
 
 
 def create_container_xml() -> str:
-    """container.xml 생성"""
+    """EPUB3 container.xml 생성 (OEBPS/content.opf 참조)"""
     return """<?xml version="1.0" encoding="utf-8"?>
 <container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">
-    <rootfiles>
-        <rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>
-    </rootfiles>
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
 </container>"""
 
 
 def create_content_opf(conversion_id: str) -> str:
-    """content.opf 생성"""
-    return f"""<?xml version="1.0" encoding="utf-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
-    <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-        <dc:title>변환된 문서</dc:title>
-        <dc:creator>PdfToEpub Converter</dc:creator>
-        <dc:date>2024-09-18T11:30:00Z</dc:date>
-        <dc:identifier id="bookid">{conversion_id}</dc:identifier>
-    </metadata>
-    
-    <manifest>
-        <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-        <item id="chapter1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
-    </manifest>
-    
-    <spine toc="ncx">
-        <itemref idref="chapter1"/>
-    </spine>
+    """EPUB3 content.opf 생성 (nav.xhtml 포함)"""
+    return f"""<?xml version=\"1.0\" encoding=\"utf-8\"?>
+<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"bookid\">
+  <metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">
+    <dc:identifier id=\"bookid\">urn:uuid:{conversion_id}</dc:identifier>
+    <dc:title>변환된 문서</dc:title>
+    <dc:creator>PdfToEpub Converter</dc:creator>
+    <dc:language>ko</dc:language>
+    <meta property=\"dcterms:modified\">2024-09-18T11:30:00Z</meta>
+  </metadata>
+  <manifest>
+    <item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\" />
+    <item id=\"chapter1\" href=\"chapter1.xhtml\" media-type=\"application/xhtml+xml\" />
+  </manifest>
+  <spine>
+    <itemref idref=\"chapter1\" />
+  </spine>
 </package>"""
 
 
-def create_toc_ncx() -> str:
-    """toc.ncx 생성"""
-    return """<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
-<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
-    <head>
-        <meta name="dtb:uid" content="book-id"/>
-        <meta name="dtb:depth" content="1"/>
-        <meta name="dtb:totalPageCount" content="0"/>
-        <meta name="dtb:maxPageNumber" content="0"/>
-    </head>
-    
-    <docTitle>
-        <text>문서 목차</text>
-    </docTitle>
-    
-    <navMap>
-        <navPoint id="navpoint1" playOrder="1">
-            <navLabel><text>Chapter 1</text></navLabel>
-            <content src="chapter1.xhtml"/>
-        </navPoint>
-    </navMap>
-</ncx>"""
+def create_nav_xhtml() -> str:
+    """EPUB3 네비게이션 문서(nav.xhtml) 생성"""
+    return """<?xml version=\"1.0\" encoding=\"utf-8\"?>
+<!DOCTYPE html>
+<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\" xml:lang=\"ko\" lang=\"ko\">
+  <head>
+    <meta charset=\"utf-8\" />
+    <title>목차</title>
+  </head>
+  <body>
+    <nav epub:type=\"toc\" id=\"toc\">
+      <h1>목차</h1>
+      <ol>
+        <li><a href=\"chapter1.xhtml\">Chapter 1</a></li>
+      </ol>
+    </nav>
+  </body>
+  </html>"""
 
 
 def create_chapter_xhtml(conversion_id: str) -> str:
-    """chapter1.xhtml 생성"""
-    return f"""<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
+    """OEBPS/chapter1.xhtml 생성 (EPUB3 xhtml)"""
+    return f"""<?xml version=\"1.0\" encoding=\"utf-8\"?>
+<!DOCTYPE html>
+<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"ko\" lang=\"ko\">
+  <head>
+    <meta charset=\"utf-8\" />
     <title>Chapter 1</title>
-    <meta charset="utf-8"/>
-</head>
-<body>
+  </head>
+  <body>
     <h1>변환된 문서</h1>
     <p>이 문서는 PDF 파일에서 변환되었습니다.</p>
     <p>변환 ID: {conversion_id}</p>
-    
+
     <h2>소개</h2>
     <p>이 문서는 PDF to EPUB 변환기로 생성되었습니다.</p>
-    
+
     <h2>변환 과정</h2>
     <ol>
-        <li>PDF 파일 분석 텍스트 및 이미지 추출</li>
-        <li>텍스트 처리 및 정제</li>
-        <li>EPUB 파일 생성</li>
-        <li>유효성 검사 및 최종 출력</li>
+      <li>PDF 파일 분석 텍스트 및 이미지 추출</li>
+      <li>텍스트 처리 및 정제</li>
+      <li>EPUB 파일 생성</li>
+      <li>유효성 검사 및 최종 출력</li>
     </ol>
-    
+
     <h2>한글 테스트</h2>
     <p>이 문서는 한국어와 English 지원을 테스트합니다.</p>
     <p>한글 처리가 정상적으로 동작하는지 확인합니다.</p>
-</body>
-</html>"""
+  </body>
+  </html>"""
