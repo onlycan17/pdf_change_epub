@@ -295,6 +295,19 @@ async def cancel_conversion(conversion_id: str, api_key: str = Depends(api_key_h
     }
 
 
+# 실패한 작업 재시도(수동)
+@router.post("/retry/{conversion_id}", response_model=Dict)
+async def retry_conversion(conversion_id: str, api_key: str = Depends(api_key_header)):
+    """실패한 변환 작업을 수동으로 재시도합니다."""
+    orchestrator = get_orchestrator()
+    try:
+        job = await orchestrator.retry(conversion_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="재시도 가능한 작업을 찾을 수 없습니다.")
+
+    return {"success": True, "message": "재시도가 시작되었습니다.", "conversion_id": job.conversion_id}
+
+
 # PDF 분석 엔드포인트
 @router.post("/analyze", response_model=Dict)
 async def analyze_pdf_structure(

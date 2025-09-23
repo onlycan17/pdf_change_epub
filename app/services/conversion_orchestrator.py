@@ -64,6 +64,7 @@ class ConversionJob:
     steps: List[JobStep] = field(default_factory=list)
     result_bytes: Optional[bytes] = None
     error_message: Optional[str] = None
+    attempts: int = 0
     _cancel_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
     def cancel(self) -> None:
@@ -147,6 +148,24 @@ class ConversionOrchestrator:
         asyncio.create_task(self._run_pipeline(job.conversion_id, pdf_bytes))
         return job
 
+    async def retry(self, conversion_id: str, force: bool = False) -> ConversionJob:
+        """실패한 작업 재시도(수동 호출).
+
+        force: 실패 여부와 상관없이 재시도 허용
+        """
+        job = await self.store.get(conversion_id)
+        if job.state not in (JobState.FAILED, JobState.CANCELLED) and not force:
+            raise KeyError("재시도 가능한 상태가 아닙니다.")
+
+        # 증가된 시도 횟수 반영
+        job.attempts += 1
+        await self.store.update(conversion_id, state=JobState.PENDING, message="재시도 대기중", progress=0)
+
+        # 새로운 백그라운드 작업 실행
+        # note: 이전 결과는 보존되며, 재시작 시 필요하면 덮어씌워짐
+        asyncio.create_task(self._run_pipeline(conversion_id, getattr(job, 'result_bytes') or b""))
+        return job
+
     async def status(self, conversion_id: str) -> ConversionJob:
         return await self.store.get(conversion_id)
 
@@ -175,6 +194,10 @@ class ConversionOrchestrator:
             )
 
         try:
+            # increment attempt counter for monitoring
+            job = await self.store.get(conversion_id)
+            job.attempts += 1
+            await self.store.update(conversion_id, message=f"시도 #{job.attempts}")
             # 1) 분석
             await set_step("analyze", 5, "PDF 유형 분석 중")
             analysis = self.pdf_analyzer.analyze_pdf(pdf_bytes)
@@ -281,6 +304,29 @@ class ConversionOrchestrator:
 
         except Exception as e:
             logger.error("변환 파이프라인 실패", exc_info=True)
+            # 기록 후 재시도 여부 판단(설정 기반)
+            try:
+                max_retries = getattr(self.settings.conversion, "max_retries", 1)
+            except Exception:
+                max_retries = 1
+
+            job = await self.store.get(conversion_id)
+            job.error_message = str(e)
+            job.updated_at = datetime.now(timezone.utc).isoformat()
+
+            if job.attempts < max_retries:
+                # 자동 재시도: 간단한 백오프
+                backoff = min(5 * job.attempts, 30)
+                await self.store.update(
+                    conversion_id,
+                    state=JobState.PENDING,
+                    message=f"에러 발생, 자동 재시도 대기중 (backoff {backoff}s)",
+                )
+                await asyncio.sleep(backoff)
+                asyncio.create_task(self._run_pipeline(conversion_id, pdf_bytes))
+                return
+
+            # 재시도 초과 또는 비허용 -> 실패로 마감
             await self.store.update(
                 conversion_id,
                 state=JobState.FAILED,

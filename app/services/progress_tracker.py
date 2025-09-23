@@ -21,7 +21,9 @@ class ProgressTracker:
         self._store: Dict[str, List[Dict[str, Any]]] = {}
         self._lock = asyncio.Lock()
 
-    async def set_step(self, conversion_id: str, name: str, progress: int, message: str = "") -> None:
+    async def set_step(
+        self, conversion_id: str, name: str, progress: int, message: str = ""
+    ) -> None:
         """단계 추가 또는 갱신
 
         Args:
