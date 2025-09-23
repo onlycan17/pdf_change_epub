@@ -19,6 +19,7 @@ from app.services.pdf_service import (
     create_pdf_metadata_extractor,
     PDFType,
 )
+from app.services.epub_service import EpubGenerator, Chapter
 
 # 로거 설정
 logger = logging.getLogger(__name__)
@@ -187,9 +188,22 @@ async def download_result(conversion_id: str, api_key: str = Depends(api_key_hea
     """
     # TODO: 실제 EPUB 파일 다운로드 로직 구현
 
-    # 모의 EPUB 파일 생성 (실제 구현에서는 실제 파일을 서비스)
-    # 간단한 EPUB 파일 생성
-    epub_content = create_mock_epub(conversion_id)
+    # ebooklib 기반 EPUB 생성 (간단 샘플)
+    generator = EpubGenerator(language="ko")
+    chapter = Chapter(
+        title="Chapter 1",
+        file_name="chapter1.xhtml",
+        content=(
+            f"<h1>변환된 문서</h1><p>변환 ID: {conversion_id}</p>"
+            "<p>ebooklib 생성기를 통해 만들어졌습니다.</p>"
+        ),
+    )
+    epub_content = generator.create_epub_bytes(
+        title="변환된 문서",
+        author="PdfToEpub Converter",
+        chapters=[chapter],
+        uid=conversion_id,
+    )
 
     return StreamingResponse(
         BytesIO(epub_content),
