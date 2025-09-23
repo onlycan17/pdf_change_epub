@@ -20,6 +20,7 @@ from app.services.pdf_service import (
     PDFType,
 )
 from app.services.epub_service import EpubGenerator, Chapter
+from app.services.epub_validator import validate_epub_bytes
 
 # 로거 설정
 logger = logging.getLogger(__name__)
@@ -205,11 +206,24 @@ async def download_result(conversion_id: str, api_key: str = Depends(api_key_hea
         uid=conversion_id,
     )
 
+    # EPUB 유효성 검증 수행 (기본 샘플에서도 구조 검증)
+    validation = validate_epub_bytes(epub_content)
+    if not validation.valid:
+        logger.warning(
+            "EPUB 유효성 검증 실패",
+            extra={
+                "conversion_id": conversion_id,
+                "errors": [e.code for e in validation.errors],
+            },
+        )
+
     return StreamingResponse(
         BytesIO(epub_content),
         media_type="application/epub+zip",
         headers={
             "Content-Disposition": f'attachment; filename="{conversion_id}.epub"',
+            "X-EPUB-Valid": "true" if validation.valid else "false",
+            "X-EPUB-Version": validation.metadata.get("version", ""),
         },
     )
 
