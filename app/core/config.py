@@ -104,6 +104,16 @@ class ConversionSettings(BaseSettings):
         default=True, description="임시 파일 자동 삭제 여부"
     )
 
+    # 이미지 최적화 설정
+    image_optimize: bool = Field(
+        default=True, description="PDF에서 추출한 이미지를 최적화할지 여부"
+    )
+    image_max_width: int = Field(default=1600, description="이미지 최대 가로 크기(px)")
+    image_max_height: int = Field(default=1600, description="이미지 최대 세로 크기(px)")
+    image_webp_quality: int = Field(
+        default=80, description="WebP 저장 품질(0~100, 80 권장)"
+    )
+
 
 class Settings(BaseSettings):
     """애플리케이션 전체 설정"""

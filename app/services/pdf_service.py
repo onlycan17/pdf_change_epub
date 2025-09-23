@@ -17,6 +17,7 @@ from pdfminer.pdfdocument import PDFDocument
 
 # OCR 관련 임포트는 필요 시 동적 로딩
 from app.core.config import Settings, get_settings
+from app.services.image_service import optimize_image_to_webp
 
 logger = logging.getLogger(__name__)
 
@@ -426,13 +427,39 @@ class PDFExtractor:
                             if xref not in extracted_images:
                                 base_image = doc.extract_image(xref)
                                 image_bytes = base_image["image"]
+                                original_ext = str(base_image.get("ext", "unknown"))
 
-                                extracted_images[xref] = {
-                                    "page": page_num + 1,
-                                    "xref": xref,
-                                    "image_bytes": image_bytes,
-                                    "format": base_image.get("ext", "unknown"),
-                                }
+                                # 이미지 최적화 및 WebP 변환(설정 시)
+                                if self.settings.conversion.image_optimize:
+                                    try:
+                                        optimized = optimize_image_to_webp(
+                                            image_bytes,
+                                            max_width=self.settings.conversion.image_max_width,
+                                            max_height=self.settings.conversion.image_max_height,
+                                            quality=self.settings.conversion.image_webp_quality,
+                                        )
+                                        extracted_images[xref] = {
+                                            "page": page_num + 1,
+                                            "xref": xref,
+                                            "image_bytes": optimized.data,
+                                            "format": optimized.format,
+                                            "original_format": original_ext,
+                                        }
+                                    except Exception as _:
+                                        # 최적화 실패 시 원본 그대로 사용
+                                        extracted_images[xref] = {
+                                            "page": page_num + 1,
+                                            "xref": xref,
+                                            "image_bytes": image_bytes,
+                                            "format": original_ext,
+                                        }
+                                else:
+                                    extracted_images[xref] = {
+                                        "page": page_num + 1,
+                                        "xref": xref,
+                                        "image_bytes": image_bytes,
+                                        "format": original_ext,
+                                    }
 
                 except Exception as e:
                     logger.warning(f"페이지 {page_num + 1} 이미지 추출 실패: {str(e)}")
