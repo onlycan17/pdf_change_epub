@@ -19,8 +19,8 @@ from app.services.pdf_service import (
     create_pdf_metadata_extractor,
     PDFType,
 )
-from app.services.epub_service import EpubGenerator, Chapter
 from app.services.epub_validator import validate_epub_bytes
+from app.services.conversion_orchestrator import get_orchestrator
 
 # 로거 설정
 logger = logging.getLogger(__name__)
@@ -120,24 +120,32 @@ async def start_conversion(
             detail=f"파일 크기가 너무 큽니다. 최대 {settings.conversion.max_file_size}바이트까지 업로드 가능합니다.",
         )
 
-    # 변환 작업 ID 생성
+    # 변환 작업 ID 생성 및 PDF 로드
     conversion_id = str(uuid.uuid4())
+    pdf_bytes = await file.read()
 
-    # TODO: 실제 변환 로직 구현
-    conversion_task = {
-        "conversion_id": conversion_id,
-        "filename": file.filename,
-        "file_size": file.size or 0,
-        "ocr_enabled": ocr_enabled,
-        "status": "pending",
-        "created_at": "2024-09-18T11:30:00Z",
-        "estimated_duration": 30,  # 추치 완료 시간 (초)
-    }
+    # 오케스트레이터 시작
+    orchestrator = get_orchestrator(settings)
+    job = await orchestrator.start(
+        conversion_id=conversion_id,
+        filename=file.filename or "uploaded.pdf",
+        file_size=len(pdf_bytes),
+        ocr_enabled=ocr_enabled,
+        pdf_bytes=pdf_bytes,
+    )
 
     return {
         "success": True,
         "message": "변환 작업이 시작되었습니다.",
-        "data": conversion_task,
+        "data": {
+            "conversion_id": job.conversion_id,
+            "filename": job.filename,
+            "file_size": job.file_size,
+            "ocr_enabled": job.ocr_enabled,
+            "status": job.state.value,
+            "progress": job.progress,
+            "created_at": job.created_at,
+        },
     }
 
 
@@ -155,23 +163,24 @@ async def get_conversion_status(
     Returns:
         Dict: 변환 상태 정보
     """
-    # TODO: 실제 변환 상태 조회 로직 구현
-
-    # 모의 데이터 반환
-    mock_status = {
-        "conversion_id": conversion_id,
-        "status": "completed",  # pending, processing, completed, failed
-        "progress": 100,
-        "current_step": "EPUB 파일 생성 완료",
-        "filename": "sample_document.pdf",
-        "created_at": "2024-09-18T11:30:00Z",
-        "completed_at": "2024-09-18T11:35:30Z",
-        "error_message": None,
-    }
+    try:
+        orchestrator = get_orchestrator()
+        job = await orchestrator.status(conversion_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="변환 작업을 찾을 수 없습니다.")
 
     return {
         "success": True,
-        "data": mock_status,
+        "data": {
+            "conversion_id": job.conversion_id,
+            "status": job.state.value,
+            "progress": job.progress,
+            "current_step": job.current_step,
+            "filename": job.filename,
+            "created_at": job.created_at,
+            "updated_at": job.updated_at,
+            "error_message": job.error_message,
+        },
     }
 
 
@@ -187,26 +196,16 @@ async def download_result(conversion_id: str, api_key: str = Depends(api_key_hea
     Returns:
         StreamingResponse: EPUB 파일 스트리밍 응답
     """
-    # TODO: 실제 EPUB 파일 다운로드 로직 구현
+    # 오케스트레이터에서 결과 조회
+    orchestrator = get_orchestrator()
+    try:
+        epub_content = await orchestrator.download(conversion_id)
+    except HTTPException as e:
+        raise e
+    except KeyError:
+        raise HTTPException(status_code=404, detail="변환 작업을 찾을 수 없습니다.")
 
-    # ebooklib 기반 EPUB 생성 (간단 샘플)
-    generator = EpubGenerator(language="ko")
-    chapter = Chapter(
-        title="Chapter 1",
-        file_name="chapter1.xhtml",
-        content=(
-            f"<h1>변환된 문서</h1><p>변환 ID: {conversion_id}</p>"
-            "<p>ebooklib 생성기를 통해 만들어졌습니다.</p>"
-        ),
-    )
-    epub_content = generator.create_epub_bytes(
-        title="변환된 문서",
-        author="PdfToEpub Converter",
-        chapters=[chapter],
-        uid=conversion_id,
-    )
-
-    # EPUB 유효성 검증 수행 (기본 샘플에서도 구조 검증)
+    # EPUB 유효성 검증 수행
     validation = validate_epub_bytes(epub_content)
     if not validation.valid:
         logger.warning(
@@ -279,7 +278,11 @@ async def cancel_conversion(conversion_id: str, api_key: str = Depends(api_key_h
     Returns:
         Dict: 취소 결과
     """
-    # TODO: 실제 변환 작업 취소 로직 구현
+    orchestrator = get_orchestrator()
+    try:
+        await orchestrator.cancel(conversion_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="변환 작업을 찾을 수 없습니다.")
 
     return {
         "success": True,
