@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import io
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+import os
+import tempfile
+from pathlib import Path
+from contextlib import contextmanager
+from typing import Any, Dict, List, Optional, Tuple, Union, cast, Iterator
 from enum import Enum
 
 import fitz  # PyMuPDF
@@ -21,11 +25,104 @@ from app.services.image_service import optimize_image_to_webp
 
 logger = logging.getLogger(__name__)
 
-PDFContentSource = Union[bytes, bytearray, io.IOBase]
+PDFContentSource = Union[bytes, bytearray, io.IOBase, str, Path]
+
+
+@contextmanager
+def _pdf_file_from_source(
+    pdf_source: PDFContentSource, settings: Optional["Settings"] = None
+) -> Iterator[Path]:
+    """Context manager that yields a Path to a PDF file on disk.
+
+    - If the source is already a file path, yield it directly.
+    - If the source is an IO stream, write it to a temporary file in chunks
+      (avoids loading the whole stream into memory).
+    - If the source is bytes/bytearray and its size exceeds the configured
+      max_file_size, write to a temp file and delete the in-memory reference.
+
+    The temp file is removed on context exit when created by this helper.
+    """
+    tmp_path: Optional[str] = None
+    created = False
+    try:
+        # path-like input
+        if isinstance(pdf_source, (str, Path)):
+            p = Path(pdf_source)
+            if not p.exists():
+                raise FileNotFoundError(f"PDF 파일을 찾을 수 없습니다: {p}")
+            yield p
+            return
+
+        # optional: read configured max_file_size, but don't keep unused locals
+        if settings is not None:
+            try:
+                _ = int(settings.conversion.max_file_size)
+            except Exception:
+                pass
+
+        # bytes-like: if small, write to a temp file anyway to allow stream-based libs
+        if isinstance(pdf_source, (bytes, bytearray)):
+            data = bytes(pdf_source)
+            # write to temp file when large or always (to avoid keeping large bytes)
+            # create a NamedTemporaryFile, write bytes, capture its path, then close
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tf:
+                tf.write(data)
+                tf.flush()
+                tmp_path = tf.name
+            created = True
+            # drop reference to large bytes to free memory
+            del data
+            yield Path(tmp_path)
+            return
+
+        # io.IOBase: stream to temp file in chunks to avoid loading into memory
+        if isinstance(pdf_source, io.IOBase):
+            # try to use an existing file path if available
+            name = getattr(pdf_source, "name", None)
+            if isinstance(name, str):
+                p = Path(name)
+                if p.exists():
+                    yield p
+                    return
+
+            # stream to a temp file in chunks to avoid loading into memory
+            try:
+                pdf_source.seek(0)
+            except Exception:
+                pass
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tf:
+                tmp_path = tf.name
+                # write in chunks to the temp file
+                while True:
+                    chunk = pdf_source.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    if isinstance(chunk, str):
+                        chunk = chunk.encode("utf-8")
+                    tf.write(chunk)
+                tf.flush()
+
+            created = True
+            yield Path(tmp_path)
+            return
+
+        raise TypeError(f"지원하지 않는 PDF 입력 타입: {type(pdf_source)!r}")
+
+    finally:
+        if created and tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
 
 def _read_pdf_bytes(pdf_source: PDFContentSource) -> bytes:
-    """PDF 입력을 바이트 데이터로 변환"""
+    """호환용: PDF 입력을 바이트로 반환(메모리 사용이 허용되는 작은 파일에만 사용).
+
+    NOTE: For large files prefer using `_pdf_file_from_source` which yields a file path
+    so callers can stream from disk instead of keeping bytes in memory.
+    """
     if isinstance(pdf_source, (bytes, bytearray)):
         return bytes(pdf_source)
 
@@ -41,6 +138,10 @@ def _read_pdf_bytes(pdf_source: PDFContentSource) -> bytes:
             return bytes(data)
 
         raise TypeError("PDF 스트림에서 바이트 데이터를 읽을 수 없습니다.")
+
+    if isinstance(pdf_source, (str, Path)):
+        # load from file path
+        return Path(pdf_source).read_bytes()
 
     raise TypeError(f"지원하지 않는 PDF 입력 타입: {type(pdf_source)!r}")
 
@@ -155,34 +256,36 @@ class PDFAnalyzer:
     def analyze_pdf(self, pdf_content: PDFContentSource) -> PDFAnalysisResult:
         """PDF 문서 유형 자동 감지 및 분석"""
         try:
-            readable_content = _read_pdf_bytes(pdf_content)
-            doc = fitz.open(stream=readable_content, filetype="pdf")
-            total_pages = len(doc)
+            # use file-backed open to reduce memory for large inputs
+            with _pdf_file_from_source(pdf_content, self.settings) as pdf_path:
+                doc = fitz.open(str(pdf_path))
 
-            if total_pages == 0:
-                raise ValueError("PDF 페이지가 없습니다")
+                total_pages = len(doc)
 
-            logger.info(f"PDF 분석 시작: {total_pages}페이지")
+                if total_pages == 0:
+                    raise ValueError("PDF 페이지가 없습니다")
 
-            # 각 페이지별 분석
-            pages_analysis = []
+                logger.info(f"PDF 분석 시작: {total_pages}페이지")
 
-            for page_num in range(total_pages):
-                try:
-                    page_result = self._analyze_page(doc, page_num)
-                    pages_analysis.append(page_result)
+                # 각 페이지별 분석
+                pages_analysis = []
 
-                except Exception as e:
-                    logger.error(f"페이지 {page_num + 1} 분석 실패: {str(e)}")
-                    # 오류 발생 시 기본값으로 생성
-                    page_result = PageAnalysisResult(
-                        page_number=page_num,
-                        has_text=False,
-                        image_count=0,
-                        is_scanned_page=True,
-                        confidence_score=0.5,
-                    )
-                    pages_analysis.append(page_result)
+                for page_num in range(total_pages):
+                    try:
+                        page_result = self._analyze_page(doc, page_num)
+                        pages_analysis.append(page_result)
+
+                    except Exception as e:
+                        logger.error(f"페이지 {page_num + 1} 분석 실패: {str(e)}")
+                        # 오류 발생 시 기본값으로 생성
+                        page_result = PageAnalysisResult(
+                            page_number=page_num,
+                            has_text=False,
+                            image_count=0,
+                            is_scanned_page=True,
+                            confidence_score=0.5,
+                        )
+                        pages_analysis.append(page_result)
 
             # PDF 유형 결정
             text_pages_count = len([p for p in pages_analysis if not p.is_scanned_page])
@@ -374,96 +477,180 @@ class PDFExtractor:
     ) -> Dict[str, Any]:
         """PDF에서 텍스트 추출"""
         try:
-            doc = fitz.open(stream=_read_pdf_bytes(pdf_content), filetype="pdf")
-
             page_texts: List[Dict[str, str]] = []
             total_text_parts = []
 
-            target_pages = page_numbers or list(range(1, len(doc) + 1))
+            with _pdf_file_from_source(pdf_content, self.settings) as pdf_path:
+                doc = fitz.open(str(pdf_path))
+                target_pages = page_numbers or list(range(1, len(doc) + 1))
 
-            for page_num in target_pages:
-                if 0 < page_num <= len(doc):
-                    # 캐스트하여 Pylance 경고를 억제
-                    page = cast(Any, doc[page_num - 1])
-                    text = page.get_text()  # type: ignore[attr-defined]
+                for page_num in target_pages:
+                    if 0 < page_num <= len(doc):
+                        # 캐스트하여 Pylance 경고를 억제
+                        page = cast(Any, doc[page_num - 1])
+                        text = page.get_text()  # type: ignore[attr-defined]
 
-                    if isinstance(text, str) and text.strip():
-                        total_text_parts.append(f"=== 페이지 {page_num} ===\n{text}")
-                        page_texts.append({"page": str(page_num), "text": text})
+                        if isinstance(text, str) and text.strip():
+                            total_text_parts.append(
+                                f"=== 페이지 {page_num} ===\n{text}"
+                            )
+                            page_texts.append({"page": str(page_num), "text": text})
 
-            return {
-                "total_text": "\n\n".join(total_text_parts),
-                "page_texts": page_texts,
-                "extraction_stats": {
-                    "total_pages": str(len(doc)),
-                    "extracted_pages": str(len(page_texts)),
-                },
-            }
+                return {
+                    "total_text": "\n\n".join(total_text_parts),
+                    "page_texts": page_texts,
+                    "extraction_stats": {
+                        "total_pages": str(len(doc)),
+                        "extracted_pages": str(len(page_texts)),
+                    },
+                }
 
         except Exception as e:
             logger.error(f"텍스트 추출 실패: {str(e)}")
             raise ValueError(f"PDF 텍스트 추출 실패: {str(e)}")
+
+    def extract_text_in_chunks(
+        self,
+        pdf_content: PDFContentSource,
+        chunk_chars: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """PDF 문서를 텍스트 청크 단위로 분할하여 반환합니다.
+
+        각 청크는 연속된 페이지 범위의 텍스트를 하나의 항목으로 가지며
+        메모리 사용을 낮추기 위해 큰 문서를 처리할 때 사용합니다.
+
+        반환 형식:
+            [
+                {
+                    "start_page": int,
+                    "end_page": int,
+                    "total_text": str,
+                    "page_texts": [{"page": str, "text": str}, ...]
+                },
+                ...
+            ]
+        """
+        try:
+            max_chars = int(chunk_chars or self.settings.conversion.chunk_size)
+            chunks: List[Dict[str, Any]] = []
+
+            current_parts: List[str] = []
+            current_page_texts: List[Dict[str, str]] = []
+            current_chars = 0
+            start_page = 1
+
+            with _pdf_file_from_source(pdf_content, self.settings) as pdf_path:
+                doc = fitz.open(str(pdf_path))
+                total_pages = len(doc)
+                if total_pages == 0:
+                    return []
+
+                for page_num in range(1, total_pages + 1):
+                    page = cast(Any, doc[page_num - 1])
+                    text = page.get_text()  # type: ignore[attr-defined]
+                    if isinstance(text, str) and text.strip():
+                        snippet = f"=== 페이지 {page_num} ===\n{text}"
+                        current_parts.append(snippet)
+                        current_page_texts.append({"page": str(page_num), "text": text})
+                        current_chars += len(text)
+
+                    # 현재 누적된 문자가 최대치에 도달하면 청크로 저장
+                    if current_chars >= max_chars:
+                        chunks.append(
+                            {
+                                "start_page": start_page,
+                                "end_page": page_num,
+                                "total_text": "\n\n".join(current_parts),
+                                "page_texts": list(current_page_texts),
+                            }
+                        )
+                        # 초기화
+                        start_page = page_num + 1
+                        current_parts = []
+                        current_page_texts = []
+                        current_chars = 0
+
+            # 남아있는 파트가 있으면 마지막 청크로 추가
+            if current_parts:
+                chunks.append(
+                    {
+                        "start_page": start_page,
+                        "end_page": total_pages,
+                        "total_text": "\n\n".join(current_parts),
+                        "page_texts": list(current_page_texts),
+                    }
+                )
+
+            return chunks
+
+        except Exception as e:
+            logger.error(f"청크 단위 텍스트 추출 중 오류: {str(e)}")
+            raise ValueError(f"PDF 청크 추출 오류: {str(e)}")
 
     def extract_images_from_pdf(
         self, pdf_content: PDFContentSource
     ) -> List[Dict[str, Union[int, bytes, str]]]:
         """PDF에서 이미지 추출"""
         try:
-            doc = fitz.open(stream=_read_pdf_bytes(pdf_content), filetype="pdf")
             images_data: List[Dict[str, Union[int, bytes, str]]] = []
             extracted_images: Dict[int, Dict[str, Union[int, bytes, str]]] = {}
 
-            for page_num in range(len(doc)):
-                # 캐스트하여 Pylance 경고를 억제
-                page = cast(Any, doc[page_num])
+            with _pdf_file_from_source(pdf_content, self.settings) as pdf_path:
+                doc = fitz.open(str(pdf_path))
 
-                try:
-                    image_list = page.get_images()
+                for page_num in range(len(doc)):
+                    # 캐스트하여 Pylance 경고를 억제
+                    page = cast(Any, doc[page_num])
 
-                    for img_info in image_list:
-                        if len(img_info) >= 1:
-                            xref = img_info[0]
+                    try:
+                        image_list = page.get_images()
 
-                            if xref not in extracted_images:
-                                base_image = doc.extract_image(xref)
-                                image_bytes = base_image["image"]
-                                original_ext = str(base_image.get("ext", "unknown"))
+                        for img_info in image_list:
+                            if len(img_info) >= 1:
+                                xref = img_info[0]
 
-                                # 이미지 최적화 및 WebP 변환(설정 시)
-                                if self.settings.conversion.image_optimize:
-                                    try:
-                                        optimized = optimize_image_to_webp(
-                                            image_bytes,
-                                            max_width=self.settings.conversion.image_max_width,
-                                            max_height=self.settings.conversion.image_max_height,
-                                            quality=self.settings.conversion.image_webp_quality,
-                                        )
-                                        extracted_images[xref] = {
-                                            "page": page_num + 1,
-                                            "xref": xref,
-                                            "image_bytes": optimized.data,
-                                            "format": optimized.format,
-                                            "original_format": original_ext,
-                                        }
-                                    except Exception as _:
-                                        # 최적화 실패 시 원본 그대로 사용
+                                if xref not in extracted_images:
+                                    base_image = doc.extract_image(xref)
+                                    image_bytes = base_image["image"]
+                                    original_ext = str(base_image.get("ext", "unknown"))
+
+                                    # 이미지 최적화 및 WebP 변환(설정 시)
+                                    if self.settings.conversion.image_optimize:
+                                        try:
+                                            optimized = optimize_image_to_webp(
+                                                image_bytes,
+                                                max_width=self.settings.conversion.image_max_width,
+                                                max_height=self.settings.conversion.image_max_height,
+                                                quality=self.settings.conversion.image_webp_quality,
+                                            )
+                                            extracted_images[xref] = {
+                                                "page": page_num + 1,
+                                                "xref": xref,
+                                                "image_bytes": optimized.data,
+                                                "format": optimized.format,
+                                                "original_format": original_ext,
+                                            }
+                                        except Exception as _:
+                                            # 최적화 실패 시 원본 그대로 사용
+                                            extracted_images[xref] = {
+                                                "page": page_num + 1,
+                                                "xref": xref,
+                                                "image_bytes": image_bytes,
+                                                "format": original_ext,
+                                            }
+                                    else:
                                         extracted_images[xref] = {
                                             "page": page_num + 1,
                                             "xref": xref,
                                             "image_bytes": image_bytes,
                                             "format": original_ext,
                                         }
-                                else:
-                                    extracted_images[xref] = {
-                                        "page": page_num + 1,
-                                        "xref": xref,
-                                        "image_bytes": image_bytes,
-                                        "format": original_ext,
-                                    }
 
-                except Exception as e:
-                    logger.warning(f"페이지 {page_num + 1} 이미지 추출 실패: {str(e)}")
-                    continue
+                    except Exception as e:
+                        logger.warning(
+                            f"페이지 {page_num + 1} 이미지 추출 실패: {str(e)}"
+                        )
+                        continue
 
             images_data = list(extracted_images.values())
             logger.info(f"이미지 추출 완료: {len(images_data)}개")
@@ -481,8 +668,9 @@ class PDFExtractor:
     ) -> Dict[str, Any]:
         """PyPDF2를 사용한 텍스트 추출"""
         try:
-            pdf_bytes = _read_pdf_bytes(pdf_content)
-            pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
+            # Prefer file-backed reader to avoid building large in-memory bytes
+            with _pdf_file_from_source(pdf_content, self.settings) as pdf_path:
+                pdf_reader = PdfReader(str(pdf_path))
 
             page_texts: List[Dict[str, str]] = []
             total_text_parts = []
@@ -519,10 +707,10 @@ class PDFExtractor:
     ) -> Dict[str, Any]:
         """pdfminer.six를 사용한 텍스트 추출"""
         try:
-            pdf_bytes = _read_pdf_bytes(pdf_content)
-
-            # pdfminer를 사용한 텍스트 추출
-            text = pdfminer_extract_text(io.BytesIO(pdf_bytes))
+            # use file-backed path for pdfminer to avoid in-memory bytes
+            with _pdf_file_from_source(pdf_content, self.settings) as pdf_path:
+                # pdfminer accepts filename
+                text = pdfminer_extract_text(str(pdf_path))
 
             # 페이지별로 텍스트를 분리 (간단한 페이지 구분 로직)
             pages = text.split("\f")  # Form Feed 문자로 페이지 구분
@@ -557,8 +745,8 @@ class PDFExtractor:
     ) -> List[Dict[str, Union[int, bytes, str]]]:
         """PyPDF2를 사용한 이미지 추출"""
         try:
-            pdf_bytes = _read_pdf_bytes(pdf_content)
-            pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
+            with _pdf_file_from_source(pdf_content, self.settings) as pdf_path:
+                pdf_reader = PdfReader(str(pdf_path))
 
             images_data: List[Dict[str, Union[int, bytes, str]]] = []
 

@@ -41,6 +41,25 @@
 - 백그라운드 실행: 현재는 `asyncio.create_task`, 후속에 Celery/RQ로 대체.
 - 상태 브로드캐스트: 후속에 WebSocket/SSE로 반영.
 
+## 결과 파일 저장 옵션 (새로 추가된 기능)
+
+- 설명: 변환 완료 시 EPUB 바이트를 메모리에 보관하는 기본 동작 외에, 설정으로 지정한 디렉터리에 완성된 EPUB 파일을 디스크에 저장하도록 구현되었습니다.
+- 설정 키: `CONVERSION_OUTPUT_DIR` (환경변수) 또는 `settings.conversion.output_dir` (Pydantic 설정 객체)
+- 동작 요약:
+  - 설정값이 None이면 기존 동작(메모리만 보관) 유지
+  - 설정값이 경로일 경우 해당 디렉터리를 생성(parents=True)하고 `{conversion_id}.epub` 파일로 저장
+  - 저장 성공 시 `ConversionJob.result_path`에 파일 경로가 기록되어 API 상태 응답에서 노출됨
+  - 저장 실패(권한/디스크 부족 등)는 로깅되며, 현재는 작업 실패로 처리하지 않고 로그 수준으로 남김(향후 정책에 따라 job 상태 반영 가능)
+
+## 구현 메모
+
+- 구현 커밋: fcedcc6 (withrun, 2025-09-23)
+- 관련 파일:
+  - `app/core/config.py` (설정 `output_dir` 추가)
+  - `app/services/conversion_orchestrator.py` (`result_path` 속성 및 저장 로직 추가)
+  - `app/api/v1/conversion.py` (`status`/`start` 응답에 `result_path` 노출)
+
+
 ## 품질/테스트
 - `make fmt && make lint && make test` 모두 녹색 상태 유지.
 - mypy/ruff 기준을 지키는 타입 명시와 간결한 함수(단일 책임) 설계.
