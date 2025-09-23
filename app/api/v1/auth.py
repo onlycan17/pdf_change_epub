@@ -15,7 +15,6 @@ from app.core.dependencies import api_key_header
 
 
 router = APIRouter(
-    prefix="/auth",
     tags=["Authentication"],
 )
 
@@ -71,7 +70,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(
         to_encode,
-        settings.llm.api_key,  # TODO: 별도의 JWT secret key 사용
+        settings.security.jwt_secret,
         algorithm="HS256",
     )
 
@@ -92,7 +91,7 @@ def verify_token(token: str) -> Optional[dict]:
 
         payload = jwt.decode(
             token,
-            settings.llm.api_key,  # TODO: 별도의 JWT secret key 사용
+            settings.security.jwt_secret,
             algorithms=["HS256"],
         )
 

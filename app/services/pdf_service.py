@@ -9,6 +9,12 @@ from enum import Enum
 
 import fitz  # PyMuPDF
 
+# PyPDF2와 pdfminer.six 임포트
+from PyPDF2 import PdfReader
+from pdfminer.high_level import extract_text as pdfminer_extract_text
+from pdfminer.pdfparser import PDFParser
+from pdfminer.pdfdocument import PDFDocument
+
 # OCR 관련 임포트는 필요 시 동적 로딩
 from app.core.config import Settings, get_settings
 
@@ -399,12 +405,12 @@ class PDFExtractor:
 
     def extract_images_from_pdf(
         self, pdf_content: PDFContentSource
-    ) -> List[Dict[str, Union[int, bytes]]]:
+    ) -> List[Dict[str, Union[int, bytes, str]]]:
         """PDF에서 이미지 추출"""
         try:
             doc = fitz.open(stream=_read_pdf_bytes(pdf_content), filetype="pdf")
-            images_data = []
-            extracted_images = {}
+            images_data: List[Dict[str, Union[int, bytes, str]]] = []
+            extracted_images: Dict[int, Dict[str, Union[int, bytes, str]]] = {}
 
             for page_num in range(len(doc)):
                 # 캐스트하여 Pylance 경고를 억제
@@ -441,6 +447,397 @@ class PDFExtractor:
             logger.error(f"이미지 추출 실패: {str(e)}")
             raise ValueError(f"PDF 이미지 추출 실패: {str(e)}")
 
+    def extract_text_with_pypdf2(
+        self,
+        pdf_content: PDFContentSource,
+        page_numbers: Optional[List[int]] = None,
+    ) -> Dict[str, Any]:
+        """PyPDF2를 사용한 텍스트 추출"""
+        try:
+            pdf_bytes = _read_pdf_bytes(pdf_content)
+            pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
+
+            page_texts: List[Dict[str, str]] = []
+            total_text_parts = []
+
+            target_pages = page_numbers or list(range(1, len(pdf_reader.pages) + 1))
+
+            for page_num in target_pages:
+                if 0 < page_num <= len(pdf_reader.pages):
+                    page = pdf_reader.pages[page_num - 1]
+                    text = page.extract_text()
+
+                    if text and text.strip():
+                        total_text_parts.append(f"=== 페이지 {page_num} ===\n{text}")
+                        page_texts.append({"page": str(page_num), "text": text})
+
+            return {
+                "total_text": "\n\n".join(total_text_parts),
+                "page_texts": page_texts,
+                "extraction_stats": {
+                    "total_pages": str(len(pdf_reader.pages)),
+                    "extracted_pages": str(len(page_texts)),
+                    "extractor": "PyPDF2",
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"PyPDF2 텍스트 추출 실패: {str(e)}")
+            raise ValueError(f"PyPDF2 텍스트 추출 실패: {str(e)}")
+
+    def extract_text_with_pdfminer(
+        self,
+        pdf_content: PDFContentSource,
+        page_numbers: Optional[List[int]] = None,
+    ) -> Dict[str, Any]:
+        """pdfminer.six를 사용한 텍스트 추출"""
+        try:
+            pdf_bytes = _read_pdf_bytes(pdf_content)
+
+            # pdfminer를 사용한 텍스트 추출
+            text = pdfminer_extract_text(io.BytesIO(pdf_bytes))
+
+            # 페이지별로 텍스트를 분리 (간단한 페이지 구분 로직)
+            pages = text.split("\f")  # Form Feed 문자로 페이지 구분
+
+            page_texts: List[Dict[str, str]] = []
+            total_text_parts = []
+
+            target_pages = page_numbers or list(range(1, len(pages) + 1))
+
+            for i, page_text in enumerate(pages):
+                page_num = i + 1
+                if page_num in target_pages and page_text.strip():
+                    total_text_parts.append(f"=== 페이지 {page_num} ===\n{page_text}")
+                    page_texts.append({"page": str(page_num), "text": page_text})
+
+            return {
+                "total_text": "\n\n".join(total_text_parts),
+                "page_texts": page_texts,
+                "extraction_stats": {
+                    "total_pages": str(len(pages)),
+                    "extracted_pages": str(len(page_texts)),
+                    "extractor": "pdfminer.six",
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"pdfminer.six 텍스트 추출 실패: {str(e)}")
+            raise ValueError(f"pdfminer.six 텍스트 추출 실패: {str(e)}")
+
+    def extract_images_with_pypdf2(
+        self, pdf_content: PDFContentSource
+    ) -> List[Dict[str, Union[int, bytes, str]]]:
+        """PyPDF2를 사용한 이미지 추출"""
+        try:
+            pdf_bytes = _read_pdf_bytes(pdf_content)
+            pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
+
+            images_data: List[Dict[str, Union[int, bytes, str]]] = []
+
+            for page_num, page in enumerate(pdf_reader.pages):
+                try:
+                    # PyPDF2에서는 직접적인 이미지 추출이 제한적이므로
+                    # 텍스트에서 이미지 관련 정보를 추출
+                    text = page.extract_text()
+
+                    # 이미지 관련 키워드가 있는지 확인
+                    if any(
+                        keyword in text.lower()
+                        for keyword in ["image", "img", "picture", "photo", "figure"]
+                    ):
+                        # 실제 이미지 데이터는 PyMuPDF에서 추출하는 것이 더 정확하므로
+                        # 플레이스홀더로 처리
+                        images_data.append(
+                            {
+                                "page": page_num + 1,
+                                "image_bytes": b"placeholder_image_data",
+                                "format": "placeholder",
+                                "extractor": "PyPDF2",
+                            }
+                        )
+
+                except Exception as e:
+                    logger.warning(f"페이지 {page_num + 1} 이미지 추출 실패: {str(e)}")
+                    continue
+
+            logger.info(f"PyPDF2 이미지 추출 완료: {len(images_data)}개")
+            return images_data
+
+        except Exception as e:
+            logger.error(f"PyPDF2 이미지 추출 실패: {str(e)}")
+            raise ValueError(f"PyPDF2 이미지 추출 실패: {str(e)}")
+
+
+class PDFMetadataExtractor:
+    """PDF 메타데이터 추출기"""
+
+    def __init__(self, settings: Optional[Settings] = None) -> None:
+        """PDF 메타데이터 추출기 초기화"""
+        self.settings = settings or get_settings()
+        logger.info("PDF Metadata Extractor 초기화 완료")
+
+    def extract_metadata(self, pdf_content: PDFContentSource) -> Dict[str, Any]:
+        """PDF 문서에서 메타데이터 추출"""
+        try:
+            readable_content = _read_pdf_bytes(pdf_content)
+            doc = fitz.open(stream=readable_content, filetype="pdf")
+
+            # PyMuPDF를 통한 메타데이터 추출
+            metadata = doc.metadata or {}
+
+            # 추가 정보 추출
+            doc_info = doc.get_xml_metadata()
+
+            # 기본 메타데이터
+            extracted_metadata = {
+                "title": metadata.get("title", ""),
+                "author": metadata.get("author", ""),
+                "subject": metadata.get("subject", ""),
+                "keywords": metadata.get("keywords", ""),
+                "creator": metadata.get("creator", ""),
+                "producer": metadata.get("producer", ""),
+                "creation_date": metadata.get("creationDate", ""),
+                "modification_date": metadata.get("modDate", ""),
+                "total_pages": len(doc),
+                "format": metadata.get("format", "PDF"),
+                "encryption": "encrypted" if doc.is_encrypted else "not_encrypted",
+            }
+
+            # XML 메타데이터에서 추가 정보 추출
+            if doc_info:
+                try:
+                    # XML 메타데이터 파싱 (간단한 추출)
+                    if "Title" in doc_info:
+                        if not extracted_metadata["title"]:
+                            extracted_metadata["title"] = doc_info.get("Title", "")
+
+                    if "Author" in doc_info:
+                        if not extracted_metadata["author"]:
+                            extracted_metadata["author"] = doc_info.get("Author", "")
+
+                    if "Subject" in doc_info:
+                        if not extracted_metadata["subject"]:
+                            extracted_metadata["subject"] = doc_info.get("Subject", "")
+
+                    if "Keywords" in doc_info:
+                        if not extracted_metadata["keywords"]:
+                            extracted_metadata["keywords"] = doc_info.get(
+                                "Keywords", ""
+                            )
+
+                except Exception as e:
+                    logger.warning(f"XML 메타데이터 파싱 실패: {str(e)}")
+
+            # PyPDF2를 통한 추가 메타데이터 추출
+            try:
+                pdf_bytes = _read_pdf_bytes(pdf_content)
+                pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
+
+                if pdf_reader.metadata:
+                    # PyPDF2 메타데이터로 보완
+                    if not extracted_metadata["title"] and pdf_reader.metadata.title:
+                        extracted_metadata["title"] = pdf_reader.metadata.title
+
+                    if not extracted_metadata["author"] and pdf_reader.metadata.author:
+                        extracted_metadata["author"] = pdf_reader.metadata.author
+
+                    if (
+                        not extracted_metadata["subject"]
+                        and pdf_reader.metadata.subject
+                    ):
+                        extracted_metadata["subject"] = pdf_reader.metadata.subject
+
+                    if not extracted_metadata["keywords"] and pdf_reader.metadata.get(
+                        "/Keywords"
+                    ):
+                        extracted_metadata["keywords"] = pdf_reader.metadata.get(
+                            "/Keywords"
+                        )
+
+                    if (
+                        not extracted_metadata["creator"]
+                        and pdf_reader.metadata.creator
+                    ):
+                        extracted_metadata["creator"] = pdf_reader.metadata.creator
+
+                    if (
+                        not extracted_metadata["producer"]
+                        and pdf_reader.metadata.producer
+                    ):
+                        extracted_metadata["producer"] = pdf_reader.metadata.producer
+
+                    # 생성일/수정일 처리
+                    if pdf_reader.metadata.get("/CreationDate"):
+                        extracted_metadata["creation_date"] = pdf_reader.metadata.get(
+                            "/CreationDate"
+                        )
+
+                    if pdf_reader.metadata.get("/ModDate"):
+                        extracted_metadata["modification_date"] = (
+                            pdf_reader.metadata.get("/ModDate")
+                        )
+
+            except Exception as e:
+                logger.warning(f"PyPDF2 메타데이터 추출 실패: {str(e)}")
+
+            # pdfminer를 통한 추가 메타데이터 추출 시도
+            try:
+                pdf_bytes = _read_pdf_bytes(pdf_content)
+
+                with io.BytesIO(pdf_bytes) as pdf_file:
+                    parser = PDFParser(pdf_file)
+                    document = PDFDocument(parser)
+
+                    if document.info:
+                        for key, value in document.info[0].items():
+                            if isinstance(value, bytes):
+                                try:
+                                    value = value.decode("utf-8", errors="ignore")
+                                except Exception:
+                                    continue
+
+                            # 기존 값이 비어있는 경우에만 업데이트
+                            key_str = key.lower().replace("/", "")
+                            if key_str == "title" and not extracted_metadata["title"]:
+                                extracted_metadata["title"] = str(value)
+                            elif (
+                                key_str == "author" and not extracted_metadata["author"]
+                            ):
+                                extracted_metadata["author"] = str(value)
+                            elif (
+                                key_str == "subject"
+                                and not extracted_metadata["subject"]
+                            ):
+                                extracted_metadata["subject"] = str(value)
+                            elif (
+                                key_str == "keywords"
+                                and not extracted_metadata["keywords"]
+                            ):
+                                extracted_metadata["keywords"] = str(value)
+                            elif (
+                                key_str == "creator"
+                                and not extracted_metadata["creator"]
+                            ):
+                                extracted_metadata["creator"] = str(value)
+                            elif (
+                                key_str == "producer"
+                                and not extracted_metadata["producer"]
+                            ):
+                                extracted_metadata["producer"] = str(value)
+                            elif (
+                                key_str == "creationdate"
+                                and not extracted_metadata["creation_date"]
+                            ):
+                                extracted_metadata["creation_date"] = str(value)
+                            elif (
+                                key_str == "moddate"
+                                and not extracted_metadata["modification_date"]
+                            ):
+                                extracted_metadata["modification_date"] = str(value)
+
+            except Exception as e:
+                logger.warning(f"pdfminer 메타데이터 추출 실패: {str(e)}")
+
+            # 메타데이터 정리 및 반환
+            cleaned_metadata = self._clean_metadata(extracted_metadata)
+
+            logger.info(
+                f"메타데이터 추출 완료: {len([v for v in cleaned_metadata.values() if v])}개 항목"
+            )
+            return cleaned_metadata
+
+        except Exception as e:
+            logger.error(f"메타데이터 추출 실패: {str(e)}")
+            raise ValueError(f"PDF 메타데이터 추출 실패: {str(e)}")
+
+    def _clean_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """메타데이터 정리 및 정규화"""
+        cleaned = {}
+
+        for key, value in metadata.items():
+            if value is None:
+                cleaned[key] = ""
+            elif isinstance(value, str):
+                # 문자열 정리
+                cleaned_value = value.strip()
+                # 날짜 문자열 정규화 (간단한 형식)
+                if key.endswith("_date") and cleaned_value.startswith("D:"):
+                    cleaned_value = cleaned_value[2:]  # 'D:' 접두사 제거
+                cleaned[key] = cleaned_value
+            else:
+                cleaned[key] = str(value)
+
+        return cleaned
+
+    def extract_title_from_content(self, pdf_content: PDFContentSource) -> str:
+        """PDF 내용에서 제목 추출 (메타데이터에 제목이 없는 경우)"""
+        try:
+            extractor = PDFExtractor(self.settings)
+            text_result = extractor.extract_text_from_pdf(pdf_content, page_numbers=[1])
+
+            if text_result["total_text"]:
+                # 첫 번째 페이지의 첫 번째 줄을 제목으로 사용
+                lines = text_result["total_text"].split("\n")
+                for line in lines:
+                    line = line.strip()
+                    if line and len(line) > 10 and len(line) < 100:
+                        # 제목처럼 보이는 줄 찾기 (짧고 내용이 있는 줄)
+                        if not line.isdigit() and not line.startswith("="):
+                            return line
+
+            return ""
+
+        except Exception as e:
+            logger.warning(f"내용 기반 제목 추출 실패: {str(e)}")
+            return ""
+
+    def get_metadata_summary(self, pdf_content: PDFContentSource) -> Dict[str, Any]:
+        """메타데이터 요약 정보 반환"""
+        try:
+            metadata = self.extract_metadata(pdf_content)
+
+            # 메타데이터 존재 여부 확인
+            has_metadata = any(
+                [
+                    metadata.get("title", ""),
+                    metadata.get("author", ""),
+                    metadata.get("subject", ""),
+                    metadata.get("keywords", ""),
+                ]
+            )
+
+            # 주요 메타데이터 항목 수
+            metadata_count = len([v for v in metadata.values() if v])
+
+            return {
+                "has_metadata": has_metadata,
+                "metadata_count": metadata_count,
+                "total_fields": len(metadata),
+                "primary_info": {
+                    "title": metadata.get("title", ""),
+                    "author": metadata.get("author", ""),
+                    "total_pages": metadata.get("total_pages", 0),
+                },
+                "document_info": {
+                    "creator": metadata.get("creator", ""),
+                    "producer": metadata.get("producer", ""),
+                    "creation_date": metadata.get("creation_date", ""),
+                    "is_encrypted": metadata.get("encryption") == "encrypted",
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"메타데이터 요약 생성 실패: {str(e)}")
+            return {
+                "has_metadata": False,
+                "metadata_count": 0,
+                "total_fields": 0,
+                "primary_info": {},
+                "document_info": {},
+                "error": str(e),
+            }
+
 
 # PDF 처리 팩토리 함수
 def create_pdf_analyzer(settings: Optional[Settings] = None) -> PDFAnalyzer:
@@ -451,3 +848,10 @@ def create_pdf_analyzer(settings: Optional[Settings] = None) -> PDFAnalyzer:
 def create_pdf_extractor(settings: Optional[Settings] = None) -> PDFExtractor:
     """PDF 추출기 생성 함수"""
     return PDFExtractor(settings)
+
+
+def create_pdf_metadata_extractor(
+    settings: Optional[Settings] = None,
+) -> PDFMetadataExtractor:
+    """PDF 메타데이터 추출기 생성 함수"""
+    return PDFMetadataExtractor(settings)

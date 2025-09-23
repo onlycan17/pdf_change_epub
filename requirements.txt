@@ -16,6 +16,7 @@ pydantic-settings==2.3.4
 # PDF 처리
 PyPDF2==3.0.1
 pdfminer.six==20231228
+PyMuPDF==1.24.9
 
 # OCR 처리
 paddleocr==2.7.5

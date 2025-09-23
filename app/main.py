@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 import socket
 
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.dependencies import (
@@ -100,30 +101,14 @@ app = FastAPI(
 )
 
 
-# CORS 미들웨어 등록
-@app.middleware("http")
-async def add_cors_middleware(request: Request, call_next):
-    """CORS 미들웨어
-
-    Args:
-        request: FastAPI 요청 객체
-        call_next: 다음 핸들러 함수
-
-    Returns:
-        Response: FastAPI 응답 객체
-    """
-    settings = get_settings()
-
-    response = await call_next(request)
-
-    # CORS 헤더 추가
-    response.headers["Access-Control-Allow-Origin"] = ", ".join(settings.cors_origins)
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = (
-        "Content-Type, Authorization, X-API-Key, X-Request-ID"
-    )
-
-    return response
+"""표준 CORS 미들웨어 적용"""
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # 예외 처리 미들웨어 등록
@@ -180,11 +165,13 @@ async def health_check():
     """
     settings = get_settings()
 
+    from datetime import datetime
+
     return {
         "status": "healthy",
         "service": settings.app_name,
         "version": settings.version,
-        "timestamp": "2024-09-18T11:30:00Z",
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
 

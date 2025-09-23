@@ -70,6 +70,21 @@ class LLMSettings(BaseSettings):
     timeout: int = Field(default=60, description="요청 타임아웃 (초)")
 
 
+class SecuritySettings(BaseSettings):
+    """보안 관련 설정 (JWT/API Key)"""
+
+    model_config = SettingsConfigDict(env_prefix="SECURITY_", env_file_encoding="utf-8")
+
+    jwt_secret: str = Field(
+        default="change-me",
+        description="JWT 서명용 시크릿 키 (운영환경에서 반드시 환경변수로 설정)",
+    )
+    api_key: str = Field(
+        default="your-api-key-here",
+        description="간단한 API 키 인증용 키 (개발 기본값)",
+    )
+
+
 class ConversionSettings(BaseSettings):
     """변환 처리 설정"""
 
@@ -114,6 +129,7 @@ class Settings(BaseSettings):
     redis: RedisSettings = Field(default_factory=RedisSettings)
     ocr: OCRSettings = Field(default_factory=OCRSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
     conversion: ConversionSettings = Field(default_factory=ConversionSettings)
 
     # DEBUG 환경변수가 문자열로 들어오더라도 안전하게 처리

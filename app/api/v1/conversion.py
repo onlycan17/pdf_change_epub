@@ -14,14 +14,17 @@ from fastapi.responses import StreamingResponse  # type: ignore
 
 from app.core.config import Settings, get_settings
 from app.core.dependencies import api_key_header
-from app.services.pdf_service import create_pdf_analyzer, PDFType
+from app.services.pdf_service import (
+    create_pdf_analyzer,
+    create_pdf_metadata_extractor,
+    PDFType,
+)
 
 # 로거 설정
 logger = logging.getLogger(__name__)
 
 
 router = APIRouter(
-    prefix="/conversion",
     tags=["Conversion"],
 )
 
@@ -326,6 +329,78 @@ async def analyze_pdf_structure(
         logger.error(f"PDF 분석 중 오류 발생: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"PDF 분석 중 오류가 발생했습니다: {str(e)}"
+        )
+
+
+# PDF 메타데이터 추출 엔드포인트
+@router.post("/metadata", response_model=Dict)
+async def extract_pdf_metadata(
+    file: UploadFile = File(..., description="메타데이터를 추출할 PDF 파일"),
+    include_content_analysis: bool = Form(
+        False, description="내용 기반 제목 추출 포함 여부"
+    ),
+    api_key: str = Depends(api_key_header),
+):
+    """PDF 메타데이터 추출 엔드포인트
+
+    Args:
+        file: 메타데이터를 추출할 PDF 파일
+        include_content_analysis: 내용 기반 제목 추출 포함 여부
+        api_key: API 키
+
+    Returns:
+        Dict: PDF 메타데이터 정보
+    """
+    # 파일 형식 검증
+    if not validate_file_type(file):
+        raise HTTPException(
+            status_code=422,
+            detail="지원하지 않는 파일 형식입니다. PDF 파일만 업로드 가능합니다.",
+        )
+
+    # 파일 크기 검증
+    if not validate_file_size(file, 50 * 1024 * 1024):  # 50MB 제한
+        raise HTTPException(
+            status_code=413,
+            detail="파일 크기가 너무 큽니다. 최대 50MB까지 업로드 가능합니다.",
+        )
+
+    try:
+        # PDF 파일 읽기
+        pdf_content = await file.read()
+
+        # 메타데이터 추출기 생성
+        metadata_extractor = create_pdf_metadata_extractor(get_settings())
+
+        # 메타데이터 추출
+        metadata = metadata_extractor.extract_metadata(pdf_content)
+
+        # 내용 기반 제목 추출 (옵션)
+        if include_content_analysis and not metadata.get("title"):
+            content_title = metadata_extractor.extract_title_from_content(pdf_content)
+            if content_title:
+                metadata["extracted_title"] = content_title
+
+        # 메타데이터 요약 정보 생성
+        metadata_summary = metadata_extractor.get_metadata_summary(pdf_content)
+
+        return {
+            "success": True,
+            "message": "PDF 메타데이터 추출이 완료되었습니다.",
+            "data": {
+                "metadata": metadata,
+                "summary": metadata_summary,
+                "filename": file.filename,
+                "file_size": len(pdf_content),
+                "extraction_method": "PyMuPDF + PyPDF2 + pdfminer.six",
+            },
+        }
+
+    except Exception as e:
+        logger.error(f"PDF 메타데이터 추출 중 오류 발생: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"PDF 메타데이터 추출 중 오류가 발생했습니다: {str(e)}",
         )
 
 

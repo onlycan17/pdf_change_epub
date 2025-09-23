@@ -60,9 +60,8 @@ async def get_api_key(
     Raises:
         HTTPException: API 키가 유효하지 않은 경우
     """
-    if (
-        not settings.debug and api_key != "your-api-key-here"
-    ):  # TODO: 환경 변수에서 로드
+    expected = settings.security.api_key
+    if not settings.debug and (not api_key or api_key != expected):
         client_host = request.client.host if request.client else "unknown"
         logger.warning(f"Invalid API key attempt from IP: {client_host}")
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
@@ -272,8 +271,15 @@ async def validate_request(
     if request.method in ["POST", "PUT", "PATCH"]:
         content_type = request.headers.get("Content-Type", "")
 
-        # JSON 요청인지만 검사
-        if content_type not in ["application/json", "multipart/form-data"]:
+        # JSON 및 파일 업로드 요청 검사
+        allowed_types = [
+            "application/json",
+            "multipart/form-data",
+            "application/x-www-form-urlencoded",
+        ]
+        if not any(
+            content_type.startswith(allowed_type) for allowed_type in allowed_types
+        ):
             raise HTTPException(
                 status_code=415, detail=f"Unsupported media type: {content_type}"
             )
