@@ -23,6 +23,63 @@ class EpubGenerator:
 
     def __init__(self, language: str = "ko") -> None:
         self.language = language
+        # 기본 가독성 스타일 (EPUB 전용)
+        # 용어(설명: 가독성 – 눈이 덜 피로하고 읽기 쉬운 글꼴/간격/여백 설정)
+        self._default_css = """
+            /* 본문 기본 설정 */
+            html, body { margin: 0; padding: 0; }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Helvetica Neue", Arial, sans-serif;
+              font-size: 1rem; /* 약 16px */
+              line-height: 1.65;
+              color: #111;
+              background: #fff;
+              word-break: keep-all; /* 한국어 단어 단위 줄바꿈 개선 */
+              -webkit-font-smoothing: antialiased;
+              -moz-osx-font-smoothing: grayscale;
+              padding: 0 6%;
+            }
+
+            /* 제목 계층 */
+            h1, h2, h3, h4 { line-height: 1.35; margin: 1.2em 0 0.6em; font-weight: 700; }
+            h1 { font-size: 1.6rem; }
+            h2 { font-size: 1.35rem; }
+            h3 { font-size: 1.2rem; }
+            h4 { font-size: 1.05rem; }
+
+            /* 문단 */
+            p { margin: 0.8em 0; }
+            strong { font-weight: 700; }
+            em { font-style: italic; }
+
+            /* 리스트 */
+            ul, ol { margin: 0.8em 0 0.8em 1.2em; }
+            li { margin: 0.3em 0; }
+
+            /* 이미지 */
+            img { max-width: 100%; height: auto; display: block; margin: 0.6em auto; }
+            figure { margin: 1em 0; }
+            figcaption { font-size: 0.9rem; color: #555; text-align: center; }
+
+            /* 코드/인라인 */
+            pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+            pre { background: #f6f8fa; padding: 0.8em; border-radius: 6px; overflow-x: auto; }
+            code { background: #f6f8fa; padding: 0.15em 0.35em; border-radius: 4px; }
+
+            /* 표 */
+            table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+            th, td { border: 1px solid #ddd; padding: 0.5em; }
+            th { background: #fafafa; font-weight: 600; }
+
+            /* 인용문 */
+            blockquote {
+              border-left: 4px solid #ddd;
+              padding: 0.4em 0 0.4em 1em;
+              color: #555;
+              margin: 1em 0;
+              background: #fcfcfc;
+            }
+            """
 
     def create_epub_bytes(
         self,
@@ -50,6 +107,14 @@ class EpubGenerator:
         book.set_language(self.language)
         book.add_author(author)
 
+        # 공용 스타일 추가
+        style_item = epub.EpubItem(
+            uid="style_default",
+            file_name="style/reader.css",
+            media_type="text/css",
+            content=self._default_css,
+        )
+
         # 챕터 추가
         epub_chapters = []
         for idx, ch in enumerate(chapters, start=1):
@@ -64,7 +129,11 @@ class EpubGenerator:
                 <?xml version=\"1.0\" encoding=\"utf-8\"?>
                 <!DOCTYPE html>
                 <html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"{self.language}\" lang=\"{self.language}\">
-                  <head><meta charset=\"utf-8\" /><title>{ch.title}</title></head>
+                  <head>
+                    <meta charset=\"utf-8\" />
+                    <title>{ch.title}</title>
+                    <link rel=\"stylesheet\" type=\"text/css\" href=\"style/reader.css\" />
+                  </head>
                   <body>{body_html}</body>
                 </html>
                 """
@@ -74,6 +143,7 @@ class EpubGenerator:
         # 기본 nav
         nav = epub.EpubNav()
         book.add_item(nav)
+        book.add_item(style_item)
 
         # 호환용 NCX (옵션)
         if include_legacy_ncx:
