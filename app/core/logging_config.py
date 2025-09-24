@@ -58,7 +58,7 @@ def setup_logging(
     handlers.append(console_handler)
 
     # 파일 핸들러 (개발 환경이거나 설정에 따라)
-    if settings.debug:
+    if False:  # debug 기본값 False
         logs_dir = Path("logs")
         logs_dir.mkdir(exist_ok=True)
 

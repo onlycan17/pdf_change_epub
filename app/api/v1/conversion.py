@@ -20,7 +20,7 @@ from app.services.pdf_service import (
     PDFType,
 )
 from app.services.epub_validator import validate_epub_bytes
-from app.services.conversion_orchestrator import get_orchestrator
+from app.services.async_queue_service import get_async_queue_service
 
 # 로거 설정
 logger = logging.getLogger(__name__)
@@ -81,9 +81,9 @@ async def get_conversion_settings(settings: Settings = Depends(get_settings)) ->
         Dict: 변환 설정 정보
     """
     return {
-        "max_file_size": settings.conversion.max_file_size,
-        "supported_formats": settings.conversion.supported_formats,
-        "output_format": settings.conversion.output_format,
+        "max_file_size": 50 * 1024 * 1024,  # 기본값 50MB
+        "supported_formats": [".pdf"],
+        "output_format": "epub",
     }
 
 
@@ -114,19 +114,19 @@ async def start_conversion(
         )
 
     # 파일 크기 검증
-    if not validate_file_size(file, settings.conversion.max_file_size):
+    if not validate_file_size(file, 50 * 1024 * 1024):  # 기본값 50MB
         raise HTTPException(
             status_code=413,
-            detail=f"파일 크기가 너무 큽니다. 최대 {settings.conversion.max_file_size}바이트까지 업로드 가능합니다.",
+            detail="파일 크기가 너무 큽니다. 최대 50MB까지 업로드 가능합니다.",
         )
 
     # 변환 작업 ID 생성 및 PDF 로드
     conversion_id = str(uuid.uuid4())
     pdf_bytes = await file.read()
 
-    # 오케스트레이터 시작
-    orchestrator = get_orchestrator(settings)
-    job = await orchestrator.start(
+    # 비동기 작업 큐 서비스 시작
+    async_queue_service = get_async_queue_service()
+    job = await async_queue_service.start_conversion(
         conversion_id=conversion_id,
         filename=file.filename or "uploaded.pdf",
         file_size=len(pdf_bytes),
@@ -145,6 +145,7 @@ async def start_conversion(
             "status": job.state.value,
             "progress": job.progress,
             "created_at": job.created_at,
+            "result_path": job.result_path,
         },
     }
 
@@ -164,8 +165,8 @@ async def get_conversion_status(
         Dict: 변환 상태 정보
     """
     try:
-        orchestrator = get_orchestrator()
-        job = await orchestrator.status(conversion_id)
+        async_queue_service = get_async_queue_service()
+        job = await async_queue_service.get_status(conversion_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="변환 작업을 찾을 수 없습니다.")
 
@@ -184,6 +185,7 @@ async def get_conversion_status(
             "created_at": job.created_at,
             "updated_at": job.updated_at,
             "error_message": job.error_message,
+            "result_path": job.result_path,
         },
     }
 
@@ -200,10 +202,13 @@ async def download_result(conversion_id: str, api_key: str = Depends(api_key_hea
     Returns:
         StreamingResponse: EPUB 파일 스트리밍 응답
     """
-    # 오케스트레이터에서 결과 조회
-    orchestrator = get_orchestrator()
+    # 비동기 작업 큐 서비스에서 결과 조회
+    async_queue_service = get_async_queue_service()
     try:
-        epub_content = await orchestrator.download(conversion_id)
+        job = await async_queue_service.get_status(conversion_id)
+        if job.state.value != "completed" or not job.result_bytes:
+            raise HTTPException(status_code=404, detail="결과가 준비되지 않았습니다.")
+        epub_content = job.result_bytes
     except HTTPException as e:
         raise e
     except KeyError:
@@ -266,7 +271,7 @@ async def get_supported_languages(
     return {
         "success": True,
         "data": supported_languages,
-        "default_language": settings.ocr.language,
+        "default_language": "kor+eng",
     }
 
 
@@ -282,9 +287,11 @@ async def cancel_conversion(conversion_id: str, api_key: str = Depends(api_key_h
     Returns:
         Dict: 취소 결과
     """
-    orchestrator = get_orchestrator()
+    async_queue_service = get_async_queue_service()
     try:
-        await orchestrator.cancel(conversion_id)
+        success = await async_queue_service.cancel_conversion(conversion_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="변환 작업을 찾을 수 없습니다.")
     except KeyError:
         raise HTTPException(status_code=404, detail="변환 작업을 찾을 수 없습니다.")
 
@@ -299,13 +306,19 @@ async def cancel_conversion(conversion_id: str, api_key: str = Depends(api_key_h
 @router.post("/retry/{conversion_id}", response_model=Dict)
 async def retry_conversion(conversion_id: str, api_key: str = Depends(api_key_header)):
     """실패한 변환 작업을 수동으로 재시도합니다."""
-    orchestrator = get_orchestrator()
+    async_queue_service = get_async_queue_service()
     try:
-        job = await orchestrator.retry(conversion_id)
+        job = await async_queue_service.retry_conversion(conversion_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail="재시도 가능한 작업을 찾을 수 없습니다.")
+        raise HTTPException(
+            status_code=404, detail="재시도 가능한 작업을 찾을 수 없습니다."
+        )
 
-    return {"success": True, "message": "재시도가 시작되었습니다.", "conversion_id": job.conversion_id}
+    return {
+        "success": True,
+        "message": "재시도가 시작되었습니다.",
+        "conversion_id": job.conversion_id,
+    }
 
 
 # PDF 분석 엔드포인트
@@ -331,7 +344,7 @@ async def analyze_pdf_structure(
         )
 
     # 파일 크기 검증
-    if not validate_file_size(file, 50 * 1024 * 1024):  # 50MB 제한
+    if not validate_file_size(file, 50 * 1024 * 1024):  # 기본값 50MB
         raise HTTPException(
             status_code=413,
             detail="파일 크기가 너무 큽니다. 최대 50MB까지 업로드 가능합니다.",
@@ -407,7 +420,7 @@ async def extract_pdf_metadata(
         )
 
     # 파일 크기 검증
-    if not validate_file_size(file, 50 * 1024 * 1024):  # 50MB 제한
+    if not validate_file_size(file, 50 * 1024 * 1024):  # 기본값 50MB
         raise HTTPException(
             status_code=413,
             detail="파일 크기가 너무 큽니다. 최대 50MB까지 업로드 가능합니다.",

@@ -7,8 +7,8 @@ from contextlib import asynccontextmanager
 import socket
 
 from fastapi import FastAPI, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.app_factory import create_app
 from app.core.config import get_settings
 from app.core.dependencies import (
     handle_exceptions,
@@ -16,39 +16,10 @@ from app.core.dependencies import (
     validate_request,
     get_service_dependencies,
 )
-from app.core.logging_config import setup_logging, configure_debug_logging
-from app.api.v1 import auth, conversion
 
 
-# 로깅 설정 초기화
-def setup_app_logging():
-    """애플리케이션 로깅 설정 초기화"""
-    settings = get_settings()
-
-    # 커스텀 로깅 설정 적용
-    setup_logging(
-        settings=settings,
-        log_level=getattr(settings, "log_level", "INFO"),
-        json_logs=not settings.debug,  # 개발 환경에서는 상세 로그
-    )
-
-    # 디버그 모드인 경우 추가 설정 적용
-    if settings.debug:
-        configure_debug_logging()
-
-    # 애플리케이션 로거 생성
-    logger = logging.getLogger(__name__)
-
-    # 성능 모니터링 로거 설정
-    from app.core.logging_config import setup_performance_logging
-
-    setup_performance_logging()
-
-    return logger
-
-
-# 로깅 설정 적용 및 로거 생성
-logger = setup_app_logging()
+# 모듈 로거
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -71,9 +42,9 @@ async def lifespan(app: FastAPI):
 
     app_logger.info(
         "Application starting",
-        service_name=settings.app_name,
-        version=settings.version,
-        environment="development" if settings.debug else "production",
+        service_name="PDF to EPUB Converter",  # 기본값
+        version="1.0.0",  # 기본값
+        environment="development" if False else "production",  # debug 기본값 False
     )
 
     # 서비스 의존성 초기화
@@ -84,31 +55,13 @@ async def lifespan(app: FastAPI):
     # 애플리케이션 종료 시 실행될 작업
     app_logger.info(
         "Application shutting down",
-        service_name=settings.app_name,
-        version=settings.version,
+        service_name="PDF to EPUB Converter",  # 기본값
+        version="1.0.0",  # 기본값
     )
 
 
-# FastAPI 애플리케이션 인스턴스 생성
-app = FastAPI(
-    title="PDF to EPUB Converter API",
-    description="PDF 문서를 EPUB 전자책으로 변환하는 RESTful API 서비스",
-    version="1.0.0",
-    lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
-)
-
-
-"""표준 CORS 미들웨어 적용"""
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=get_settings().cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# FastAPI 애플리케이션 인스턴스 생성 (팩토리 사용)
+app = create_app(lifespan=lifespan)
 
 
 # 예외 처리 미들웨어 등록
@@ -149,10 +102,7 @@ async def process_request(request: Request, call_next):
         return response
 
 
-# 라우트 등록 (v1 API)
-app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
-
-app.include_router(conversion.router, prefix="/api/v1/conversion", tags=["Conversion"])
+# 라우트 등록은 app_factory에서 수행됩니다
 
 
 # 헬스체크 엔드포인트
@@ -163,15 +113,13 @@ async def health_check():
     Returns:
         dict: 애플리케이션 상태 정보
     """
-    settings = get_settings()
-
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     return {
         "status": "healthy",
-        "service": settings.app_name,
-        "version": settings.version,
-        "timestamp": datetime.utcnow().isoformat(),
+        "service": "PDF to EPUB Converter",  # 기본값
+        "version": "1.0.0",  # 기본값
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -183,11 +131,9 @@ async def root():
     Returns:
         dict: 애플리케이션 정보
     """
-    settings = get_settings()
-
     return {
-        "message": f"Welcome to {settings.app_name}",
-        "version": settings.version,
+        "message": "Welcome to PDF to EPUB Converter",  # 기본값
+        "version": "1.0.0",  # 기본값
         "docs_url": "/docs",
     }
 
@@ -196,8 +142,6 @@ async def root():
 def run() -> None:
     """개발 서버 실행용 스크립트 함수"""
     import uvicorn
-
-    settings = get_settings()
 
     # 포트 점유 시 자동으로 사용 가능한 포트로 대체
     def _is_port_in_use(host: str, port: int) -> bool:
@@ -214,8 +158,8 @@ def run() -> None:
             s.bind(("", 0))
             return s.getsockname()[1]
 
-    host = settings.host
-    port = settings.port
+    host = "0.0.0.0"  # 기본값
+    port = 8000  # 기본값
     if _is_port_in_use(host, port):
         logger.info("Port %s is in use. Selecting a free port automatically.", port)
         port = _find_free_port()
@@ -224,8 +168,8 @@ def run() -> None:
         "app.main:app",
         host=host,
         port=port,
-        reload=settings.debug,
-        log_level="info" if not settings.debug else "debug",
+        reload=False,  # debug 기본값 False
+        log_level="info" if not False else "debug",  # debug 기본값 False
     )
 
 

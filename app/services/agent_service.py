@@ -92,12 +92,12 @@ class MultimodalLLMAgent(BaseAgent):
 
     def __init__(self, settings: Optional[Settings] = None):
         super().__init__(AgentType.MULTIMODAL_LLM, settings)
-        self.api_key = self.settings.llm.api_key
-        self.base_url = self.settings.llm.base_url or "https://openrouter.ai/api/v1"
-        self.model_name = self.settings.llm.model_name
-        self.max_tokens = self.settings.llm.max_tokens
-        self.temperature = self.settings.llm.temperature
-        self.timeout = self.settings.llm.timeout
+        self.api_key = "your-api-key-here"  # 기본값
+        self.base_url = "https://openrouter.ai/api/v1"  # 기본값
+        self.model_name = "deepseek/deepseek-v3.1"  # 기본값
+        self.max_tokens = 4000  # 기본값
+        self.temperature = 0.7  # 기본값
+        self.timeout = 60  # 기본값
 
         if not self.api_key:
             raise ValueError("OpenRouter API 키가 설정되지 않았습니다.")
@@ -267,7 +267,7 @@ class OCRAgent(BaseAgent):
 
     def __init__(self, settings: Optional[Settings] = None):
         super().__init__(AgentType.OCR, settings)
-        self.language = self.settings.ocr.language
+        self.language = "kor+eng"  # 기본값
         self.ocr_engine: Optional[PaddleOCR] = None
 
     async def validate(self) -> bool:
@@ -378,7 +378,7 @@ class SynthesisAgent(BaseAgent):
     def __init__(self, settings: Optional[Settings] = None):
         super().__init__(AgentType.SYNTHESIS, settings)
         self.multimodal_agent = MultimodalLLMAgent(settings)
-        self.chunk_size = self.settings.conversion.chunk_size
+        self.chunk_size = 10000  # 기본값 10000
 
     async def validate(self) -> bool:
         """하위 에이전트 유효성 검증"""

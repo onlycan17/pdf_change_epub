@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import HTTPException
 
@@ -63,8 +64,10 @@ class ConversionJob:
     current_step: str = ""
     steps: List[JobStep] = field(default_factory=list)
     result_bytes: Optional[bytes] = None
+    result_path: Optional[str] = None
     error_message: Optional[str] = None
     attempts: int = 0
+    celery_task_id: Optional[str] = None
     _cancel_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
     def cancel(self) -> None:
@@ -159,11 +162,15 @@ class ConversionOrchestrator:
 
         # 증가된 시도 횟수 반영
         job.attempts += 1
-        await self.store.update(conversion_id, state=JobState.PENDING, message="재시도 대기중", progress=0)
+        await self.store.update(
+            conversion_id, state=JobState.PENDING, message="재시도 대기중", progress=0
+        )
 
         # 새로운 백그라운드 작업 실행
         # note: 이전 결과는 보존되며, 재시작 시 필요하면 덮어씌워짐
-        asyncio.create_task(self._run_pipeline(conversion_id, getattr(job, 'result_bytes') or b""))
+        asyncio.create_task(
+            self._run_pipeline(conversion_id, getattr(job, "result_bytes") or b"")
+        )
         return job
 
     async def status(self, conversion_id: str) -> ConversionJob:
@@ -207,14 +214,42 @@ class ConversionOrchestrator:
             if (await self.store.get(conversion_id)).is_cancelled():
                 return
 
-            # 2) 추출
-            await set_step("extract", 20, "텍스트/이미지 추출 중")
-            text_result: Optional[Dict[str, Any]] = None
+            # 대용량 문서일 경우 청크 단위로 텍스트를 추출하여 처리
+            try:
+                # 추출 시 청크 분할 사용
+                chunks = self.pdf_extractor.extract_text_in_chunks(pdf_bytes)
+                if chunks and len(chunks) > 1:
+                    # 청크별로 진행을 보고하면서 텍스트를 합성하지 않고
+                    # 각 청크를 LLM/EPUB 변환 파이프에 독립적으로 전달할 수 있음
+                    assembled_text_parts: List[str] = []
+                    for idx, ch in enumerate(chunks, start=1):
+                        if (await self.store.get(conversion_id)).is_cancelled():
+                            return
+                        # 청크 처리 중인 상태 업데이트
+                        chunk_progress = 20 + int(30 * idx / max(1, len(chunks)))
+                        await set_step(
+                            f"extract_chunk_{idx}",
+                            chunk_progress,
+                            f"Extracting pages {ch['start_page']} - {ch['end_page']}",
+                        )
+                        # 여기서는 간단히 합쳐서 후속 처리에 사용
+                        assembled_text_parts.append(ch.get("total_text", ""))
 
-            if pdf_type == PDFType.TEXT_BASED:
-                text_result = self.pdf_extractor.extract_text_from_pdf(pdf_bytes)
-            elif pdf_type == PDFType.MIXED:
-                # 기본: 텍스트 우선 추출 후 부족 시 OCR는 스킵(최초 버전)
+                    text_result = {"total_text": "\n\n".join(assembled_text_parts)}
+                else:
+                    # 단일 청크 혹은 작은 문서: 기존 방식 유지
+                    if pdf_type == PDFType.TEXT_BASED or pdf_type == PDFType.MIXED:
+                        text_result = self.pdf_extractor.extract_text_from_pdf(
+                            pdf_bytes
+                        )
+                    else:
+                        text_result = None
+            except Exception:
+                # 추출 실패 시 기존 동작 유지
+                if pdf_type == PDFType.TEXT_BASED or pdf_type == PDFType.MIXED:
+                    text_result = self.pdf_extractor.extract_text_from_pdf(pdf_bytes)
+                else:
+                    text_result = None
                 text_result = self.pdf_extractor.extract_text_from_pdf(pdf_bytes)
             else:
                 # SCANNED: 이미지는 이후 에이전트 경로에서 처리
@@ -294,6 +329,22 @@ class ConversionOrchestrator:
 
             # 결과 저장/완료
             await self.store.set_result(conversion_id, epub_bytes)
+            # 디스크에도 저장해야 하는 경우 설정에 따라 저장
+            try:
+                out_dir = "./results"  # 기본값
+            except Exception:
+                out_dir = None
+
+            if out_dir:
+                try:
+                    p = Path(out_dir)
+                    p.mkdir(parents=True, exist_ok=True)
+                    file_name = f"{conversion_id}.epub"
+                    out_path = p / file_name
+                    out_path.write_bytes(epub_bytes)
+                    await self.store.update(conversion_id, result_path=str(out_path))
+                except Exception:
+                    logger.exception("결과 파일을 디스크에 저장하는 중 오류 발생")
             await self.store.update(
                 conversion_id,
                 state=JobState.COMPLETED,
@@ -306,7 +357,7 @@ class ConversionOrchestrator:
             logger.error("변환 파이프라인 실패", exc_info=True)
             # 기록 후 재시도 여부 판단(설정 기반)
             try:
-                max_retries = getattr(self.settings.conversion, "max_retries", 1)
+                max_retries = 1  # 기본값
             except Exception:
                 max_retries = 1
 

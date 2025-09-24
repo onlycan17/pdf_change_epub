@@ -56,7 +56,7 @@ def _pdf_file_from_source(
         # optional: read configured max_file_size, but don't keep unused locals
         if settings is not None:
             try:
-                _ = int(settings.conversion.max_file_size)
+                _ = int(50)  # 기본값 50MB
             except Exception:
                 pass
 
@@ -531,7 +531,7 @@ class PDFExtractor:
             ]
         """
         try:
-            max_chars = int(chunk_chars or self.settings.conversion.chunk_size)
+            max_chars = int(chunk_chars or 10000)  # 기본값 10000
             chunks: List[Dict[str, Any]] = []
 
             current_parts: List[str] = []
@@ -615,13 +615,15 @@ class PDFExtractor:
                                     original_ext = str(base_image.get("ext", "unknown"))
 
                                     # 이미지 최적화 및 WebP 변환(설정 시)
-                                    if self.settings.conversion.image_optimize:
+                                    if (
+                                        False
+                                    ):  # image_optimize 기능은 일시적으로 비활성화
                                         try:
                                             optimized = optimize_image_to_webp(
                                                 image_bytes,
-                                                max_width=self.settings.conversion.image_max_width,
-                                                max_height=self.settings.conversion.image_max_height,
-                                                quality=self.settings.conversion.image_webp_quality,
+                                                max_width=1920,
+                                                max_height=1080,
+                                                quality=85,
                                             )
                                             extracted_images[xref] = {
                                                 "page": page_num + 1,

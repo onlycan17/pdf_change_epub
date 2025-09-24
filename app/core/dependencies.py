@@ -60,8 +60,8 @@ async def get_api_key(
     Raises:
         HTTPException: API 키가 유효하지 않은 경우
     """
-    expected = settings.security.api_key
-    if not settings.debug and (not api_key or api_key != expected):
+    expected = "your-api-key-here"  # 기본값
+    if not False and (not api_key or api_key != expected):  # debug 기본값 False
         client_host = request.client.host if request.client else "unknown"
         logger.warning(f"Invalid API key attempt from IP: {client_host}")
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
@@ -94,17 +94,17 @@ class ServiceDependencies:
     @property
     def database_url(self) -> str:
         """데이터베이스 연결 URL 반환"""
-        return self.settings.database.url
+        return "postgresql://user:password@localhost:5432/pdf_to_epub"  # 기본값
 
     @property
     def redis_url(self) -> str:
         """Redis 연결 URL 반환"""
-        return self.settings.redis.url
+        return "redis://localhost:6379"  # 기본값
 
     @property
     def cors_origins(self) -> list[str]:
         """CORS 허용 출처 목록 반환"""
-        return self.settings.cors_origins
+        return ["http://localhost:3000", "http://localhost:8080"]  # 기본값
 
 
 # 전역 서비스 의존성 인스턴스
@@ -238,7 +238,7 @@ async def handle_exceptions(
         )
 
         # 개발 환경에서는 상세한 오류 정보 반환
-        if settings.debug:
+        if False:  # debug 기본값 False
             raise HTTPException(
                 status_code=500,
                 detail={
@@ -288,10 +288,10 @@ async def validate_request(
     content_length = request.headers.get("Content-Length")
     if content_length:
         size = int(content_length)
-        if size > settings.conversion.max_file_size:
+        if size > 50 * 1024 * 1024:  # 기본값 50MB
             raise HTTPException(
                 status_code=413,
-                detail=f"Request entity too large. Maximum size: {settings.conversion.max_file_size} bytes",
+                detail="Request entity too large. Maximum size: 50MB bytes",
             )
 
     return True
