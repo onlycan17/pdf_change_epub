@@ -201,7 +201,7 @@ class TestConversionIntegration:
         data = response.json()
         assert data["success"] is True
         assert data["message"] == "변환 작업이 취소되었습니다."
-        assert data["conversion_id"] == "test-123"
+        assert data["data"]["conversion_id"] == "test-123"
 
         # Verify service call
         mock_async_queue_service.cancel_conversion.assert_called_once_with("test-123")
@@ -238,7 +238,10 @@ class TestConversionIntegration:
         # Execute
         response = test_client.post(
             "/api/v1/conversion/retry/test-123",
-            headers={"X-API-Key": "your-api-key-here", "Content-Type": "application/json"},
+            headers={
+                "X-API-Key": "your-api-key-here",
+                "Content-Type": "application/json",
+            },
         )
 
         # Assertions
@@ -246,7 +249,7 @@ class TestConversionIntegration:
         data = response.json()
         assert data["success"] is True
         assert data["message"] == "재시도가 시작되었습니다."
-        assert data["conversion_id"] == "test-123"
+        assert data["data"]["conversion_id"] == "test-123"
 
         # Verify service call
         mock_async_queue_service.retry_conversion.assert_called_once_with("test-123")
@@ -261,7 +264,10 @@ class TestConversionIntegration:
         # Execute
         response = test_client.post(
             "/api/v1/conversion/retry/nonexistent",
-            headers={"X-API-Key": "your-api-key-here", "Content-Type": "application/json"},
+            headers={
+                "X-API-Key": "your-api-key-here",
+                "Content-Type": "application/json",
+            },
         )
 
         # Assertions
@@ -278,24 +284,42 @@ class TestConversionIntegration:
         data = response.json()
         assert data["status"] == "healthy"
 
-    def test_api_key_required(self, test_client):
+    def test_api_key_required(self, test_client, mock_async_queue_service):
         """API 키 필요 테스트"""
+        mock_job = ConversionJob(
+            conversion_id="test-123",
+            filename="test.pdf",
+            file_size=1024,
+            ocr_enabled=True,
+            state=JobState.PENDING,
+            progress=0,
+        )
+        mock_async_queue_service.get_status.return_value = mock_job
+
         # Execute without API key
         response = test_client.get("/api/v1/conversion/status/test-123")
 
-        # 현재 구현에서는 API 키가 없어도 200/404를 반환할 수 있음
-        assert response.status_code in (200, 404)
+        assert response.status_code == 200
 
-    def test_api_key_valid(self, test_client):
+    def test_api_key_valid(self, test_client, mock_async_queue_service):
         """유효한 API 키 테스트"""
+        mock_job = ConversionJob(
+            conversion_id="test-123",
+            filename="test.pdf",
+            file_size=1024,
+            ocr_enabled=True,
+            state=JobState.PENDING,
+            progress=0,
+        )
+        mock_async_queue_service.get_status.return_value = mock_job
+
         # Execute with valid API key
         response = test_client.get(
             "/api/v1/conversion/status/test-123",
             headers={"X-API-Key": "your-api-key-here"},
         )
 
-        # 현재 구현에서는 200/404 중 하나를 반환할 수 있음(보안 미적용 경로)
-        assert response.status_code in (200, 404)
+        assert response.status_code == 200
 
 
 class TestAsyncServiceIntegration:
@@ -317,7 +341,9 @@ class TestAsyncServiceIntegration:
         """모의 Celery 앱"""
         with patch("app.services.async_queue_service.celery_app") as mock_app:
             app = MagicMock()
-            app.control.inspect.return_value.stats.return_value = {"worker1": {"total": 100}}
+            app.control.inspect.return_value.stats.return_value = {
+                "worker1": {"total": 100}
+            }
             mock_app.return_value = app
             yield app
 

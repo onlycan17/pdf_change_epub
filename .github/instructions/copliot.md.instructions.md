@@ -27,6 +27,7 @@
 - ruff 경고 제로 상태 유지: 미사용 임포트/변수/불필요 f-string 금지
 - 테스트는 Celery + In-memory JobStore 기준으로 유지됨(레거시 DB 가정 금지)
 - Celery 태스크는 단위 테스트에서 `.run()` 호출로 검증 가능
+- FastAPI 응답은 Pydantic 모델 기반으로 반환하며, 테스트도 해당 스키마에 맞춰 유지
 
 ### 프로젝트 분석시
 

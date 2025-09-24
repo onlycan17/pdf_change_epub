@@ -12,6 +12,13 @@ from passlib.context import CryptContext
 
 from app.core.config import Settings, get_settings
 from app.core.dependencies import api_key_header
+from app.models.auth import (
+    ApiKeyValidationResponse,
+    AuthStatusResponse,
+    LogoutResponse,
+    TokenResponse,
+    UserInfo,
+)
 
 
 router = APIRouter(
@@ -139,7 +146,7 @@ async def get_current_user(
 
 
 # 인증이 필요 없는 엔드포인트
-@router.post("/token", response_model=dict)
+@router.post("/token", response_model=TokenResponse)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     """액세스 토큰 발급 엔드포인트
 
@@ -162,15 +169,15 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         data={"sub": form_data.username}, expires_delta=access_token_expires
     )
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "expires_in": 1800,  # 30분
-    }
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        expires_in=1800,
+    )
 
 
 # API 키 인증 엔드포인트 (간단한 방식)
-@router.post("/api-key", response_model=dict)
+@router.post("/api-key", response_model=ApiKeyValidationResponse)
 async def validate_api_key(
     api_key: str = Depends(api_key_header), settings: Settings = Depends(get_settings)
 ):
@@ -190,14 +197,11 @@ async def validate_api_key(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key"
         )
 
-    return {
-        "valid": True,
-        "message": "API key is valid",
-    }
+    return ApiKeyValidationResponse(valid=True, message="API key is valid")
 
 
 # 현재 사용자 정보 엔드포인트
-@router.get("/me", response_model=dict)
+@router.get("/me", response_model=UserInfo)
 async def read_users_me(current_user: dict = Depends(get_current_user)):
     """현재 사용자 정보 조회 엔드포인트
 
@@ -207,14 +211,11 @@ async def read_users_me(current_user: dict = Depends(get_current_user)):
     Returns:
         dict: 사용자 정보
     """
-    return {
-        "id": current_user["id"],
-        "email": current_user["email"],
-    }
+    return UserInfo(id=current_user["id"], email=current_user["email"])
 
 
 # 로그아웃 엔드포인트
-@router.post("/logout", response_model=dict)
+@router.post("/logout", response_model=LogoutResponse)
 async def logout(current_user: dict = Depends(get_current_user)):
     """로그아웃 엔드포인트
 
@@ -225,26 +226,23 @@ async def logout(current_user: dict = Depends(get_current_user)):
         dict: 로그아웃 결과
     """
     # TODO: 토큰 블랙리스트 기능 구현
-    return {
-        "message": "Successfully logged out",
-        "user_id": current_user["id"],
-    }
+    return LogoutResponse(message="Successfully logged out", user_id=current_user["id"])
 
 
 # 간단한 상태 엔드포인트 (인증 없음)
-@router.get("/status", response_model=dict)
+@router.get("/status", response_model=AuthStatusResponse)
 async def auth_status():
     """인증 시스템 상태 확인 엔드포인트
 
     Returns:
         dict: 인증 시스템 상태
     """
-    return {
-        "status": "active",
-        "auth_type": "JWT + API Key",
-        "features": [
+    return AuthStatusResponse(
+        status="active",
+        auth_type="JWT + API Key",
+        features=[
             "Token-based authentication",
             "API key validation",
             "Password hashing (bcrypt)",
         ],
-    }
+    )

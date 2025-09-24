@@ -36,7 +36,7 @@ PDF → EPUB 변환기는 스캔된 문서를 포함한 PDF 파일을 EPUB 전�
 
 ## 다음 단계
 1. `docs/functional_spec.md` 기반으로 모듈 뼈대 작성
-2. PyPDF2/pdfminer.six로 텍스트 및 이미지 추출 실험
+2. pypdf/pdfminer.six로 텍스트 및 이미지 추출 실험
 3. pytesseract를 이용한 OCR 프로토타입 구현 (한국어 언어팩 포함)
 4. ebooklib을 활용한 EPUB 패키징 PoC 작성
 5. FastAPI 기반 REST API 개발

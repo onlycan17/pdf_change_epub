@@ -7,27 +7,26 @@
 ## 아키텍처 개요
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   FastAPI       │    │   Redis         │    │   Celery        │
-│   (API Server)  │◄──►│   (Message      │◄──►│   (Task Queue)  │
-│                 │    │   Broker)       │    │                 │
-│                 │    │                 │    │                 │
-│ - /api/v1/      │    │                 │    │ - conversion_   │
-│   /start        │    │                 │    │   task          │
-│ - /status/{id}  │    │                 │    │ - retry_task    │
-│ - /download/{id}│    │                 │    │ - cancel_task   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │
-                                ▼
-                       ┌─────────────────┐
-                       │   Celery        │
-                       │   Workers       │
-                       │                 │
-                       │ - PDF 분석      │
-                       │ - OCR 처리      │
-                       │ - EPUB 생성     │
-                       │ - 결과 저장     │
-                       └─────────────────┘
+┌─────────────────┐       ┌──────────────────────────┐
+│   FastAPI       │  API  │   Supabase (Managed)     │
+│   (API Server)  │◄────►│ - Postgres (RLS 적용)   │
+│                 │       │ - Storage (PDF/EPUB)     │
+│                 │       │ - Auth / Edge Functions  │
+│ - /api/v1/...    │       └──────────────────────────┘
+│ - Webhooks       │
+└─────────────────┘
+        │
+        │Celery Queue
+        ▼
+┌─────────────────┐
+│   Celery        │
+│   Workers       │
+│                 │
+│ - PDF 분석      │
+│ - OCR 처리      │
+│ - EPUB 생성     │
+│ - 결과 저장     │
+└─────────────────┘
 ```
 
 ## 사전 요구사항
@@ -518,32 +517,18 @@ def record_failed_job():
 
 ## 백업 및 복구
 
-### 1. 데이터베이스 백업
+### 1. Supabase 데이터 백업
+
+Supabase는 관리형 Postgres와 Storage에 대해 기본 백업을 제공하지만, 아래 절차로 주기적으로 수동 백업을 내려받는 것을 권장합니다.
+
+1. Supabase Dashboard → Project Settings → Backups에서 최신 백업을 다운로드합니다.
+2. Storage에 저장된 파일은 `supabase storage` CLI 또는 Dashboard를 통해 별도 아카이브합니다.
+
+### 2. 파일 백업
 
 ```bash
-# PostgreSQL 백업
-pg_dump -h localhost -U user pdf_to_epub > backup_$(date +%Y%m%d_%H%M%S).sql
-
-# 또는 Docker를 사용한 백업
-docker exec postgres_container pg_dump -U user pdf_to_epub > backup_$(date +%Y%m%d_%H%M%S).sql
-```
-
-### 2. Redis 백업
-
-```bash
-# Redis 데이터 덤프
-docker exec redis_container redis-cli BGSAVE
-docker exec redis_container redis-cli --rdb /data/dump.rdb
-
-# 또는 Redis 데이터 백업
-docker exec redis_container redis-cli --rdb /data/backup_$(date +%Y%m%d_%H%M%S).rdb
-```
-
-### 3. 파일 백업
-
-```bash
-# 변환 결과 파일 백업
-tar -czf conversion_results_backup_$(date +%Y%m%d_%H%M%S).tar.gz /path/to/output_dir
+# Supabase Storage의 변환 결과를 로컬로 동기화하는 예시
+supabase storage download results ./results_backup_$(date +%Y%m%d_%H%M%S)
 ```
 
 ## 성능 최적화
@@ -562,15 +547,11 @@ celery_app.conf.update(
 )
 ```
 
-### 2. Redis 최적화
+### 2. Supabase 최적화
 
-```bash
-# redis.conf 설정
-maxmemory 2gb
-maxmemory-policy allkeys-lru
-timeout 300
-tcp-keepalive 60
-```
+- Postgres: 쿼리 성능이 저하되면 Supabase SQL Editor에서 `EXPLAIN ANALYZE`로 병목을 파악하고 필요한 인덱스를 추가합니다.
+- Storage: 오래된 변환 결과는 수명 주기 정책으로 자동 정리하거나 배치 작업으로 삭제합니다.
+- Edge Functions/Triggers: 필요 시 Supabase의 스케줄러 또는 Edge Function을 사용해 정기 청소 작업을 구성합니다.
 
 ### 3. 데이터베이스 최적화
 
@@ -619,8 +600,7 @@ server {
 ufw allow 22/tcp    # SSH
 ufw allow 80/tcp    # HTTP
 ufw allow 443/tcp   # HTTPS
-ufw allow 5432/tcp   # PostgreSQL
-ufw allow 6379/tcp   # Redis
+ufw allow 5432/tcp   # Supabase Postgres (외부 접속 시)
 ufw enable
 ```
 
@@ -638,15 +618,10 @@ celery -A app.celery_config:celery_app inspect ping
 docker-compose logs celery_worker
 ```
 
-#### Redis 연결 실패
+#### Supabase 연동 확인
 
-```bash
-# Redis 연결 테스트
-docker exec redis_container redis-cli ping
-
-# Redis 로그 확인
-docker-compose logs redis
-```
+- API 호출이 401/403을 반환하면 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` 환경 변수를 재확인합니다.
+- Storage 업로드/다운로드가 실패하면 버킷 정책과 임시 URL 만료 시간을 확인합니다.
 
 #### 데이터베이스 연결 실패
 
@@ -698,11 +673,8 @@ docker-compose ps
 echo -e "\n=== Celery Status ==="
 celery -A app.celery_config:celery_app inspect stats
 
-echo -e "\n=== Database Status ==="
-docker-compose exec db pg_isready -U user -d pdf_to_epub
-
-echo -e "\n=== Redis Status ==="
-docker-compose exec redis redis-cli ping
+echo -e "\n=== Supabase Status ==="
+curl -s "$SUPABASE_URL/rest/v1/?apikey=$SUPABASE_ANON_KEY" | head -n 1
 ```
 
 ## 업데이트 및 롤백

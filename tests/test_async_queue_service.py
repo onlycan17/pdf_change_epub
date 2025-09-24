@@ -21,6 +21,7 @@ class TestAsyncQueueService:
         service = AsyncQueueService()
         service._initialized = True
         from unittest.mock import AsyncMock
+
         service.store = AsyncMock()
         service.celery_app = MagicMock()
         service.celery_app.send_task.return_value.id = "celery-task-1"
@@ -50,6 +51,7 @@ class TestAsyncQueueService:
             progress=0,
         )
         from unittest.mock import AsyncMock
+
         service.store = AsyncMock()
         service.store.get.return_value = job
 
@@ -79,6 +81,7 @@ class TestAsyncQueueService:
         )
         job.celery_task_id = "celery-task-1"
         from unittest.mock import AsyncMock
+
         service.store = AsyncMock()
         service.store.get.return_value = job
         service.celery_app = MagicMock()

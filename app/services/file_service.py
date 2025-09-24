@@ -260,10 +260,16 @@ class FileService:
     async def _estimate_pdf_page_count(self, file_path: str) -> int:
         """PDF 파일의 페이지 수를 추정합니다."""
         try:
-            import PyPDF2
+            try:
+                from pypdf import PdfReader
+            except ImportError:
+                logger.warning(
+                    "pypdf 패키지가 설치되어 있지 않아 페이지 수를 추정할 수 없습니다."
+                )
+                return 0
 
             with open(file_path, "rb") as file:
-                pdf_reader = PyPDF2.PdfReader(file)
+                pdf_reader = PdfReader(file)
                 return len(pdf_reader.pages)
 
         except Exception as e:

@@ -16,7 +16,7 @@ graph TB
         B[Supabase Auth]
         C[Supabase Storage]
         D[PostgreSQL DB]
-        E[Redis Cache]
+        E[Supabase Storage Cache]
         F[Monitoring<br/>Logging]
     end
 
@@ -131,7 +131,7 @@ graph TB
 - **역할**: 데이터 영속화, 외부 서비스 연동, 모니터링
 - **주요 컴포넌트**:
   - 데이터베이스: PostgreSQL
-  - 캐시: Redis
+  - 캐시: Supabase Storage / Edge Functions (별도 Redis 미사용)
   - 파일 스토리지: Supabase Storage
   - 모니터링: Prometheus/Grafana, ELK Stack
 
@@ -231,14 +231,14 @@ graph TB
     K --> M2  <!-- 스캔 PDF 에이전트 기반 처리 -->
     K --> N1
     
-    L1 --> M1  <!-- 텍스트 PDF: PyPDF2/pdfminer.six 연동 -->
+    L1 --> M1  <!-- 텍스트 PDF: pypdf/pdfminer.six 연동 -->
     M1 --> N1
     M2 --> N1  <!-- 스캔 PDF: 결과 종합 후 마크다운 생성 -->
     N1 --> M3  <!-- LLM 텍스트 보정 적용 -->
     M3 --> N2
     
     subgraph "External Dependencies"
-        O[PyPDF2/pdfminer.six<br/>PDF Reader]
+        O[pypdf/pdfminer.six<br/>PDF Reader]
         P[PaddleOCR<br/>OCR Engine]
         Q[Tesseract.js<br/>Alternative OCR]
         R[OpenRouter API<br/>LLM Service]
@@ -609,7 +609,7 @@ graph TB
     
     subgraph "Data Scaling"
         I[Database Shards]
-        J[Caching Layer<br/>Redis Cluster]
+        J[Caching Layer<br/>Supabase Storage]
         K[Distributed Storage]
     end
     

@@ -2,7 +2,7 @@
 
 import asyncio
 import uuid
-from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -32,7 +32,7 @@ async def test_start_and_status_and_download(monkeypatch):
     orch = ConversionOrchestrator(settings)
 
     # Patch PDFAnalyzer.analyze_pdf to return a properly-typed PDFAnalysisResult
-    monkeypatch.setattr(orch, "pdf_analyzer", AsyncMock())
+    monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
     pdf_analysis = PDFAnalysisResult(
         pdf_type=PDFType.TEXT_BASED,
         total_pages=1,
@@ -46,7 +46,7 @@ async def test_start_and_status_and_download(monkeypatch):
     orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
 
     # Patch PDFExtractor.extract_text_from_pdf with correct signature
-    monkeypatch.setattr(orch, "pdf_extractor", AsyncMock())
+    monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
 
     def fake_extract_text_from_pdf(pdf_content, page_numbers=None):
         return {
@@ -55,6 +55,11 @@ async def test_start_and_status_and_download(monkeypatch):
         }
 
     orch.pdf_extractor.extract_text_from_pdf = fake_extract_text_from_pdf
+
+    def fake_extract_text_in_chunks(pdf_content, chunk_chars=None):
+        return []
+
+    orch.pdf_extractor.extract_text_in_chunks = fake_extract_text_in_chunks
 
     # Patch EpubGenerator.create_epub_bytes with correct signature
     def fake_create_epub_bytes(

@@ -7,6 +7,7 @@ import uuid
 import logging
 from typing import Dict
 from io import BytesIO
+from datetime import datetime, timezone
 import zipfile
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -21,6 +22,28 @@ from app.services.pdf_service import (
 )
 from app.services.epub_validator import validate_epub_bytes
 from app.services.async_queue_service import get_async_queue_service
+from app.models.conversion import (
+    ConversionJobSummary,
+    ConversionJobDetail,
+    ConversionStartResponse,
+    ConversionStatusResponse,
+    ConversionOperationData,
+    ConversionOperationResponse,
+    SupportedLanguagesData,
+    SupportedLanguagesResponse,
+    LanguageInfo,
+    PdfAnalysisData,
+    PdfAnalysisResponse,
+    PdfMetadataData,
+    PdfMetadataResponse,
+    ConversionListItem,
+    ConversionListData,
+    ConversionListResponse,
+    ConversionSettingsData,
+    ConversionSettingsResponse,
+    JobStepModel,
+    ConversionStatus,
+)
 
 # 로거 설정
 logger = logging.getLogger(__name__)
@@ -29,6 +52,47 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     tags=["Conversion"],
 )
+
+
+def _parse_iso_datetime(value: str) -> datetime:
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    return datetime.fromisoformat(value)
+
+
+def _job_to_summary(job) -> ConversionJobSummary:
+    status_value = getattr(job.state, "value", job.state)
+    created_at = getattr(job, "created_at", datetime.now(timezone.utc).isoformat())
+    updated_at = getattr(job, "updated_at", created_at)
+    return ConversionJobSummary(
+        conversion_id=job.conversion_id,
+        filename=job.filename,
+        file_size=job.file_size,
+        ocr_enabled=job.ocr_enabled,
+        status=ConversionStatus(status_value),
+        progress=job.progress,
+        created_at=_parse_iso_datetime(created_at),
+        updated_at=_parse_iso_datetime(updated_at),
+        result_path=getattr(job, "result_path", None),
+        error_message=getattr(job, "error_message", None),
+    )
+
+
+def _job_to_detail(job) -> ConversionJobDetail:
+    summary = _job_to_summary(job)
+    steps = [
+        JobStepModel(
+            name=getattr(step, "name", ""),
+            progress=getattr(step, "progress", 0),
+            message=(getattr(step, "message", None) or None),
+        )
+        for step in getattr(job, "steps", [])
+    ]
+    return ConversionJobDetail(
+        **summary.model_dump(),
+        current_step=(getattr(job, "current_step", None) or None),
+        steps=steps,
+    )
 
 
 def validate_file_type(file: UploadFile) -> bool:
@@ -88,7 +152,7 @@ async def get_conversion_settings(settings: Settings = Depends(get_settings)) ->
 
 
 # 파일 업로드 및 변환 시작 엔드포인트
-@router.post("/start", response_model=Dict)
+@router.post("/start", response_model=ConversionStartResponse)
 async def start_conversion(
     file: UploadFile = File(..., description="변환할 PDF 파일"),
     ocr_enabled: bool = Form(False, description="OCR 처리 활성화 여부"),
@@ -134,24 +198,16 @@ async def start_conversion(
         pdf_bytes=pdf_bytes,
     )
 
-    return {
-        "success": True,
-        "message": "변환 작업이 시작되었습니다.",
-        "data": {
-            "conversion_id": job.conversion_id,
-            "filename": job.filename,
-            "file_size": job.file_size,
-            "ocr_enabled": job.ocr_enabled,
-            "status": job.state.value,
-            "progress": job.progress,
-            "created_at": job.created_at,
-            "result_path": job.result_path,
-        },
-    }
+    summary = _job_to_summary(job)
+
+    return ConversionStartResponse(
+        message="변환 작업이 시작되었습니다.",
+        data=summary,
+    )
 
 
 # 변환 상태 조회 엔드포인트
-@router.get("/status/{conversion_id}", response_model=Dict)
+@router.get("/status/{conversion_id}", response_model=ConversionStatusResponse)
 async def get_conversion_status(
     conversion_id: str, api_key: str = Depends(api_key_header)
 ):
@@ -170,24 +226,11 @@ async def get_conversion_status(
     except KeyError:
         raise HTTPException(status_code=404, detail="변환 작업을 찾을 수 없습니다.")
 
-    return {
-        "success": True,
-        "data": {
-            "conversion_id": job.conversion_id,
-            "status": job.state.value,
-            "progress": job.progress,
-            "steps": [
-                {"name": s.name, "progress": s.progress, "message": s.message}
-                for s in job.steps
-            ],
-            "current_step": job.current_step,
-            "filename": job.filename,
-            "created_at": job.created_at,
-            "updated_at": job.updated_at,
-            "error_message": job.error_message,
-            "result_path": job.result_path,
-        },
-    }
+    detail = _job_to_detail(job)
+
+    return ConversionStatusResponse(
+        data=detail,
+    )
 
 
 # 변환 결과 다운로드 엔드포인트
@@ -237,7 +280,7 @@ async def download_result(conversion_id: str, api_key: str = Depends(api_key_hea
 
 
 # 지원 언어 목록 엔드포인트
-@router.get("/languages", response_model=Dict)
+@router.get("/languages", response_model=SupportedLanguagesResponse)
 async def get_supported_languages(
     api_key: str = Depends(api_key_header), settings: Settings = Depends(get_settings)
 ):
@@ -251,32 +294,33 @@ async def get_supported_languages(
         Dict: 지원 언어 목록
     """
     supported_languages = [
-        {
-            "code": "ko",
-            "name": "한국어",
-            "description": "한국어 OCR 처리 (PaddleOCR)",
-        },
-        {
-            "code": "en",
-            "name": "English",
-            "description": "영어 OCR 처리 (Tesseract)",
-        },
-        {
-            "code": "ko-en",
-            "name": "한영 혼합",
-            "description": "한국어와 영어가 섞인 텍스트 처리",
-        },
+        LanguageInfo(
+            code="ko",
+            name="한국어",
+            description="한국어 OCR 처리 (PaddleOCR)",
+        ),
+        LanguageInfo(
+            code="en",
+            name="English",
+            description="영어 OCR 처리 (Tesseract)",
+        ),
+        LanguageInfo(
+            code="ko-en",
+            name="한영 혼합",
+            description="한국어와 영어가 섞인 텍스트 처리",
+        ),
     ]
 
-    return {
-        "success": True,
-        "data": supported_languages,
-        "default_language": "kor+eng",
-    }
+    return SupportedLanguagesResponse(
+        data=SupportedLanguagesData(
+            languages=supported_languages,
+            default_language="kor+eng",
+        )
+    )
 
 
 # 변환 작업 취소 엔드포인트
-@router.delete("/cancel/{conversion_id}", response_model=Dict)
+@router.delete("/cancel/{conversion_id}", response_model=ConversionOperationResponse)
 async def cancel_conversion(conversion_id: str, api_key: str = Depends(api_key_header)):
     """변환 작업 취소 엔드포인트
 
@@ -295,15 +339,14 @@ async def cancel_conversion(conversion_id: str, api_key: str = Depends(api_key_h
     except KeyError:
         raise HTTPException(status_code=404, detail="변환 작업을 찾을 수 없습니다.")
 
-    return {
-        "success": True,
-        "message": "변환 작업이 취소되었습니다.",
-        "conversion_id": conversion_id,
-    }
+    return ConversionOperationResponse(
+        message="변환 작업이 취소되었습니다.",
+        data=ConversionOperationData(conversion_id=conversion_id),
+    )
 
 
 # 실패한 작업 재시도(수동)
-@router.post("/retry/{conversion_id}", response_model=Dict)
+@router.post("/retry/{conversion_id}", response_model=ConversionOperationResponse)
 async def retry_conversion(conversion_id: str, api_key: str = Depends(api_key_header)):
     """실패한 변환 작업을 수동으로 재시도합니다."""
     async_queue_service = get_async_queue_service()
@@ -314,15 +357,14 @@ async def retry_conversion(conversion_id: str, api_key: str = Depends(api_key_he
             status_code=404, detail="재시도 가능한 작업을 찾을 수 없습니다."
         )
 
-    return {
-        "success": True,
-        "message": "재시도가 시작되었습니다.",
-        "conversion_id": job.conversion_id,
-    }
+    return ConversionOperationResponse(
+        message="재시도가 시작되었습니다.",
+        data=ConversionOperationData(conversion_id=job.conversion_id),
+    )
 
 
 # PDF 분석 엔드포인트
-@router.post("/analyze", response_model=Dict)
+@router.post("/analyze", response_model=PdfAnalysisResponse)
 async def analyze_pdf_structure(
     file: UploadFile = File(..., description="분석할 PDF 파일"),
     api_key: str = Depends(api_key_header),
@@ -360,31 +402,36 @@ async def analyze_pdf_structure(
         # PDF 분석 수행
         analysis_result = analyzer.analyze_pdf(pdf_content)
 
-        return {
-            "success": True,
-            "message": "PDF 분석이 완료되었습니다.",
-            "data": {
-                "pdf_type": analysis_result.pdf_type.value,
-                "total_pages": analysis_result.total_pages,
-                "overall_confidence": analysis_result.overall_confidence,
-                "text_based": {
-                    "pages_count": len(analysis_result.get_text_pages()),
-                    "page_numbers": analysis_result.get_text_pages(),
-                },
-                "scanned_based": {
-                    "pages_count": len(analysis_result.get_scanned_pages()),
-                    "page_numbers": analysis_result.get_scanned_pages(),
-                },
-                "mixed_ratio": (
-                    analysis_result.mixed_ratio
-                    if analysis_result.pdf_type == PDFType.MIXED
-                    else None
-                ),
-                "pages_analysis": [
-                    page.to_dict() for page in analysis_result.pages_analysis
-                ],
+        pdf_type_value = (
+            analysis_result.pdf_type.value
+            if isinstance(analysis_result.pdf_type, PDFType)
+            else str(analysis_result.pdf_type)
+        )
+
+        analysis_data = PdfAnalysisData(
+            pdf_type=pdf_type_value,
+            total_pages=analysis_result.total_pages,
+            overall_confidence=analysis_result.overall_confidence,
+            text_based={
+                "pages_count": len(analysis_result.get_text_pages()),
+                "page_numbers": analysis_result.get_text_pages(),
             },
-        }
+            scanned_based={
+                "pages_count": len(analysis_result.get_scanned_pages()),
+                "page_numbers": analysis_result.get_scanned_pages(),
+            },
+            mixed_ratio=(
+                getattr(analysis_result, "mixed_ratio", None)
+                if analysis_result.pdf_type == PDFType.MIXED
+                else None
+            ),
+            pages_analysis=[page.to_dict() for page in analysis_result.pages_analysis],
+        )
+
+        return PdfAnalysisResponse(
+            message="PDF 분석이 완료되었습니다.",
+            data=analysis_data,
+        )
 
     except Exception as e:
         logger.error(f"PDF 분석 중 오류 발생: {str(e)}")
@@ -394,7 +441,7 @@ async def analyze_pdf_structure(
 
 
 # PDF 메타데이터 추출 엔드포인트
-@router.post("/metadata", response_model=Dict)
+@router.post("/metadata", response_model=PdfMetadataResponse)
 async def extract_pdf_metadata(
     file: UploadFile = File(..., description="메타데이터를 추출할 PDF 파일"),
     include_content_analysis: bool = Form(
@@ -445,17 +492,18 @@ async def extract_pdf_metadata(
         # 메타데이터 요약 정보 생성
         metadata_summary = metadata_extractor.get_metadata_summary(pdf_content)
 
-        return {
-            "success": True,
-            "message": "PDF 메타데이터 추출이 완료되었습니다.",
-            "data": {
-                "metadata": metadata,
-                "summary": metadata_summary,
-                "filename": file.filename,
-                "file_size": len(pdf_content),
-                "extraction_method": "PyMuPDF + PyPDF2 + pdfminer.six",
-            },
-        }
+        metadata_data = PdfMetadataData(
+            metadata=metadata,
+            summary=metadata_summary,
+            filename=file.filename,
+            file_size=len(pdf_content),
+            extraction_method="PyMuPDF + pypdf + pdfminer.six",
+        )
+
+        return PdfMetadataResponse(
+            message="PDF 메타데이터 추출이 완료되었습니다.",
+            data=metadata_data,
+        )
 
     except Exception as e:
         logger.error(f"PDF 메타데이터 추출 중 오류 발생: {str(e)}")
@@ -466,7 +514,7 @@ async def extract_pdf_metadata(
 
 
 # 변환 작업 목록 조회 엔드포인트
-@router.get("/list", response_model=Dict)
+@router.get("/list", response_model=ConversionListResponse)
 async def list_conversions(
     limit: int = 10, offset: int = 0, api_key: str = Depends(api_key_header)
 ):
@@ -496,17 +544,28 @@ async def list_conversions(
             }
         )
 
-    return {
-        "success": True,
-        "data": mock_list,
-        "total_count": len(mock_list),
-        "limit": limit,
-        "offset": offset,
-    }
+    items = [
+        ConversionListItem(
+            conversion_id=item["conversion_id"],
+            filename=item["filename"],
+            status=ConversionStatus(item["status"]),
+            created_at=item["created_at"],
+        )
+        for item in mock_list
+    ]
+
+    return ConversionListResponse(
+        data=ConversionListData(
+            items=items,
+            total_count=len(items),
+            limit=limit,
+            offset=offset,
+        )
+    )
 
 
 # 변환 설정 정보 엔드포인트
-@router.get("/settings", response_model=Dict)
+@router.get("/settings", response_model=ConversionSettingsResponse)
 async def get_conversion_settings_info(
     api_key: str = Depends(api_key_header),
     settings_data: Dict = Depends(get_conversion_settings),
@@ -520,10 +579,9 @@ async def get_conversion_settings_info(
     Returns:
         Dict: 변환 설정 정보
     """
-    return {
-        "success": True,
-        "data": settings_data,
-    }
+    return ConversionSettingsResponse(
+        data=ConversionSettingsData(**settings_data),
+    )
 
 
 # 모의 EPUB 파일 생성 함수 (실제 구현에서는 제거)

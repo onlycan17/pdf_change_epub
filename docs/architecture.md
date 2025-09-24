@@ -14,7 +14,7 @@ graph TD
     subgraph "BaaS (Supabase)"
         B[Auth]
         C[Storage]
-        D[Postgres DB]
+        D[Managed Postgres]
         E[Edge Function]
     end
 
@@ -102,7 +102,8 @@ graph TD
 ## 3. 컴포넌트 상세
 
 ### 3.1. 백엔드 서비스 (Supabase)
-- **Database (PostgreSQL)**: 익명 사용자를 지원하도록 스키마가 확장됩니다. RLS 정책은 `user_id`가 일치하거나, `user_id`가 NULL이고 `session_id`가 일치하는 경우에만 접근을 허용하도록 수정됩니다.
+- **Database (Managed Postgres)**: Supabase가 관리하는 Postgres만 사용하며 별도 자체 호스팅 인스턴스는 두지 않습니다. RLS 정책은 `user_id`가 일치하거나, `user_id`가 NULL이고 `session_id`가 일치하는 경우에만 접근을 허용하도록 수정됩니다.
+- **Caching/Queueing**: 별도 Redis 없이 Supabase Storage, Edge Functions, Postgres를 활용하여 상태 및 캐시 데이터를 관리합니다.
 
 ### 3.2. 처리 서비스 (FastAPI)
 - **역할**: LLM 연동을 포함한 전체 변환 파이프라인을 오케스트레이션합니다.

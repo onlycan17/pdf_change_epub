@@ -13,8 +13,8 @@ from enum import Enum
 
 import fitz  # PyMuPDF
 
-# PyPDF2와 pdfminer.six 임포트
-from PyPDF2 import PdfReader
+# pypdf와 pdfminer.six 임포트
+from pypdf import PdfReader
 from pdfminer.high_level import extract_text as pdfminer_extract_text
 from pdfminer.pdfparser import PDFParser
 from pdfminer.pdfdocument import PDFDocument
@@ -668,7 +668,7 @@ class PDFExtractor:
         pdf_content: PDFContentSource,
         page_numbers: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
-        """PyPDF2를 사용한 텍스트 추출"""
+        """pypdf를 사용한 텍스트 추출"""
         try:
             # Prefer file-backed reader to avoid building large in-memory bytes
             with _pdf_file_from_source(pdf_content, self.settings) as pdf_path:
@@ -694,13 +694,13 @@ class PDFExtractor:
                 "extraction_stats": {
                     "total_pages": str(len(pdf_reader.pages)),
                     "extracted_pages": str(len(page_texts)),
-                    "extractor": "PyPDF2",
+                    "extractor": "pypdf",
                 },
             }
 
         except Exception as e:
-            logger.error(f"PyPDF2 텍스트 추출 실패: {str(e)}")
-            raise ValueError(f"PyPDF2 텍스트 추출 실패: {str(e)}")
+            logger.error(f"pypdf 텍스트 추출 실패: {str(e)}")
+            raise ValueError(f"pypdf 텍스트 추출 실패: {str(e)}")
 
     def extract_text_with_pdfminer(
         self,
@@ -745,7 +745,7 @@ class PDFExtractor:
     def extract_images_with_pypdf2(
         self, pdf_content: PDFContentSource
     ) -> List[Dict[str, Union[int, bytes, str]]]:
-        """PyPDF2를 사용한 이미지 추출"""
+        """pypdf를 사용한 이미지 추출"""
         try:
             with _pdf_file_from_source(pdf_content, self.settings) as pdf_path:
                 pdf_reader = PdfReader(str(pdf_path))
@@ -754,7 +754,7 @@ class PDFExtractor:
 
             for page_num, page in enumerate(pdf_reader.pages):
                 try:
-                    # PyPDF2에서는 직접적인 이미지 추출이 제한적이므로
+                    # pypdf에서는 직접적인 이미지 추출이 제한적이므로
                     # 텍스트에서 이미지 관련 정보를 추출
                     text = page.extract_text()
 
@@ -770,7 +770,7 @@ class PDFExtractor:
                                 "page": page_num + 1,
                                 "image_bytes": b"placeholder_image_data",
                                 "format": "placeholder",
-                                "extractor": "PyPDF2",
+                                "extractor": "pypdf",
                             }
                         )
 
@@ -778,12 +778,12 @@ class PDFExtractor:
                     logger.warning(f"페이지 {page_num + 1} 이미지 추출 실패: {str(e)}")
                     continue
 
-            logger.info(f"PyPDF2 이미지 추출 완료: {len(images_data)}개")
+            logger.info(f"pypdf 이미지 추출 완료: {len(images_data)}개")
             return images_data
 
         except Exception as e:
-            logger.error(f"PyPDF2 이미지 추출 실패: {str(e)}")
-            raise ValueError(f"PyPDF2 이미지 추출 실패: {str(e)}")
+            logger.error(f"pypdf 이미지 추출 실패: {str(e)}")
+            raise ValueError(f"pypdf 이미지 추출 실패: {str(e)}")
 
 
 class PDFMetadataExtractor:
@@ -846,13 +846,13 @@ class PDFMetadataExtractor:
                 except Exception as e:
                     logger.warning(f"XML 메타데이터 파싱 실패: {str(e)}")
 
-            # PyPDF2를 통한 추가 메타데이터 추출
+            # pypdf를 통한 추가 메타데이터 추출
             try:
                 pdf_bytes = _read_pdf_bytes(pdf_content)
                 pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
 
                 if pdf_reader.metadata:
-                    # PyPDF2 메타데이터로 보완
+                    # pypdf 메타데이터로 보완
                     if not extracted_metadata["title"] and pdf_reader.metadata.title:
                         extracted_metadata["title"] = pdf_reader.metadata.title
 
@@ -896,7 +896,7 @@ class PDFMetadataExtractor:
                         )
 
             except Exception as e:
-                logger.warning(f"PyPDF2 메타데이터 추출 실패: {str(e)}")
+                logger.warning(f"pypdf 메타데이터 추출 실패: {str(e)}")
 
             # pdfminer를 통한 추가 메타데이터 추출 시도
             try:

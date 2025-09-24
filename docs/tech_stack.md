@@ -25,7 +25,7 @@
 - **언어**: Python 3.12+
 - **웹 프레임워크**: FastAPI (변환 작업을 위한 API 엔드포인트 제공)
 - **핵심 라이브러리**:
-    - **PDF 처리**: PyPDF2 또는 pdfminer.six
+    - **PDF 처리**: pypdf 또는 pdfminer.six
     - **OCR 처리**: PaddleOCR (한국어 특화 모델)
     - **EPUB 생성**: ebooklib
     - **LLM 연동**: OpenRouter (다양한 LLM 모델 접근을 위한 라우터)

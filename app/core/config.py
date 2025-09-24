@@ -1,6 +1,6 @@
 import os
 from typing import Optional, List
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class DatabaseSettings(BaseSettings):
@@ -10,8 +10,7 @@ class DatabaseSettings(BaseSettings):
     pool_size: int = 20
     max_overflow: int = 30
 
-    class Config:
-        env_prefix = "DB_"
+    model_config = SettingsConfigDict(env_prefix="DB_")
 
 
 class RedisSettings(BaseSettings):
@@ -29,8 +28,7 @@ class RedisSettings(BaseSettings):
             return f"redis://:{self.password}@{self.host}:{self.port}/{self.db}"
         return f"redis://{self.host}:{self.port}/{self.db}"
 
-    class Config:
-        env_prefix = "REDIS_"
+    model_config = SettingsConfigDict(env_prefix="REDIS_")
 
 
 class OCRSettings(BaseSettings):
@@ -41,8 +39,7 @@ class OCRSettings(BaseSettings):
     paddle_ocr_model: str = "korean"
     max_workers: int = 4
 
-    class Config:
-        env_prefix = "OCR_"
+    model_config = SettingsConfigDict(env_prefix="OCR_")
 
 
 class LLMSettings(BaseSettings):
@@ -54,9 +51,10 @@ class LLMSettings(BaseSettings):
     max_tokens: int = 4000
     temperature: float = 0.1
 
-    class Config:
-        env_prefix = "LLM_"
-        protected_namespaces = ()
+    model_config = SettingsConfigDict(
+        env_prefix="LLM_",
+        protected_namespaces=(),
+    )
 
 
 class ConversionSettings(BaseSettings):
@@ -68,8 +66,7 @@ class ConversionSettings(BaseSettings):
     chunk_size: int = 1000
     cleanup_temp_files: bool = True
 
-    class Config:
-        env_prefix = "CONVERSION_"
+    model_config = SettingsConfigDict(env_prefix="CONVERSION_")
 
 
 class Settings(BaseSettings):
@@ -135,6 +132,14 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     deepseek_api_key: Optional[str] = None
 
+    # Stripe 결제 설정
+    stripe_secret_key: Optional[str] = None
+    stripe_webhook_secret: Optional[str] = None
+    stripe_price_basic: Optional[str] = None
+    stripe_price_pro: Optional[str] = None
+    stripe_success_url: Optional[str] = None
+    stripe_cancel_url: Optional[str] = None
+
     # 외부 서비스 설정
     smtp_host: Optional[str] = None
     smtp_port: int = 587
@@ -165,10 +170,11 @@ class Settings(BaseSettings):
     # debug 속성은 __init__에서만 처리
     debug: bool = False
 
-    class Config:
-        case_sensitive = True
-        env_prefix = "APP_"
-        extra = "ignore"
+    model_config = SettingsConfigDict(
+        case_sensitive=True,
+        env_prefix="APP_",
+        extra="ignore",
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

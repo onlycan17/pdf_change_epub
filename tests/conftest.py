@@ -1,20 +1,11 @@
 """테스트 설정 파일"""
 
 import pytest
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
-from typing import Generator, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from app.core.config import Settings
 from app.services.async_queue_service import AsyncQueueService
-
-
-@pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """이벤트 루프 생성"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture

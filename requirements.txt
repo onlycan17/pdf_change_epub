@@ -14,9 +14,9 @@ pydantic==2.7.4
 pydantic-settings==2.3.4
 
 # PDF 처리
-PyPDF2==3.0.1
+pypdf==4.3.1
 pdfminer.six==20231228
-PyMuPDF==1.24.9
+PyMuPDF==1.24.6
 
 # OCR 처리
 paddleocr==2.7.5
@@ -42,6 +42,7 @@ asgiref==3.7.2
 python-multipart==0.0.9
 aiofiles==23.2.1
 httpx==0.27.0
+stripe==12.5.1
 
 # 로깅
 structlog==24.1.0

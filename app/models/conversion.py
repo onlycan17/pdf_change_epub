@@ -1,14 +1,15 @@
 from enum import Enum
 from datetime import datetime
-from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List, Generic, TypeVar
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class ConversionStatus(str, Enum):
     """변환 작업 상태"""
 
     PENDING = "pending"  # 대기 중
-    PROGRESSING = "progressing"  # 진행 중
+    PROCESSING = "processing"  # 진행 중
     COMPLETED = "completed"  # 완료
     FAILED = "failed"  # 실패
     CANCELLED = "cancelled"  # 취소됨
@@ -122,3 +123,174 @@ class ConversionResult(BaseModel):
         default_factory=datetime.utcnow, description="생성 시간"
     )
     metadata: Optional[Dict[str, Any]] = Field(None, description="추가 메타데이터")
+
+
+T = TypeVar("T")
+
+
+class BaseResponse(BaseModel):
+    """기본 응답 모델"""
+
+    success: bool = True
+    message: Optional[str] = None
+
+
+class DataResponse(BaseModel, Generic[T]):
+    """데이터를 포함하는 응답 래퍼"""
+
+    success: bool = True
+    message: Optional[str] = None
+    data: T
+
+
+class JobStepModel(BaseModel):
+    """변환 작업 단계 정보"""
+
+    name: str
+    progress: int = Field(0, ge=0, le=100)
+    message: Optional[str] = None
+
+
+class ConversionJobSummary(BaseModel):
+    """변환 작업 요약 정보"""
+
+    conversion_id: str
+    filename: str
+    file_size: int = Field(..., ge=0)
+    ocr_enabled: bool
+    status: ConversionStatus
+    progress: int = Field(..., ge=0, le=100)
+    created_at: datetime
+    updated_at: datetime
+    result_path: Optional[str] = None
+    error_message: Optional[str] = None
+
+    @field_validator("created_at", "updated_at", mode="before")
+    @classmethod
+    def _parse_datetime(cls, value: Any) -> datetime:
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            if value.endswith("Z"):
+                value = value[:-1] + "+00:00"
+            return datetime.fromisoformat(value)
+        raise TypeError("Invalid datetime value")
+
+
+class ConversionJobDetail(ConversionJobSummary):
+    """세부 변환 작업 정보"""
+
+    current_step: Optional[str] = None
+    steps: List[JobStepModel] = Field(default_factory=list)
+
+
+class ConversionOperationData(BaseModel):
+    """작업 처리 결과 데이터"""
+
+    conversion_id: str
+
+
+class ConversionOperationResponse(DataResponse[ConversionOperationData]):
+    """작업 처리 응답"""
+
+
+class ConversionStartResponse(DataResponse[ConversionJobSummary]):
+    """변환 시작 응답"""
+
+
+class ConversionStatusResponse(DataResponse[ConversionJobDetail]):
+    """변환 상태 응답"""
+
+
+class LanguageInfo(BaseModel):
+    """지원 언어 정보"""
+
+    code: str
+    name: str
+    description: str
+
+
+class SupportedLanguagesData(BaseModel):
+    """지원 언어 응답 데이터"""
+
+    languages: List[LanguageInfo]
+    default_language: str
+
+
+class SupportedLanguagesResponse(DataResponse[SupportedLanguagesData]):
+    """지원 언어 응답"""
+
+
+class PdfAnalysisData(BaseModel):
+    """PDF 분석 데이터"""
+
+    pdf_type: str
+    total_pages: int
+    overall_confidence: float
+    text_based: Dict[str, Any]
+    scanned_based: Dict[str, Any]
+    mixed_ratio: Optional[float] = None
+    pages_analysis: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class PdfAnalysisResponse(DataResponse[PdfAnalysisData]):
+    """PDF 분석 응답"""
+
+
+class PdfMetadataData(BaseModel):
+    """PDF 메타데이터 응답 데이터"""
+
+    metadata: Dict[str, Any]
+    summary: Dict[str, Any]
+    filename: Optional[str]
+    file_size: int
+    extraction_method: str
+
+
+class PdfMetadataResponse(DataResponse[PdfMetadataData]):
+    """PDF 메타데이터 응답"""
+
+
+class ConversionListItem(BaseModel):
+    """변환 목록 항목"""
+
+    conversion_id: str
+    filename: str
+    status: ConversionStatus
+    created_at: datetime
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def _parse_created_at(cls, value: Any) -> datetime:
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            if value.endswith("Z"):
+                value = value[:-1] + "+00:00"
+            return datetime.fromisoformat(value)
+        raise TypeError("Invalid datetime value")
+
+
+class ConversionListData(BaseModel):
+    """변환 목록 응답 데이터"""
+
+    items: List[ConversionListItem]
+    total_count: int
+    limit: int
+    offset: int
+
+
+class ConversionListResponse(DataResponse[ConversionListData]):
+    """변환 목록 응답"""
+
+
+class ConversionSettingsData(BaseModel):
+    """변환 설정 데이터"""
+
+    max_file_size: int
+    supported_formats: List[str]
+    output_format: str
+
+
+class ConversionSettingsResponse(DataResponse[ConversionSettingsData]):
+    """변환 설정 응답"""

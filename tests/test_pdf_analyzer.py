@@ -145,7 +145,7 @@ class TestPDFExtractor:
         assert hasattr(self.extractor, "settings")
 
     def test_extract_text_with_pypdf2(self):
-        """PyPDF2를 사용한 텍스트 추출 테스트"""
+        """pypdf를 사용한 텍스트 추출 테스트"""
         # 더미 PDF 데이터 생성 (실제로는 파일이 필요하지만, 여기서는 메서드 존재 여부만 테스트)
         dummy_pdf_data = b"%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n/Contents 4 0 R\n>>\nendobj\n4 0 obj\n<<\n/Length 44\n>>\nstream\nBT\n/F1 12 Tf\n72 720 Td\n(Hello, World!) Tj\nET\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f\n0000000009 00000 n\n0000000058 00000 n\n0000000115 00000 n\n0000000224 00000 n\ntrailer\n<<\n/Size 5\n/Root 1 0 R\n>>\nstartxref\n329\n%%EOF"
 
@@ -160,10 +160,10 @@ class TestPDFExtractor:
             assert "total_text" in result
             assert "page_texts" in result
             assert "extraction_stats" in result
-            assert result["extraction_stats"]["extractor"] == "PyPDF2"
+            assert result["extraction_stats"]["extractor"] == "pypdf"
         except ValueError as e:
             # PDF 파싱 실패는 예상되는 예외
-            assert "PyPDF2" in str(e)
+            assert "pypdf" in str(e)
 
     def test_extract_text_with_pdfminer(self):
         """pdfminer.six를 사용한 텍스트 추출 테스트"""
@@ -187,7 +187,7 @@ class TestPDFExtractor:
             assert "pdfminer.six" in str(e)
 
     def test_extract_images_with_pypdf2(self):
-        """PyPDF2를 사용한 이미지 추출 테스트"""
+        """pypdf를 사용한 이미지 추출 테스트"""
         # 더미 PDF 데이터 생성
         dummy_pdf_data = b"%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n/Contents 4 0 R\n>>\nendobj\n4 0 obj\n<<\n/Length 44\n>>\nstream\nBT\n/F1 12 Tf\n72 720 Td\n(Hello, World!) Tj\nET\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f\n0000000009 00000 n\n0000000058 00000 n\n0000000115 00000 n\n0000000224 00000 n\ntrailer\n<<\n/Size 5\n/Root 1 0 R\n>>\nstartxref\n329\n%%EOF"
 
@@ -208,7 +208,7 @@ class TestPDFExtractor:
                 assert "extractor" in item
         except ValueError as e:
             # PDF 파싱 실패는 예상되는 예외
-            assert "PyPDF2" in str(e)
+            assert "pypdf" in str(e)
 
 
 def test_create_pdf_analyzer():
