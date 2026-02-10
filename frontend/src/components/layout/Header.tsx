@@ -1,19 +1,19 @@
-import React, { useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
-import { useApp } from '@contexts/AppContext'
+import React, { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { useApp } from '@contexts/AppContext';
 
 const Header: React.FC = () => {
-  const { state } = useApp()
-  const location = useLocation()
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const { state } = useApp();
+  const location = useLocation();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const navigation = [
     { name: '홈', href: '/' },
     { name: '변환하기', href: '/upload' },
     { name: '프리미엄', href: '/premium' },
-  ]
+  ];
 
-  const isActive = (path: string) => location.pathname === path
+  const isActive = (path: string) => location.pathname === path;
 
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
@@ -81,8 +81,18 @@ const Header: React.FC = () => {
             className="md:hidden p-2 rounded-md text-gray-700 hover:text-blue-600 hover:bg-gray-50"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 6h16M4 12h16M4 18h16"
+              />
             </svg>
           </button>
         </div>
@@ -141,7 +151,7 @@ const Header: React.FC = () => {
         )}
       </nav>
     </header>
-  )
-}
+  );
+};
 
-export default Header
+export default Header;
