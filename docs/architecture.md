@@ -102,8 +102,8 @@ graph TD
 ## 3. 컴포넌트 상세
 
 ### 3.1. 백엔드 서비스 (Supabase)
-- **Database (Managed Postgres)**: Supabase가 관리하는 Postgres만 사용하며 별도 자체 호스팅 인스턴스는 두지 않습니다. RLS 정책은 `user_id`가 일치하거나, `user_id`가 NULL이고 `session_id`가 일치하는 경우에만 접근을 허용하도록 수정됩니다.
-- **Caching/Queueing**: 별도 Redis 없이 Supabase Storage, Edge Functions, Postgres를 활용하여 상태 및 캐시 데이터를 관리합니다.
+- **Database**: 개발/운영 환경에 따라 PostgreSQL 또는 SQLite를 사용합니다.
+- **Caching/Queueing**: Redis + Celery 기반 비동기 큐를 사용하여 변환 작업을 처리합니다.
 
 ### 3.2. 처리 서비스 (FastAPI)
 - **역할**: LLM 연동을 포함한 전체 변환 파이프라인을 오케스트레이션합니다.
@@ -172,3 +172,7 @@ FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 - **API 비용 제어**:
     - 무료 사용자의 LLM 및 OCR API 호출 횟수와 사용량을 제한하는 로직을 FastAPI 서비스 내에 구현합니다.
     - 유료 사용자의 경우, 파일 크기와 실제 LLM/OCR 사용량을 기반으로 비용을 산정하는 모델을 적용하여 합리적인 과금을 책정합니다.
+
+## 6. 현재 구현 메모
+- 현재 코드베이스는 FastAPI + Redis + Celery 중심의 백엔드 구조를 사용합니다.
+- Supabase 연동은 확장 지점으로 남아 있으며, 모든 작업 상태 저장이 Supabase에 완전히 일원화된 상태는 아닙니다.
