@@ -117,3 +117,63 @@ async def test_cancel_conversion(monkeypatch):
     await orch.cancel(conversion_id)
     fetched = await orch.status(conversion_id)
     assert fetched.state == JobState.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_text_pdf_chunks_apply_context_correction(monkeypatch):
+    orch = ConversionOrchestrator(None)
+
+    monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
+    pdf_analysis = PDFAnalysisResult(
+        pdf_type=PDFType.TEXT_BASED,
+        total_pages=2,
+        pages_analysis=[
+            PageAnalysisResult(page_number=1, has_text=True, text_content="A"),
+            PageAnalysisResult(page_number=2, has_text=True, text_content="B"),
+        ],
+        overall_confidence=1.0,
+        mixed_ratio=0.0,
+    )
+    orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
+
+    monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: [
+        {"start_page": 1, "end_page": 1, "total_text": "첫청크"},
+        {"start_page": 2, "end_page": 2, "total_text": "둘청크"},
+    ]
+    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content: {
+        "total_text": "fallback"
+    }
+
+    class DummyCorrector:
+        async def correct_chunk_entries(self, chunks):
+            return "보정된 전체 텍스트"
+
+    orch.text_context_corrector = DummyCorrector()
+
+    def fake_create_epub_bytes(
+        title: str,
+        author: str,
+        chapters,
+        uid=None,
+        include_legacy_ncx=True,
+        auto_toc_from_headings=True,
+    ):
+        assert "보정된 전체 텍스트" in chapters[0].content
+        return b"EPUBBYTES"
+
+    orch.epub.create_epub_bytes = fake_create_epub_bytes
+
+    conversion_id = "ctx-test-id"
+    pdf_bytes = make_dummy_pdf_bytes()
+    await orch.start(
+        conversion_id=conversion_id,
+        filename="ctx.pdf",
+        file_size=len(pdf_bytes),
+        ocr_enabled=False,
+        pdf_bytes=pdf_bytes,
+    )
+
+    await asyncio.sleep(0.5)
+    status = await orch.status(conversion_id)
+    assert status.state == JobState.COMPLETED

@@ -26,6 +26,7 @@ from app.services.pdf_service import (
 from app.services.epub_service import EpubGenerator, Chapter
 from app.services.epub_validator import validate_epub_bytes
 from app.services.progress_tracker import ProgressTracker
+from app.services.text_context_service import create_text_context_corrector
 
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ class ConversionJob:
     error_message: Optional[str] = None
     attempts: int = 0
     celery_task_id: Optional[str] = None
+    source_pdf_bytes: Optional[bytes] = field(default=None, repr=False)
     _cancel_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
     def cancel(self) -> None:
@@ -125,6 +127,7 @@ class ConversionOrchestrator:
         self.tracker = ProgressTracker()
         self.pdf_analyzer: PDFAnalyzer = create_pdf_analyzer(self.settings)
         self.pdf_extractor: PDFExtractor = create_pdf_extractor(self.settings)
+        self.text_context_corrector = create_text_context_corrector(self.settings)
         self.epub = EpubGenerator(language="ko")
 
     async def start(
@@ -141,6 +144,7 @@ class ConversionOrchestrator:
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
+            source_pdf_bytes=pdf_bytes,
             state=JobState.PENDING,
             progress=0,
             current_step="queued",
@@ -169,7 +173,7 @@ class ConversionOrchestrator:
         # 새로운 백그라운드 작업 실행
         # note: 이전 결과는 보존되며, 재시작 시 필요하면 덮어씌워짐
         asyncio.create_task(
-            self._run_pipeline(conversion_id, getattr(job, "result_bytes") or b"")
+            self._run_pipeline(conversion_id, getattr(job, "source_pdf_bytes") or b"")
         )
         return job
 
@@ -234,8 +238,18 @@ class ConversionOrchestrator:
                         )
                         # 여기서는 간단히 합쳐서 후속 처리에 사용
                         assembled_text_parts.append(ch.get("total_text", ""))
-
-                    text_result = {"total_text": "\n\n".join(assembled_text_parts)}
+                    # 문맥 경계 보정 단계:
+                    # 이전/다음 청크 일부를 참고해 현재 청크의 문장 연결을 자연스럽게 보정
+                    if pdf_type in (PDFType.TEXT_BASED, PDFType.MIXED):
+                        await set_step("context_correction", 60, "문맥 보정 중")
+                        corrected_text = (
+                            await self.text_context_corrector.correct_chunk_entries(
+                                chunks
+                            )
+                        )
+                        text_result = {"total_text": corrected_text}
+                    else:
+                        text_result = {"total_text": "\n\n".join(assembled_text_parts)}
                 else:
                     # 단일 청크 혹은 작은 문서: 기존 방식 유지
                     if pdf_type == PDFType.TEXT_BASED or pdf_type == PDFType.MIXED:
