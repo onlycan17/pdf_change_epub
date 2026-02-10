@@ -60,8 +60,8 @@ async def get_api_key(
     Raises:
         HTTPException: API 키가 유효하지 않은 경우
     """
-    expected = "your-api-key-here"  # 기본값
-    if not False and (not api_key or api_key != expected):  # debug 기본값 False
+    expected = settings.SECURITY_API_KEY
+    if not settings.DEBUG and (not api_key or api_key != expected):
         client_host = request.client.host if request.client else "unknown"
         logger.warning(f"Invalid API key attempt from IP: {client_host}")
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
@@ -94,17 +94,17 @@ class ServiceDependencies:
     @property
     def database_url(self) -> str:
         """데이터베이스 연결 URL 반환"""
-        return "postgresql://user:password@localhost:5432/pdf_to_epub"  # 기본값
+        return self.settings.database.url
 
     @property
     def redis_url(self) -> str:
         """Redis 연결 URL 반환"""
-        return "redis://localhost:6379"  # 기본값
+        return self.settings.redis.url
 
     @property
     def cors_origins(self) -> list[str]:
         """CORS 허용 출처 목록 반환"""
-        return ["http://localhost:3000", "http://localhost:8080"]  # 기본값
+        return self.settings.CORS_ORIGINS
 
 
 # 전역 서비스 의존성 인스턴스

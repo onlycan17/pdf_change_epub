@@ -92,12 +92,16 @@ class MultimodalLLMAgent(BaseAgent):
 
     def __init__(self, settings: Optional[Settings] = None):
         super().__init__(AgentType.MULTIMODAL_LLM, settings)
-        self.api_key = "your-api-key-here"  # 기본값
-        self.base_url = "https://openrouter.ai/api/v1"  # 기본값
-        self.model_name = "deepseek/deepseek-v3.1"  # 기본값
-        self.max_tokens = 4000  # 기본값
-        self.temperature = 0.7  # 기본값
-        self.timeout = 60  # 기본값
+        self.api_key = (
+            self.settings.llm.api_key
+            or self.settings.deepseek_api_key
+            or self.settings.openai_api_key
+        )
+        self.base_url = self.settings.llm.base_url
+        self.model_name = self.settings.llm.model_name
+        self.max_tokens = self.settings.llm.max_tokens
+        self.temperature = self.settings.llm.temperature
+        self.timeout = self.settings.llm.timeout
 
         if not self.api_key:
             raise ValueError("OpenRouter API 키가 설정되지 않았습니다.")

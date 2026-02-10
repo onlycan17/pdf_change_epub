@@ -109,3 +109,36 @@ class TestAsyncQueueService:
         assert stats["reserved_tasks"] == 1
         assert stats["scheduled_tasks"] == 1
         assert stats["worker_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_retry_conversion_reuses_original_pdf_bytes(self):
+        service = AsyncQueueService()
+        service._initialized = True
+        source_pdf = b"%PDF-1.4 retry source"
+        job = ConversionJob(
+            conversion_id="cid-retry",
+            filename="retry.pdf",
+            file_size=len(source_pdf),
+            ocr_enabled=True,
+            state=JobState.FAILED,
+            progress=0,
+            source_pdf_bytes=source_pdf,
+        )
+
+        with patch.object(service, "start_conversion") as mock_start:
+            from unittest.mock import AsyncMock
+
+            service.store = AsyncMock()
+            service.store.get.return_value = job
+            service.store.update.return_value = job
+            mock_start.return_value = job
+
+            await service.retry_conversion("cid-retry")
+
+            mock_start.assert_called_once_with(
+                conversion_id="cid-retry",
+                filename="retry.pdf",
+                file_size=len(source_pdf),
+                ocr_enabled=True,
+                pdf_bytes=source_pdf,
+            )

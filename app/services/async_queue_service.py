@@ -79,6 +79,7 @@ class AsyncQueueService:
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
+            source_pdf_bytes=pdf_bytes,
             state=JobState.PENDING,
             progress=0,
             current_step="queued",
@@ -248,7 +249,7 @@ class AsyncQueueService:
             filename=job.filename,
             file_size=job.file_size,
             ocr_enabled=job.ocr_enabled,
-            pdf_bytes=b"",  # 기존 데이터는 재사용하지 않음
+            pdf_bytes=job.source_pdf_bytes or b"",
         )
 
     async def get_queue_stats(self) -> Dict[str, Any]:

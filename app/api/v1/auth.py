@@ -190,9 +190,7 @@ async def validate_api_key(
     Returns:
         dict: 유효성 검증 결과
     """
-    if (
-        not False and api_key != "your-api-key-here"  # debug 기본값 False
-    ):  # TODO: 환경 변수에서 로드
+    if not settings.DEBUG and api_key != settings.SECURITY_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key"
         )

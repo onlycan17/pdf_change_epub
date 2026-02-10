@@ -50,6 +50,8 @@ class LLMSettings(BaseSettings):
     api_key: Optional[str] = None
     max_tokens: int = 4000
     temperature: float = 0.1
+    base_url: str = "https://openrouter.ai/api/v1"
+    timeout: int = 60
 
     model_config = SettingsConfigDict(
         env_prefix="LLM_",
@@ -99,6 +101,7 @@ class Settings(BaseSettings):
 
     # 보안 설정
     secret_key: str = "your-secret-key-here"
+    security_api_key: str = "your-api-key-here"
     access_token_expire_minutes: int = 30
     algorithm: str = "HS256"
 
@@ -184,6 +187,10 @@ class Settings(BaseSettings):
         self.debug = os.getenv("DEBUG", "false").lower() in ("true", "1", "yes", "on")
         self.host = os.getenv("APP_HOST", self.host)
         self.port = int(os.getenv("APP_PORT", str(self.port)))
+        self.security_api_key = os.getenv(
+            "SECURITY_API_KEY",
+            os.getenv("APP_SECURITY_API_KEY", self.security_api_key),
+        )
 
         # 중첩된 설정 업데이트
         self.database = DatabaseSettings()
@@ -250,6 +257,10 @@ class Settings(BaseSettings):
     @property
     def SECRET_KEY(self) -> str:
         return self.secret_key
+
+    @property
+    def SECURITY_API_KEY(self) -> str:
+        return self.security_api_key
 
     @property
     def ACCESS_TOKEN_EXPIRE_MINUTES(self) -> int:
