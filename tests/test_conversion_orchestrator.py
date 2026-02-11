@@ -215,6 +215,68 @@ async def test_text_pdf_chunks_apply_context_correction(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_text_result_is_preferred_over_content_flow(monkeypatch):
+    orch = ConversionOrchestrator(None)
+
+    monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
+    pdf_analysis = PDFAnalysisResult(
+        pdf_type=PDFType.TEXT_BASED,
+        total_pages=1,
+        pages_analysis=[
+            PageAnalysisResult(page_number=1, has_text=True, text_content="A"),
+        ],
+        overall_confidence=1.0,
+        mixed_ratio=0.0,
+    )
+    orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
+
+    monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: []
+    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content: {
+        "total_text": "=== 페이지 1 ===\n보정된 문장"
+    }
+    orch.pdf_extractor.extract_content_flow_with_images = lambda pdf_content: {
+        "pages": [
+            {
+                "page": 1,
+                "elements": [{"type": "text", "text": "블록텍스트"}],
+            }
+        ]
+    }
+    orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: []
+
+    def fake_create_epub_bytes(
+        title: str,
+        author: str,
+        chapters,
+        images=None,
+        uid=None,
+        include_legacy_ncx=True,
+        auto_toc_from_headings=True,
+    ):
+        content = chapters[0].content
+        assert "보정된 문장" in content
+        assert "블록텍스트" not in content
+        return b"EPUBBYTES"
+
+    orch.epub.create_epub_bytes = fake_create_epub_bytes
+
+    conversion_id = "prefer-text-result-id"
+    pdf_bytes = make_dummy_pdf_bytes()
+    await orch.start(
+        conversion_id=conversion_id,
+        filename="prefer.pdf",
+        file_size=len(pdf_bytes),
+        ocr_enabled=False,
+        pdf_bytes=pdf_bytes,
+    )
+
+    await asyncio.sleep(0.5)
+    status = await orch.status(conversion_id)
+    assert status.state == JobState.COMPLETED
+
+
+@pytest.mark.asyncio
 async def test_epub_includes_extracted_images(monkeypatch):
     orch = ConversionOrchestrator(None)
 
@@ -332,3 +394,56 @@ async def test_unknown_image_format_is_normalized_to_png(monkeypatch):
     await asyncio.sleep(0.5)
     status = await orch.status(conversion_id)
     assert status.state == JobState.COMPLETED
+
+
+def test_render_markdown_to_xhtml_body_removes_raw_markdown():
+    orch = ConversionOrchestrator(None)
+
+    markdown_text = """# 제목
+
+- 항목1
+- 항목2
+
+본문 문장입니다.
+"""
+
+    html_body = orch._render_markdown_to_xhtml_body(  # type: ignore[attr-defined]
+        markdown_text,
+        {},
+    )
+
+    assert "<h1>제목</h1>" in html_body
+    assert "<ul>" in html_body
+    assert "<li>항목1</li>" in html_body
+    assert "<p>본문 문장입니다.</p>" in html_body
+    assert "# 제목" not in html_body
+
+
+def test_render_content_flow_places_image_in_order():
+    orch = ConversionOrchestrator(None)
+
+    content_flow = [
+        {
+            "page": 1,
+            "elements": [
+                {"type": "text", "text": "첫 문단"},
+                {"type": "image", "xref": 10},
+                {"type": "text", "text": "둘 문단"},
+            ],
+        }
+    ]
+    image_map = {10: "images/image-1.png"}
+
+    html_body = orch._render_content_flow_to_xhtml(  # type: ignore[attr-defined]
+        content_flow,
+        image_map,
+    )
+
+    first_text_idx = html_body.find("첫 문단")
+    image_idx = html_body.find('src="images/image-1.png"')
+    second_text_idx = html_body.find("둘 문단")
+
+    assert first_text_idx != -1
+    assert image_idx != -1
+    assert second_text_idx != -1
+    assert first_text_idx < image_idx < second_text_idx

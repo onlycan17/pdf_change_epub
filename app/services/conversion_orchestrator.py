@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from html import escape
 from io import BytesIO
+import re
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 from pathlib import Path
@@ -326,18 +327,24 @@ class ConversionOrchestrator:
 
             # 4) EPUB 생성
             await set_step("epub", 80, "EPUB 생성 중")
-            epub_images = self._build_epub_image_assets(pdf_bytes)
-            image_gallery_html = self._build_image_gallery_html(epub_images)
+            content_flow = self._extract_content_flow_pages(pdf_bytes)
+            (
+                epub_images,
+                image_file_by_xref,
+                image_file_by_page,
+            ) = self._build_epub_image_assets(pdf_bytes)
+            page_image_refs = self._resolve_page_image_refs(
+                content_flow,
+                image_file_by_xref,
+                image_file_by_page,
+            )
 
             chapters: List[Chapter] = []
             if synthesis_markdown:
-                # 마크다운을 간단 변환: 줄바꿈을 <p>로 감싸는 경량 변환
-                html_body = "".join(
-                    f"<p>{line}</p>"
-                    for line in synthesis_markdown.split("\n")
-                    if line.strip()
+                html_body = self._render_markdown_to_xhtml_body(
+                    synthesis_markdown,
+                    page_image_refs,
                 )
-                html_body += image_gallery_html
                 chapters.append(
                     Chapter(
                         title="Converted", file_name="chapter1.xhtml", content=html_body
@@ -346,10 +353,20 @@ class ConversionOrchestrator:
             elif text_result and text_result.get("total_text"):
                 # 텍스트를 단순 문단화
                 total_text: str = str(text_result.get("total_text"))
-                html_body = "".join(
-                    f"<p>{line}</p>" for line in total_text.split("\n") if line.strip()
+                html_body = self._render_text_with_page_images(
+                    total_text,
+                    page_image_refs,
                 )
-                html_body += image_gallery_html
+                chapters.append(
+                    Chapter(
+                        title="Converted", file_name="chapter1.xhtml", content=html_body
+                    )
+                )
+            elif content_flow:
+                html_body = self._render_content_flow_to_xhtml(
+                    content_flow,
+                    image_file_by_xref,
+                )
                 chapters.append(
                     Chapter(
                         title="Converted", file_name="chapter1.xhtml", content=html_body
@@ -364,8 +381,10 @@ class ConversionOrchestrator:
                         content="<p>내용을 추출하지 못했습니다.</p>",
                     )
                 )
-                if image_gallery_html:
-                    chapters[0].content += image_gallery_html
+                for page in sorted(page_image_refs.keys()):
+                    chapters[0].content += self._render_image_figure_group(
+                        page_image_refs[page]
+                    )
 
             epub_bytes = self.epub.create_epub_bytes(
                 title="변환된 문서",
@@ -438,18 +457,22 @@ class ConversionOrchestrator:
                 current_step="failed",
             )
 
-    def _build_epub_image_assets(self, pdf_bytes: bytes) -> List[EpubImage]:
+    def _build_epub_image_assets(
+        self, pdf_bytes: bytes
+    ) -> tuple[List[EpubImage], Dict[int, str], Dict[int, List[str]]]:
         """PDF에서 추출한 이미지를 EPUB 리소스로 변환합니다."""
         try:
             raw_images = self.pdf_extractor.extract_images_from_pdf(pdf_bytes)
         except Exception:
             logger.exception("PDF 이미지 추출 실패. 텍스트만으로 EPUB을 생성합니다.")
-            return []
+            return [], {}, {}
 
         if not isinstance(raw_images, list):
-            return []
+            return [], {}, {}
 
         assets: List[EpubImage] = []
+        image_file_by_xref: Dict[int, str] = {}
+        image_file_by_page: Dict[int, List[str]] = {}
         for index, image_info in enumerate(raw_images, start=1):
             if not isinstance(image_info, dict):
                 continue
@@ -466,35 +489,269 @@ class ConversionOrchestrator:
                 )
                 continue
             ext, media_type, normalized_bytes = normalized
+            file_name = f"images/image-{index}.{ext}"
             assets.append(
                 EpubImage(
-                    file_name=f"images/image-{index}.{ext}",
+                    file_name=file_name,
                     media_type=media_type,
                     data=normalized_bytes,
                 )
             )
+            xref_value = image_info.get("xref")
+            if isinstance(xref_value, int):
+                image_file_by_xref[xref_value] = file_name
+            page_value = image_info.get("page")
+            if isinstance(page_value, int):
+                image_file_by_page.setdefault(page_value, []).append(file_name)
 
-        return assets
+        return assets, image_file_by_xref, image_file_by_page
 
-    def _build_image_gallery_html(self, images: List[EpubImage]) -> str:
-        if not images:
-            return ""
+    def _extract_content_flow_pages(self, pdf_bytes: bytes) -> List[Dict[str, Any]]:
+        try:
+            flow = self.pdf_extractor.extract_content_flow_with_images(pdf_bytes)
+        except Exception:
+            logger.exception("콘텐츠 흐름 추출 실패. 기본 렌더링으로 진행합니다.")
+            return []
+        pages = flow.get("pages") if isinstance(flow, dict) else None
+        if not isinstance(pages, list):
+            return []
+        return [page for page in pages if isinstance(page, dict)]
 
-        html_parts = [
-            "<section>",
-            "<h2>문서 이미지</h2>",
-            "<p>원본 PDF에서 추출한 이미지입니다.</p>",
-        ]
-        for index, image in enumerate(images, start=1):
-            html_parts.append("<figure>")
-            html_parts.append(
-                f'<img src="{escape(image.file_name)}" alt="문서 이미지 {index}" />'
-            )
-            html_parts.append(f"<figcaption>이미지 {index}</figcaption>")
-            html_parts.append("</figure>")
-        html_parts.append("</section>")
+    def _resolve_page_image_refs(
+        self,
+        content_flow: List[Dict[str, Any]],
+        image_file_by_xref: Dict[int, str],
+        image_file_by_page: Dict[int, List[str]],
+    ) -> Dict[int, List[str]]:
+        page_refs: Dict[int, List[str]] = {
+            page: list(refs) for page, refs in image_file_by_page.items()
+        }
+        for page_entry in content_flow:
+            page_num = page_entry.get("page")
+            elements = page_entry.get("elements")
+            if not isinstance(page_num, int) or not isinstance(elements, list):
+                continue
+            refs: List[str] = []
+            for element in elements:
+                if not isinstance(element, dict) or element.get("type") != "image":
+                    continue
+                xref = element.get("xref")
+                if isinstance(xref, int):
+                    file_name = image_file_by_xref.get(xref)
+                    if file_name:
+                        refs.append(file_name)
+            if refs:
+                page_refs[page_num] = refs
+        return page_refs
+
+    def _render_content_flow_to_xhtml(
+        self,
+        content_flow: List[Dict[str, Any]],
+        image_file_by_xref: Dict[int, str],
+    ) -> str:
+        html_parts: List[str] = []
+        for page_entry in content_flow:
+            page_num = page_entry.get("page")
+            elements = page_entry.get("elements")
+            if not isinstance(page_num, int) or not isinstance(elements, list):
+                continue
+
+            html_parts.append("<section>")
+            html_parts.append(f"<h2>페이지 {page_num}</h2>")
+            for element in elements:
+                if not isinstance(element, dict):
+                    continue
+                element_type = element.get("type")
+                if element_type == "text":
+                    text = str(element.get("text", "")).strip()
+                    if not text:
+                        continue
+                    for paragraph in self._split_text_to_paragraphs(text):
+                        html_parts.append(f"<p>{escape(paragraph)}</p>")
+                    continue
+
+                if element_type == "image":
+                    xref = element.get("xref")
+                    if isinstance(xref, int):
+                        file_name = image_file_by_xref.get(xref)
+                        if file_name:
+                            html_parts.append(self._render_image_figure(file_name))
+            html_parts.append("</section>")
+        return "".join(html_parts)
+
+    def _render_text_with_page_images(
+        self, total_text: str, page_image_refs: Dict[int, List[str]]
+    ) -> str:
+        """문맥 보정 텍스트를 우선 사용하고, 페이지 경계에 이미지를 배치합니다."""
+        page_sections = re.split(r"===\s*페이지\s*(\d+)\s*===", total_text)
+        html_parts: List[str] = []
+        inserted_pages: set[int] = set()
+
+        if len(page_sections) <= 1:
+            for line in total_text.split("\n"):
+                if line.strip():
+                    html_parts.append(f"<p>{escape(line)}</p>")
+            for page in sorted(page_image_refs.keys()):
+                html_parts.append(f"<h2>페이지 {page}</h2>")
+                html_parts.append(
+                    self._render_image_figure_group(page_image_refs[page])
+                )
+            return "".join(html_parts)
+
+        leading = page_sections[0].strip()
+        if leading:
+            for line in leading.split("\n"):
+                if line.strip():
+                    html_parts.append(f"<p>{escape(line)}</p>")
+
+        for idx in range(1, len(page_sections), 2):
+            page_str = page_sections[idx].strip()
+            body = page_sections[idx + 1] if idx + 1 < len(page_sections) else ""
+            if not page_str.isdigit():
+                continue
+            page_num = int(page_str)
+            html_parts.append(f"<h2>페이지 {page_num}</h2>")
+            for line in body.split("\n"):
+                if line.strip():
+                    html_parts.append(f"<p>{escape(line)}</p>")
+            if page_num in page_image_refs:
+                html_parts.append(
+                    self._render_image_figure_group(page_image_refs[page_num])
+                )
+                inserted_pages.add(page_num)
+
+        for page in sorted(page_image_refs.keys()):
+            if page in inserted_pages:
+                continue
+            html_parts.append(f"<h2>페이지 {page}</h2>")
+            html_parts.append(self._render_image_figure_group(page_image_refs[page]))
 
         return "".join(html_parts)
+
+    def _render_markdown_to_xhtml_body(
+        self, markdown_text: str, page_image_refs: Dict[int, List[str]]
+    ) -> str:
+        lines = markdown_text.splitlines()
+        html_parts: List[str] = []
+        paragraph_buf: List[str] = []
+        list_items: List[str] = []
+        list_type: Optional[str] = None
+        in_code_block = False
+        code_lines: List[str] = []
+        inserted_pages: set[int] = set()
+
+        def flush_paragraph() -> None:
+            if paragraph_buf:
+                html_parts.append(f"<p>{escape(' '.join(paragraph_buf))}</p>")
+                paragraph_buf.clear()
+
+        def flush_list() -> None:
+            nonlocal list_items, list_type
+            if not list_items or not list_type:
+                return
+            html_parts.append(f"<{list_type}>")
+            for item in list_items:
+                html_parts.append(f"<li>{escape(item)}</li>")
+            html_parts.append(f"</{list_type}>")
+            list_items = []
+            list_type = None
+
+        def flush_code() -> None:
+            nonlocal code_lines
+            if code_lines:
+                html_parts.append("<pre><code>")
+                html_parts.append(escape("\n".join(code_lines)))
+                html_parts.append("</code></pre>")
+                code_lines = []
+
+        for raw_line in lines:
+            line = raw_line.rstrip()
+            stripped = line.strip()
+
+            if stripped.startswith("<!--") and stripped.endswith("-->"):
+                continue
+
+            if stripped.startswith("```"):
+                flush_paragraph()
+                flush_list()
+                if in_code_block:
+                    flush_code()
+                    in_code_block = False
+                else:
+                    in_code_block = True
+                continue
+
+            if in_code_block:
+                code_lines.append(line)
+                continue
+
+            if not stripped:
+                flush_paragraph()
+                flush_list()
+                continue
+
+            heading = re.match(r"^(#{1,6})\s+(.+)$", stripped)
+            if heading:
+                flush_paragraph()
+                flush_list()
+                level = len(heading.group(1))
+                title = heading.group(2).strip()
+                html_parts.append(f"<h{level}>{escape(title)}</h{level}>")
+                page_match = re.search(r"페이지\s*(\d+)", title)
+                if page_match:
+                    page_num = int(page_match.group(1))
+                    if page_num in page_image_refs and page_num not in inserted_pages:
+                        html_parts.append(
+                            self._render_image_figure_group(page_image_refs[page_num])
+                        )
+                        inserted_pages.add(page_num)
+                continue
+
+            ordered = re.match(r"^\d+\.\s+(.+)$", stripped)
+            unordered = re.match(r"^[-*]\s+(.+)$", stripped)
+            if ordered or unordered:
+                flush_paragraph()
+                desired_type = "ol" if ordered else "ul"
+                item_text = (ordered or unordered).group(1).strip()  # type: ignore[union-attr]
+                if list_type and list_type != desired_type:
+                    flush_list()
+                list_type = desired_type
+                list_items.append(item_text)
+                continue
+
+            if stripped.startswith(">"):
+                flush_paragraph()
+                flush_list()
+                html_parts.append(
+                    f"<blockquote>{escape(stripped[1:].strip())}</blockquote>"
+                )
+                continue
+
+            paragraph_buf.append(stripped)
+
+        flush_paragraph()
+        flush_list()
+        if in_code_block:
+            flush_code()
+
+        for page_num, refs in sorted(page_image_refs.items()):
+            if page_num in inserted_pages:
+                continue
+            html_parts.append(f"<h2>페이지 {page_num}</h2>")
+            html_parts.append(self._render_image_figure_group(refs))
+
+        return "".join(html_parts)
+
+    def _split_text_to_paragraphs(self, text: str) -> List[str]:
+        parts = [segment.strip() for segment in text.split("\n") if segment.strip()]
+        return parts if parts else [text]
+
+    def _render_image_figure_group(self, image_refs: List[str]) -> str:
+        return "".join(self._render_image_figure(file_name) for file_name in image_refs)
+
+    def _render_image_figure(self, file_name: str) -> str:
+        safe_name = escape(file_name)
+        return "<figure>" f'<img src="{safe_name}" alt="문서 이미지" />' "</figure>"
 
     def _resolve_image_format(self, image_format: str) -> tuple[str, str]:
         mapping = {

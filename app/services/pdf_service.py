@@ -663,6 +663,83 @@ class PDFExtractor:
             logger.error(f"이미지 추출 실패: {str(e)}")
             raise ValueError(f"PDF 이미지 추출 실패: {str(e)}")
 
+    def extract_content_flow_with_images(
+        self, pdf_content: PDFContentSource
+    ) -> Dict[str, Any]:
+        """페이지별 콘텐츠 흐름(텍스트/이미지 순서) 추출.
+
+        반환 예시:
+            {
+              "pages": [
+                {
+                  "page": 1,
+                  "elements": [
+                    {"type": "text", "text": "..."},
+                    {"type": "image", "xref": 12}
+                  ]
+                }
+              ]
+            }
+        """
+        try:
+            pages: List[Dict[str, Any]] = []
+
+            with _pdf_file_from_source(pdf_content, self.settings) as pdf_path:
+                doc = fitz.open(str(pdf_path))
+
+                for page_idx in range(len(doc)):
+                    page = cast(Any, doc[page_idx])
+                    page_no = page_idx + 1
+
+                    # page.get_images() 순서를 이미지 블록과 매칭해 xref를 추정
+                    image_xrefs: List[int] = []
+                    try:
+                        for img in page.get_images():
+                            if len(img) >= 1:
+                                image_xrefs.append(int(img[0]))
+                    except Exception:
+                        image_xrefs = []
+
+                    image_cursor = 0
+                    elements: List[Dict[str, Any]] = []
+
+                    try:
+                        blocks = page.get_text("blocks")
+                    except Exception:
+                        blocks = []
+
+                    # 읽기 순서를 최대한 유지: 상단(y) -> 좌측(x) -> block_no
+                    sorted_blocks = sorted(
+                        blocks,
+                        key=lambda b: (
+                            float(b[1]) if len(b) > 1 else 0.0,
+                            float(b[0]) if len(b) > 0 else 0.0,
+                            int(b[5]) if len(b) > 5 else 0,
+                        ),
+                    )
+
+                    for block in sorted_blocks:
+                        block_type = int(block[6]) if len(block) > 6 else 0
+                        if block_type == 1:
+                            xref: Optional[int] = None
+                            if image_cursor < len(image_xrefs):
+                                xref = image_xrefs[image_cursor]
+                                image_cursor += 1
+                            elements.append({"type": "image", "xref": xref})
+                            continue
+
+                        text = str(block[4]).strip() if len(block) > 4 else ""
+                        if text:
+                            elements.append({"type": "text", "text": text})
+
+                    pages.append({"page": page_no, "elements": elements})
+
+            return {"pages": pages}
+
+        except Exception as e:
+            logger.error(f"콘텐츠 흐름 추출 실패: {str(e)}")
+            raise ValueError(f"PDF 콘텐츠 흐름 추출 실패: {str(e)}")
+
     def extract_text_with_pypdf2(
         self,
         pdf_content: PDFContentSource,
