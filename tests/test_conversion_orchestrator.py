@@ -3,6 +3,7 @@
 import asyncio
 import uuid
 from unittest.mock import MagicMock
+from io import BytesIO
 
 import pytest
 
@@ -22,6 +23,25 @@ from app.services.pdf_service import (
 def make_dummy_pdf_bytes() -> bytes:
     # Very small valid PDF-like header (not full PDF) but enough for our code paths
     return b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF"
+
+
+def make_tiny_png_bytes() -> bytes:
+    try:
+        from PIL import Image
+
+        image = Image.new("RGB", (1, 1), color=(255, 255, 255))
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+    except Exception:
+        # 최소 PNG 헤더 + IHDR/IEND 구조(테스트 대체용)
+        return (
+            b"\x89PNG\r\n\x1a\n"
+            b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+            b"\x08\x02\x00\x00\x00\x90wS\xde"
+            b"\x00\x00\x00\x0cIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02\xfeA\xe2 \x00"
+            b"\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
 
 
 @pytest.mark.asyncio
@@ -66,6 +86,7 @@ async def test_start_and_status_and_download(monkeypatch):
         title: str,
         author: str,
         chapters,
+        images=None,
         uid=None,
         include_legacy_ncx=True,
         auto_toc_from_headings=True,
@@ -146,7 +167,17 @@ async def test_text_pdf_chunks_apply_context_correction(monkeypatch):
     }
 
     class DummyCorrector:
-        async def correct_chunk_entries(self, chunks):
+        last_run_stats = {
+            "total_chunks": 2,
+            "total_attempts": 3,
+            "last_used_model": "nvidia/nemotron-3-nano-30b-a3b",
+            "fallback_used": True,
+        }
+
+        async def correct_chunk_entries(self, chunks, on_chunk_progress=None):
+            if on_chunk_progress:
+                await on_chunk_progress(1, 2)
+                await on_chunk_progress(2, 2)
             return "보정된 전체 텍스트"
 
     orch.text_context_corrector = DummyCorrector()
@@ -155,6 +186,7 @@ async def test_text_pdf_chunks_apply_context_correction(monkeypatch):
         title: str,
         author: str,
         chapters,
+        images=None,
         uid=None,
         include_legacy_ncx=True,
         auto_toc_from_headings=True,
@@ -169,6 +201,129 @@ async def test_text_pdf_chunks_apply_context_correction(monkeypatch):
     await orch.start(
         conversion_id=conversion_id,
         filename="ctx.pdf",
+        file_size=len(pdf_bytes),
+        ocr_enabled=False,
+        pdf_bytes=pdf_bytes,
+    )
+
+    await asyncio.sleep(0.5)
+    status = await orch.status(conversion_id)
+    assert status.state == JobState.COMPLETED
+    assert status.llm_used_model == "nvidia/nemotron-3-nano-30b-a3b"
+    assert status.llm_attempt_count == 3
+    assert status.llm_fallback_used is True
+
+
+@pytest.mark.asyncio
+async def test_epub_includes_extracted_images(monkeypatch):
+    orch = ConversionOrchestrator(None)
+
+    monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
+    pdf_analysis = PDFAnalysisResult(
+        pdf_type=PDFType.TEXT_BASED,
+        total_pages=1,
+        pages_analysis=[
+            PageAnalysisResult(page_number=1, has_text=True, text_content="본문")
+        ],
+        overall_confidence=1.0,
+        mixed_ratio=0.0,
+    )
+    orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
+
+    monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: []
+    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content: {
+        "total_text": "이미지 포함 테스트"
+    }
+    orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: [
+        {"page": 1, "xref": 1, "image_bytes": b"img-bytes", "format": "png"}
+    ]
+
+    def fake_create_epub_bytes(
+        title: str,
+        author: str,
+        chapters,
+        images=None,
+        uid=None,
+        include_legacy_ncx=True,
+        auto_toc_from_headings=True,
+    ):
+        assert images is not None
+        assert len(images) == 1
+        assert images[0].file_name.endswith(".png")
+        assert 'src="images/image-1.png"' in chapters[0].content
+        return b"EPUBBYTES"
+
+    orch.epub.create_epub_bytes = fake_create_epub_bytes
+
+    conversion_id = "image-test-id"
+    pdf_bytes = make_dummy_pdf_bytes()
+    await orch.start(
+        conversion_id=conversion_id,
+        filename="img.pdf",
+        file_size=len(pdf_bytes),
+        ocr_enabled=False,
+        pdf_bytes=pdf_bytes,
+    )
+
+    await asyncio.sleep(0.5)
+    status = await orch.status(conversion_id)
+    assert status.state == JobState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_unknown_image_format_is_normalized_to_png(monkeypatch):
+    orch = ConversionOrchestrator(None)
+
+    monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
+    pdf_analysis = PDFAnalysisResult(
+        pdf_type=PDFType.TEXT_BASED,
+        total_pages=1,
+        pages_analysis=[
+            PageAnalysisResult(page_number=1, has_text=True, text_content="본문")
+        ],
+        overall_confidence=1.0,
+        mixed_ratio=0.0,
+    )
+    orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
+
+    monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: []
+    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content: {
+        "total_text": "이미지 정규화 테스트"
+    }
+    orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: [
+        {
+            "page": 1,
+            "xref": 1,
+            "image_bytes": make_tiny_png_bytes(),
+            "format": "jpx",
+        }
+    ]
+
+    def fake_create_epub_bytes(
+        title: str,
+        author: str,
+        chapters,
+        images=None,
+        uid=None,
+        include_legacy_ncx=True,
+        auto_toc_from_headings=True,
+    ):
+        assert images is not None
+        assert len(images) == 1
+        assert images[0].file_name.endswith(".png")
+        assert images[0].media_type == "image/png"
+        assert len(images[0].data) > 0
+        return b"EPUBBYTES"
+
+    orch.epub.create_epub_bytes = fake_create_epub_bytes
+
+    conversion_id = "image-normalize-test-id"
+    pdf_bytes = make_dummy_pdf_bytes()
+    await orch.start(
+        conversion_id=conversion_id,
+        filename="normalize.pdf",
         file_size=len(pdf_bytes),
         ocr_enabled=False,
         pdf_bytes=pdf_bytes,

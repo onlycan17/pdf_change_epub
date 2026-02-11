@@ -62,3 +62,61 @@ async def test_correct_chunk_entries_fallbacks_on_request_error() -> None:
 
     result = await service.correct_chunk_entries(chunks)
     assert result == "원문 유지"
+
+
+@pytest.mark.asyncio
+async def test_request_correction_uses_fallback_model() -> None:
+    service = TextContextCorrector()
+    service.enabled = True
+    service.model_name = "deepseek/deepseek-v3.2"
+    service.fallback_model_name = "nvidia/nemotron-3-nano-30b-a3b"
+
+    calls = []
+
+    async def fake_request_with_model(*, prompt: str, model_name: str) -> str:
+        calls.append(model_name)
+        if model_name == "deepseek/deepseek-v3.2":
+            raise RuntimeError("primary failed")
+        return "fallback success"
+
+    service._request_correction_with_model = fake_request_with_model  # type: ignore[method-assign]
+
+    result = await service._request_correction(prompt="test prompt")
+    assert result == "fallback success"
+    assert calls == [
+        "deepseek/deepseek-v3.2",
+        "nvidia/nemotron-3-nano-30b-a3b",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_correct_chunk_entries_reports_progress_and_stats() -> None:
+    service = TextContextCorrector()
+    service.enabled = True
+    service.model_name = "deepseek/deepseek-v3.2"
+    service.fallback_model_name = "nvidia/nemotron-3-nano-30b-a3b"
+
+    async def fake_request_with_model(*, prompt: str, model_name: str) -> str:
+        return f"{model_name}-ok"
+
+    service._request_correction_with_model = fake_request_with_model  # type: ignore[method-assign]
+
+    progress_events = []
+
+    async def on_progress(processed: int, total: int) -> None:
+        progress_events.append((processed, total))
+
+    result = await service.correct_chunk_entries(
+        [
+            {"start_page": 1, "end_page": 1, "total_text": "첫 청크"},
+            {"start_page": 2, "end_page": 2, "total_text": "둘 청크"},
+        ],
+        on_chunk_progress=on_progress,
+    )
+
+    assert "deepseek/deepseek-v3.2-ok" in result
+    assert progress_events == [(1, 2), (2, 2)]
+    assert service.last_run_stats["total_chunks"] == 2
+    assert service.last_run_stats["total_attempts"] == 2
+    assert service.last_run_stats["last_used_model"] == "deepseek/deepseek-v3.2"
+    assert service.last_run_stats["fallback_used"] is False

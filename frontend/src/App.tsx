@@ -1,4 +1,9 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from 'react-router-dom';
 import { AppProvider } from '@contexts/AppContext';
 import MainLayout from '@components/layout/MainLayout';
 import HomePage from '@pages/HomePage';
@@ -15,23 +20,57 @@ function App() {
     <AppProvider>
       <Router>
         <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
           <Route
-            path="*"
+            path="/"
             element={
               <MainLayout>
-                <Routes>
-                  <Route path="/" element={<HomePage />} />
-                  <Route path="/upload" element={<UploadPage />} />
-                  <Route path="/convert" element={<ConvertPage />} />
-                  <Route path="/download" element={<DownloadPage />} />
-                  <Route path="/premium" element={<PremiumPage />} />
-                  <Route path="/profile" element={<ProfilePage />} />
-                </Routes>
+                <HomePage />
               </MainLayout>
             }
           />
+          <Route
+            path="/upload"
+            element={
+              <MainLayout>
+                <UploadPage />
+              </MainLayout>
+            }
+          />
+          <Route
+            path="/convert"
+            element={
+              <MainLayout>
+                <ConvertPage />
+              </MainLayout>
+            }
+          />
+          <Route
+            path="/download"
+            element={
+              <MainLayout>
+                <DownloadPage />
+              </MainLayout>
+            }
+          />
+          <Route
+            path="/premium"
+            element={
+              <MainLayout>
+                <PremiumPage />
+              </MainLayout>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <MainLayout>
+                <ProfilePage />
+              </MainLayout>
+            }
+          />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
     </AppProvider>

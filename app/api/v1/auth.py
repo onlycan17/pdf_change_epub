@@ -157,16 +157,37 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         dict: 토큰 정보
     """
     # TODO: 실제 사용자 인증 로직 구현
-    if form_data.username != "testuser" or form_data.password != "testpass":
+    if form_data.password != "testpass" or form_data.username not in {
+        "testuser",
+        "premiumuser",
+    }:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    token_payload = {"sub": form_data.username}
+    if form_data.username == "premiumuser":
+        token_payload.update(
+            {
+                "is_subscribed": True,
+                "subscription_active": True,
+                "plan": "premium",
+            }
+        )
+    else:
+        token_payload.update(
+            {
+                "is_subscribed": False,
+                "subscription_active": False,
+                "plan": "free",
+            }
+        )
+
     access_token_expires = timedelta(minutes=30)
     access_token = create_access_token(
-        data={"sub": form_data.username}, expires_delta=access_token_expires
+        data=token_payload, expires_delta=access_token_expires
     )
 
     return TokenResponse(

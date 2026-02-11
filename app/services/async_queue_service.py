@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 from datetime import datetime, timezone
+import os
 
 from app.core.config import get_settings
 from app.celery_config import celery_app
@@ -15,6 +16,7 @@ from app.services.conversion_orchestrator import (
     ConversionJob,
     JobState,
     ConversionJobStore,
+    get_orchestrator,
 )
 
 logger = logging.getLogger(__name__)
@@ -26,12 +28,24 @@ class AsyncQueueService:
     def __init__(self) -> None:
         self.settings = get_settings()
         self.celery_app = celery_app
-        self.store = ConversionJobStore()
+        self.orchestrator = get_orchestrator(self.settings)
+        self.use_celery = os.getenv("APP_USE_CELERY", "true").strip().lower() not in (
+            "0",
+            "false",
+        )
+        self.store = (
+            ConversionJobStore() if self.use_celery else self.orchestrator.store
+        )
         self._initialized = False
 
     async def initialize(self) -> None:
         """서비스 초기화"""
         if self._initialized:
+            return
+
+        if not self.use_celery:
+            logger.info("직접 실행 모드로 동작합니다 (Celery 비활성화)")
+            self._initialized = True
             return
 
         # Celery 앱 초기화 확인
@@ -42,10 +56,13 @@ class AsyncQueueService:
             if stats:
                 logger.info("Celery 워커 연결 성공", extra={"worker_count": len(stats)})
             else:
-                logger.warning("Celery 워커가 연결되지 않았습니다")
+                raise RuntimeError("Celery 워커가 연결되지 않았습니다")
         except Exception:
-            logger.error("Celery 연결 확인 실패", exc_info=True)
-            raise
+            logger.warning(
+                "Celery 연결 실패로 직접 실행 모드로 전환합니다", exc_info=True
+            )
+            self.use_celery = False
+            self.store = self.orchestrator.store
 
         self._initialized = True
 
@@ -72,6 +89,15 @@ class AsyncQueueService:
         """
         if not self._initialized:
             await self.initialize()
+
+        if not self.use_celery:
+            return await self.orchestrator.start(
+                conversion_id=conversion_id,
+                filename=filename,
+                file_size=file_size,
+                ocr_enabled=ocr_enabled,
+                pdf_bytes=pdf_bytes,
+            )
 
         # 작업 생성
         job = ConversionJob(
@@ -138,6 +164,9 @@ class AsyncQueueService:
         if not self._initialized:
             await self.initialize()
 
+        if not self.use_celery:
+            return await self.orchestrator.status(conversion_id)
+
         job = await self.store.get(conversion_id)
 
         # Celery 작업 상태 확인
@@ -196,6 +225,16 @@ class AsyncQueueService:
         if not self._initialized:
             await self.initialize()
 
+        if not self.use_celery:
+            try:
+                await self.orchestrator.cancel(conversion_id)
+                return True
+            except KeyError:
+                return False
+            except Exception:
+                logger.error("직접 모드 작업 취소 실패", exc_info=True)
+                return False
+
         try:
             job = await self.store.get(conversion_id)
 
@@ -234,6 +273,9 @@ class AsyncQueueService:
         if not self._initialized:
             await self.initialize()
 
+        if not self.use_celery:
+            return await self.orchestrator.retry(conversion_id)
+
         job = await self.store.get(conversion_id)
 
         if job.state not in (JobState.FAILED, JobState.CANCELLED):
@@ -260,6 +302,23 @@ class AsyncQueueService:
         """
         if not self._initialized:
             await self.initialize()
+
+        if not self.use_celery:
+            jobs = getattr(self.orchestrator.store, "_jobs", {})
+            active_count = sum(
+                1 for job in jobs.values() if job.state == JobState.PROCESSING
+            )
+            pending_count = sum(
+                1 for job in jobs.values() if job.state == JobState.PENDING
+            )
+            return {
+                "active_tasks": active_count,
+                "reserved_tasks": pending_count,
+                "scheduled_tasks": 0,
+                "worker_count": 0,
+                "mode": "direct",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
 
         try:
             inspect = self.celery_app.control.inspect()

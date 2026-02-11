@@ -164,6 +164,9 @@ class ConversionJobSummary(BaseModel):
     updated_at: datetime
     result_path: Optional[str] = None
     error_message: Optional[str] = None
+    llm_used_model: Optional[str] = None
+    llm_attempt_count: int = Field(default=0, ge=0)
+    llm_fallback_used: bool = False
 
     @field_validator("created_at", "updated_at", mode="before")
     @classmethod

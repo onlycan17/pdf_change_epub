@@ -9,7 +9,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+import os
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import httpx
 
@@ -26,28 +27,59 @@ class TextContextCorrector:
         self.settings = settings or get_settings()
         self.api_key = (
             self.settings.llm.api_key
+            or self.settings.openrouter_api_key
+            or os.getenv("OPENROUTER_API_KEY")
             or self.settings.deepseek_api_key
             or self.settings.openai_api_key
         )
         self.base_url = self.settings.llm.base_url.rstrip("/")
-        self.model_name = self.settings.llm.model_name
+        self.model_name = self.settings.llm.context_primary_model
+        self.fallback_model_name = self.settings.llm.context_fallback_model
         self.max_tokens = self.settings.llm.max_tokens
         self.temperature = self.settings.llm.temperature
         self.timeout = self.settings.llm.timeout
         self.enabled = bool(self.api_key)
         self.max_context_chars = 1200
+        self.last_run_stats: Dict[str, Any] = {
+            "total_chunks": 0,
+            "total_attempts": 0,
+            "last_used_model": None,
+            "fallback_used": False,
+        }
+        self._last_model_used: Optional[str] = None
+        self._last_attempt_count: int = 0
+        self._last_fallback_used: bool = False
 
-    async def correct_chunk_entries(self, chunks: List[Dict[str, Any]]) -> str:
+    async def correct_chunk_entries(
+        self,
+        chunks: List[Dict[str, Any]],
+        on_chunk_progress: Optional[Callable[[int, int], Awaitable[None]]] = None,
+    ) -> str:
         """청크 목록을 문맥 보정 후 하나의 텍스트로 합칩니다."""
         texts = [str(chunk.get("total_text", "")) for chunk in chunks if chunk]
         if not texts:
+            self.last_run_stats = {
+                "total_chunks": 0,
+                "total_attempts": 0,
+                "last_used_model": None,
+                "fallback_used": False,
+            }
             return ""
 
         if not self.enabled:
             logger.info("LLM API 키가 없어 문맥 보정을 건너뜁니다.")
+            self.last_run_stats = {
+                "total_chunks": len(texts),
+                "total_attempts": 0,
+                "last_used_model": None,
+                "fallback_used": False,
+            }
             return "\n\n".join(texts)
 
         corrected_parts: List[str] = []
+        total_attempts = 0
+        last_used_model: Optional[str] = None
+        fallback_used = False
         for index, current_text in enumerate(texts):
             prev_tail = self._tail(texts[index - 1]) if index > 0 else ""
             next_head = self._head(texts[index + 1]) if index < len(texts) - 1 else ""
@@ -60,7 +92,19 @@ class TextContextCorrector:
                 page_info=page_info,
             )
             corrected_parts.append(corrected_text)
+            total_attempts += self._last_attempt_count
+            if self._last_model_used:
+                last_used_model = self._last_model_used
+            fallback_used = fallback_used or self._last_fallback_used
+            if on_chunk_progress:
+                await on_chunk_progress(index + 1, len(texts))
 
+        self.last_run_stats = {
+            "total_chunks": len(texts),
+            "total_attempts": total_attempts,
+            "last_used_model": last_used_model,
+            "fallback_used": fallback_used,
+        }
         return "\n\n".join(corrected_parts)
 
     async def _correct_single_chunk(
@@ -91,8 +135,45 @@ class TextContextCorrector:
             return current_text
 
     async def _request_correction(self, *, prompt: str) -> str:
+        errors: List[str] = []
+        tried_models: List[str] = []
+        for model in [self.model_name, self.fallback_model_name]:
+            if not model:
+                continue
+            tried_models.append(model)
+            try:
+                logger.info("문맥 보정 모델 호출 시도", extra={"model": model})
+                corrected = await self._request_correction_with_model(
+                    prompt=prompt, model_name=model
+                )
+                if corrected.strip():
+                    logger.info("문맥 보정 모델 호출 성공", extra={"model": model})
+                    self._last_model_used = model
+                    self._last_attempt_count = len(tried_models)
+                    self._last_fallback_used = (
+                        model == self.fallback_model_name
+                        and len(tried_models) > 1
+                        and bool(self.fallback_model_name)
+                    )
+                    return corrected
+                errors.append(f"{model}: empty response")
+            except Exception as exc:
+                logger.warning(
+                    "문맥 보정 모델 호출 실패",
+                    extra={"model": model, "error": str(exc)},
+                )
+                errors.append(f"{model}: {exc}")
+
+        self._last_model_used = None
+        self._last_attempt_count = len(tried_models)
+        self._last_fallback_used = False
+        raise RuntimeError(" / ".join(errors) or "all models failed")
+
+    async def _request_correction_with_model(
+        self, *, prompt: str, model_name: str
+    ) -> str:
         payload = {
-            "model": self.model_name,
+            "model": model_name,
             "messages": [
                 {
                     "role": "system",

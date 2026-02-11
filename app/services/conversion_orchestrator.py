@@ -9,6 +9,8 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
+from html import escape
+from io import BytesIO
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,7 +25,7 @@ from app.services.pdf_service import (
     create_pdf_analyzer,
     create_pdf_extractor,
 )
-from app.services.epub_service import EpubGenerator, Chapter
+from app.services.epub_service import EpubGenerator, Chapter, EpubImage
 from app.services.epub_validator import validate_epub_bytes
 from app.services.progress_tracker import ProgressTracker
 from app.services.text_context_service import create_text_context_corrector
@@ -67,6 +69,9 @@ class ConversionJob:
     result_bytes: Optional[bytes] = None
     result_path: Optional[str] = None
     error_message: Optional[str] = None
+    llm_used_model: Optional[str] = None
+    llm_attempt_count: int = 0
+    llm_fallback_used: bool = False
     attempts: int = 0
     celery_task_id: Optional[str] = None
     source_pdf_bytes: Optional[bytes] = field(default=None, repr=False)
@@ -242,10 +247,36 @@ class ConversionOrchestrator:
                     # 이전/다음 청크 일부를 참고해 현재 청크의 문장 연결을 자연스럽게 보정
                     if pdf_type in (PDFType.TEXT_BASED, PDFType.MIXED):
                         await set_step("context_correction", 60, "문맥 보정 중")
+
+                        async def on_context_progress(
+                            processed_chunks: int, total_chunks: int
+                        ) -> None:
+                            if total_chunks <= 0:
+                                return
+                            progress_delta = int((processed_chunks / total_chunks) * 15)
+                            context_progress = min(75, 60 + progress_delta)
+                            await set_step(
+                                "context_correction",
+                                context_progress,
+                                f"문맥 보정 중 ({processed_chunks}/{total_chunks})",
+                            )
+
                         corrected_text = (
                             await self.text_context_corrector.correct_chunk_entries(
-                                chunks
+                                chunks,
+                                on_chunk_progress=on_context_progress,
                             )
+                        )
+                        llm_stats = getattr(
+                            self.text_context_corrector, "last_run_stats", {}
+                        )
+                        await self.store.update(
+                            conversion_id,
+                            llm_used_model=llm_stats.get("last_used_model"),
+                            llm_attempt_count=int(llm_stats.get("total_attempts", 0)),
+                            llm_fallback_used=bool(
+                                llm_stats.get("fallback_used", False)
+                            ),
                         )
                         text_result = {"total_text": corrected_text}
                     else:
@@ -295,6 +326,8 @@ class ConversionOrchestrator:
 
             # 4) EPUB 생성
             await set_step("epub", 80, "EPUB 생성 중")
+            epub_images = self._build_epub_image_assets(pdf_bytes)
+            image_gallery_html = self._build_image_gallery_html(epub_images)
 
             chapters: List[Chapter] = []
             if synthesis_markdown:
@@ -304,6 +337,7 @@ class ConversionOrchestrator:
                     for line in synthesis_markdown.split("\n")
                     if line.strip()
                 )
+                html_body += image_gallery_html
                 chapters.append(
                     Chapter(
                         title="Converted", file_name="chapter1.xhtml", content=html_body
@@ -315,6 +349,7 @@ class ConversionOrchestrator:
                 html_body = "".join(
                     f"<p>{line}</p>" for line in total_text.split("\n") if line.strip()
                 )
+                html_body += image_gallery_html
                 chapters.append(
                     Chapter(
                         title="Converted", file_name="chapter1.xhtml", content=html_body
@@ -329,11 +364,14 @@ class ConversionOrchestrator:
                         content="<p>내용을 추출하지 못했습니다.</p>",
                     )
                 )
+                if image_gallery_html:
+                    chapters[0].content += image_gallery_html
 
             epub_bytes = self.epub.create_epub_bytes(
                 title="변환된 문서",
                 author="PdfToEpub Converter",
                 chapters=chapters,
+                images=epub_images,
                 uid=conversion_id,
             )
 
@@ -399,6 +437,97 @@ class ConversionOrchestrator:
                 error_message=str(e),
                 current_step="failed",
             )
+
+    def _build_epub_image_assets(self, pdf_bytes: bytes) -> List[EpubImage]:
+        """PDF에서 추출한 이미지를 EPUB 리소스로 변환합니다."""
+        try:
+            raw_images = self.pdf_extractor.extract_images_from_pdf(pdf_bytes)
+        except Exception:
+            logger.exception("PDF 이미지 추출 실패. 텍스트만으로 EPUB을 생성합니다.")
+            return []
+
+        if not isinstance(raw_images, list):
+            return []
+
+        assets: List[EpubImage] = []
+        for index, image_info in enumerate(raw_images, start=1):
+            if not isinstance(image_info, dict):
+                continue
+            image_bytes = image_info.get("image_bytes")
+            image_format = str(image_info.get("format", "png")).lower()
+            if not isinstance(image_bytes, bytes) or not image_bytes:
+                continue
+
+            normalized = self._normalize_image_for_epub(image_bytes, image_format)
+            if normalized is None:
+                logger.warning(
+                    "이미지 정규화 실패로 해당 이미지를 건너뜁니다",
+                    extra={"index": index, "format": image_format},
+                )
+                continue
+            ext, media_type, normalized_bytes = normalized
+            assets.append(
+                EpubImage(
+                    file_name=f"images/image-{index}.{ext}",
+                    media_type=media_type,
+                    data=normalized_bytes,
+                )
+            )
+
+        return assets
+
+    def _build_image_gallery_html(self, images: List[EpubImage]) -> str:
+        if not images:
+            return ""
+
+        html_parts = [
+            "<section>",
+            "<h2>문서 이미지</h2>",
+            "<p>원본 PDF에서 추출한 이미지입니다.</p>",
+        ]
+        for index, image in enumerate(images, start=1):
+            html_parts.append("<figure>")
+            html_parts.append(
+                f'<img src="{escape(image.file_name)}" alt="문서 이미지 {index}" />'
+            )
+            html_parts.append(f"<figcaption>이미지 {index}</figcaption>")
+            html_parts.append("</figure>")
+        html_parts.append("</section>")
+
+        return "".join(html_parts)
+
+    def _resolve_image_format(self, image_format: str) -> tuple[str, str]:
+        mapping = {
+            "jpg": ("jpg", "image/jpeg"),
+            "jpeg": ("jpg", "image/jpeg"),
+            "png": ("png", "image/png"),
+            "webp": ("webp", "image/webp"),
+            "gif": ("gif", "image/gif"),
+            "bmp": ("bmp", "image/bmp"),
+        }
+        return mapping.get(image_format, ("png", "image/png"))
+
+    def _normalize_image_for_epub(
+        self, image_bytes: bytes, image_format: str
+    ) -> Optional[tuple[str, str, bytes]]:
+        ext, media_type = self._resolve_image_format(image_format)
+        supported_input_formats = {"jpg", "jpeg", "png", "webp", "gif", "bmp"}
+        if image_format in supported_input_formats:
+            return ext, media_type, image_bytes
+
+        try:
+            from PIL import Image
+
+            with Image.open(BytesIO(image_bytes)) as image:
+                buffer = BytesIO()
+                image.convert("RGB").save(buffer, format="PNG")
+                return "png", "image/png", buffer.getvalue()
+        except Exception:
+            logger.exception(
+                "미지원 이미지 포맷 변환 실패",
+                extra={"format": image_format},
+            )
+            return None
 
 
 # 전역 오케스트레이터 인스턴스 (간단 의존성)

@@ -18,6 +18,13 @@ class Chapter:
     file_name: str = "chapter.xhtml"
 
 
+@dataclass
+class EpubImage:
+    file_name: str
+    media_type: str
+    data: bytes
+
+
 class EpubGenerator:
     """ebooklib 기반 EPUB 생성기"""
 
@@ -86,6 +93,7 @@ class EpubGenerator:
         title: str,
         author: str,
         chapters: List[Chapter],
+        images: Optional[List[EpubImage]] = None,
         uid: Optional[str] = None,
         include_legacy_ncx: bool = True,
         auto_toc_from_headings: bool = True,
@@ -144,6 +152,16 @@ class EpubGenerator:
         nav = epub.EpubNav()
         book.add_item(nav)
         book.add_item(style_item)
+        for image in images or []:
+            uid = f"img_{image.file_name}".replace("/", "_").replace(".", "_")
+            book.add_item(
+                epub.EpubItem(
+                    uid=uid,
+                    file_name=image.file_name,
+                    media_type=image.media_type,
+                    content=image.data,
+                )
+            )
 
         # 호환용 NCX (옵션)
         if include_legacy_ncx:

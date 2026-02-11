@@ -7,6 +7,7 @@ from io import BytesIO
 
 from app.main import app
 from app.services.conversion_orchestrator import ConversionJob, JobState
+from app.api.v1.auth import create_access_token
 
 
 class TestConversionIntegration:
@@ -85,6 +86,104 @@ class TestConversionIntegration:
 
         # Assertions
         assert response.status_code == 422  # Validation error
+
+    def test_start_conversion_upload_limit_for_anonymous(
+        self, test_client, mock_async_queue_service, sample_pdf_content, monkeypatch
+    ):
+        captured_limit = {"value": 0}
+
+        def fake_validate_file_size(file, max_size):
+            captured_limit["value"] = max_size
+            return False
+
+        monkeypatch.setattr(
+            "app.api.v1.conversion.validate_file_size", fake_validate_file_size
+        )
+
+        pdf_file = BytesIO(sample_pdf_content)
+        pdf_file.name = "limit-test.pdf"
+
+        response = test_client.post(
+            "/api/v1/conversion/start",
+            files={"file": ("limit-test.pdf", pdf_file, "application/pdf")},
+            data={"ocr_enabled": "false"},
+            headers={"X-API-Key": "your-api-key-here"},
+        )
+
+        assert response.status_code == 413
+        assert "25MB" in response.json()["detail"]
+        assert captured_limit["value"] == 25 * 1024 * 1024
+
+    def test_start_conversion_upload_limit_for_authenticated_free_user(
+        self, test_client, mock_async_queue_service, sample_pdf_content, monkeypatch
+    ):
+        captured_limit = {"value": 0}
+
+        def fake_validate_file_size(file, max_size):
+            captured_limit["value"] = max_size
+            return False
+
+        monkeypatch.setattr(
+            "app.api.v1.conversion.validate_file_size", fake_validate_file_size
+        )
+
+        free_token = create_access_token(
+            {"sub": "testuser", "plan": "free", "is_subscribed": False}
+        )
+        pdf_file = BytesIO(sample_pdf_content)
+        pdf_file.name = "limit-auth-free.pdf"
+
+        response = test_client.post(
+            "/api/v1/conversion/start",
+            files={"file": ("limit-auth-free.pdf", pdf_file, "application/pdf")},
+            data={"ocr_enabled": "false"},
+            headers={
+                "X-API-Key": "your-api-key-here",
+                "Authorization": f"Bearer {free_token}",
+            },
+        )
+
+        assert response.status_code == 413
+        assert "구독" in response.json()["detail"]
+        assert captured_limit["value"] == 25 * 1024 * 1024
+
+    def test_start_conversion_upload_limit_for_subscriber(
+        self, test_client, mock_async_queue_service, sample_pdf_content, monkeypatch
+    ):
+        captured_limit = {"value": 0}
+
+        def fake_validate_file_size(file, max_size):
+            captured_limit["value"] = max_size
+            return False
+
+        monkeypatch.setattr(
+            "app.api.v1.conversion.validate_file_size", fake_validate_file_size
+        )
+
+        premium_token = create_access_token(
+            {
+                "sub": "premiumuser",
+                "plan": "premium",
+                "is_subscribed": True,
+                "subscription_active": True,
+            }
+        )
+        pdf_file = BytesIO(sample_pdf_content)
+        pdf_file.name = "limit-auth-premium.pdf"
+
+        response = test_client.post(
+            "/api/v1/conversion/start",
+            files={"file": ("limit-auth-premium.pdf", pdf_file, "application/pdf")},
+            data={"ocr_enabled": "false"},
+            headers={
+                "X-API-Key": "your-api-key-here",
+                "Authorization": f"Bearer {premium_token}",
+            },
+        )
+
+        assert response.status_code == 413
+        assert "300MB" in response.json()["detail"]
+        assert captured_limit["value"] == 300 * 1024 * 1024
 
     def test_get_status_endpoint(self, test_client, mock_async_queue_service):
         """상태 조회 엔드포인트 테스트"""
@@ -441,7 +540,7 @@ class TestAsyncServiceIntegration:
 
     @pytest.mark.asyncio
     async def test_error_handling(self, mock_settings, mock_celery_app, mock_store):
-        """오류 처리 통합 테스트"""
+        """오류 처리 통합 테스트 (Celery 실패 시 직접 모드 폴백)"""
         from app.services.async_queue_service import AsyncQueueService
 
         # Create service
@@ -455,12 +554,11 @@ class TestAsyncServiceIntegration:
             "Connection error"
         )
 
-        with pytest.raises(Exception):
-            await service.initialize()
+        await service.initialize()
+        assert service.use_celery is False
 
-        # Start conversion with error
-        mock_celery_app.send_task.side_effect = Exception("Queue error")
-        mock_store.create.return_value = ConversionJob(
+        # Start conversion should fall back to orchestrator direct mode
+        expected_job = ConversionJob(
             conversion_id="test-123",
             filename="test.pdf",
             file_size=1024,
@@ -468,15 +566,19 @@ class TestAsyncServiceIntegration:
             state=JobState.PENDING,
             progress=0,
         )
-
-        with pytest.raises(Exception):
-            await service.start_conversion(
+        with patch.object(
+            service.orchestrator, "start", AsyncMock(return_value=expected_job)
+        ) as mock_start:
+            job = await service.start_conversion(
                 conversion_id="test-123",
                 filename="test.pdf",
                 file_size=1024,
                 ocr_enabled=True,
                 pdf_bytes=b"test content",
             )
+
+            assert job.conversion_id == "test-123"
+            mock_start.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_queue_statistics(self, mock_settings, mock_celery_app, mock_store):

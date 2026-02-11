@@ -10,7 +10,7 @@ from io import BytesIO
 from datetime import datetime, timezone
 import zipfile
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse  # type: ignore
 
 from app.core.config import Settings, get_settings
@@ -22,6 +22,7 @@ from app.services.pdf_service import (
 )
 from app.services.epub_validator import validate_epub_bytes
 from app.services.async_queue_service import get_async_queue_service
+from app.api.v1.auth import verify_token
 from app.models.conversion import (
     ConversionJobSummary,
     ConversionJobDetail,
@@ -53,6 +54,9 @@ router = APIRouter(
     tags=["Conversion"],
 )
 
+ANONYMOUS_UPLOAD_LIMIT_BYTES = 25 * 1024 * 1024
+SUBSCRIBER_UPLOAD_LIMIT_BYTES = 300 * 1024 * 1024
+
 
 def _parse_iso_datetime(value: str) -> datetime:
     if value.endswith("Z"):
@@ -75,6 +79,9 @@ def _job_to_summary(job) -> ConversionJobSummary:
         updated_at=_parse_iso_datetime(updated_at),
         result_path=getattr(job, "result_path", None),
         error_message=getattr(job, "error_message", None),
+        llm_used_model=getattr(job, "llm_used_model", None),
+        llm_attempt_count=getattr(job, "llm_attempt_count", 0),
+        llm_fallback_used=getattr(job, "llm_fallback_used", False),
     )
 
 
@@ -134,6 +141,42 @@ def validate_file_size(file: UploadFile, max_size: int) -> bool:
     return content_length <= max_size
 
 
+def _extract_bearer_token(request: Request) -> str | None:
+    auth_header = request.headers.get("Authorization", "").strip()
+    if not auth_header.lower().startswith("bearer "):
+        return None
+    token = auth_header[7:].strip()
+    return token or None
+
+
+def _is_subscribed_user(payload: dict) -> bool:
+    direct_flag = payload.get("is_subscribed") or payload.get("subscription_active")
+    if isinstance(direct_flag, bool):
+        return direct_flag
+    if isinstance(direct_flag, str) and direct_flag.lower() in {"1", "true", "yes"}:
+        return True
+
+    plan = payload.get("plan") or payload.get("subscription_plan")
+    if isinstance(plan, str):
+        return plan.lower() in {"pro", "premium", "business", "enterprise"}
+
+    return False
+
+
+def _resolve_upload_limit(request: Request) -> tuple[int, str]:
+    token = _extract_bearer_token(request)
+    if not token:
+        return ANONYMOUS_UPLOAD_LIMIT_BYTES, "anonymous"
+
+    payload = verify_token(token)
+    if not payload:
+        return ANONYMOUS_UPLOAD_LIMIT_BYTES, "anonymous"
+
+    if _is_subscribed_user(payload):
+        return SUBSCRIBER_UPLOAD_LIMIT_BYTES, "subscribed"
+    return ANONYMOUS_UPLOAD_LIMIT_BYTES, "authenticated"
+
+
 # 의존성 함수
 async def get_conversion_settings(settings: Settings = Depends(get_settings)) -> Dict:
     """변환 설정 정보를 반환하는 의존성 함수
@@ -145,7 +188,7 @@ async def get_conversion_settings(settings: Settings = Depends(get_settings)) ->
         Dict: 변환 설정 정보
     """
     return {
-        "max_file_size": 50 * 1024 * 1024,  # 기본값 50MB
+        "max_file_size": SUBSCRIBER_UPLOAD_LIMIT_BYTES,  # 최대 업로드 한도(구독 기준)
         "supported_formats": [".pdf"],
         "output_format": "epub",
     }
@@ -154,6 +197,7 @@ async def get_conversion_settings(settings: Settings = Depends(get_settings)) ->
 # 파일 업로드 및 변환 시작 엔드포인트
 @router.post("/start", response_model=ConversionStartResponse)
 async def start_conversion(
+    request: Request,
     file: UploadFile = File(..., description="변환할 PDF 파일"),
     ocr_enabled: bool = Form(False, description="OCR 처리 활성화 여부"),
     api_key: str = Depends(api_key_header),
@@ -177,12 +221,21 @@ async def start_conversion(
             detail="지원하지 않는 파일 형식입니다. PDF 파일만 업로드 가능합니다.",
         )
 
+    max_upload_size, user_tier = _resolve_upload_limit(request)
+
     # 파일 크기 검증
-    if not validate_file_size(file, 50 * 1024 * 1024):  # 기본값 50MB
-        raise HTTPException(
-            status_code=413,
-            detail="파일 크기가 너무 큽니다. 최대 50MB까지 업로드 가능합니다.",
-        )
+    if not validate_file_size(file, max_upload_size):
+        if user_tier == "subscribed":
+            detail = (
+                "파일 크기가 너무 큽니다. 구독 플랜은 최대 300MB까지 업로드 가능합니다."
+            )
+        elif user_tier == "authenticated":
+            detail = (
+                "현재 계정은 무료 플랜입니다. 25MB를 초과하려면 구독 결제가 필요합니다."
+            )
+        else:
+            detail = "비로그인 사용자는 최대 25MB까지 업로드 가능합니다. 로그인 후 구독하면 최대 300MB까지 지원됩니다."
+        raise HTTPException(status_code=413, detail=detail)
 
     # 변환 작업 ID 생성 및 PDF 로드
     conversion_id = str(uuid.uuid4())
@@ -275,6 +328,31 @@ async def download_result(conversion_id: str, api_key: str = Depends(api_key_hea
             "Content-Disposition": f'attachment; filename="{conversion_id}.epub"',
             "X-EPUB-Valid": "true" if validation.valid else "false",
             "X-EPUB-Version": validation.metadata.get("version", ""),
+        },
+    )
+
+
+@router.get("/download-sample")
+async def download_sample_result(
+    filename: str = "sample.epub", api_key: str = Depends(api_key_header)
+):
+    """샘플 EPUB 파일 다운로드 엔드포인트.
+
+    변환 ID가 없거나 실제 결과가 준비되지 않은 경우 프론트엔드의 폴백 다운로드로 사용.
+    """
+    conversion_id = str(uuid.uuid4())
+    epub_content = create_mock_epub(conversion_id)
+    safe_filename = (
+        filename if filename.lower().endswith(".epub") else f"{filename}.epub"
+    )
+
+    return StreamingResponse(
+        BytesIO(epub_content),
+        media_type="application/epub+zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
+            "X-EPUB-Valid": "true",
+            "X-EPUB-Version": "3.0",
         },
     )
 

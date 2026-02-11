@@ -10,12 +10,52 @@ PDF 문서를 EPUB 전자책으로 변환하는 웹 서비스입니다.
 - 프론트엔드: 라우팅/페이지 UI 구현 (홈, 업로드, 변환, 다운로드, 프리미엄 등)
 - 테스트: 백엔드 단위/통합 테스트 포함
 
+## 업로드 정책
+- 비로그인 또는 무료 계정: 최대 25MB
+- 로그인 + 구독 활성 계정: 최대 300MB
+
 ## 기술 스택
 - 백엔드: FastAPI, Pydantic, Celery, Redis
 - PDF/OCR/EPUB: pypdf, pdfminer.six, PyMuPDF, PaddleOCR, ebooklib
 - 프론트엔드: React 18, TypeScript, Vite, ESLint, Prettier
 
 ## 빠른 시작
+### 가장 간단한 실행(권장)
+```bash
+chmod +x scripts/dev_up.sh
+./scripts/dev_up.sh
+```
+
+위 명령은 백엔드/프론트엔드/필수 인프라(db, redis)를 한 번에 실행합니다.
+Docker가 없으면 인프라 실행은 건너뛰고 백엔드/프론트엔드만 실행합니다.
+
+인프라를 반드시 띄워야 하면 아래처럼 엄격 모드로 실행합니다.
+```bash
+REQUIRE_INFRA=1 ./scripts/dev_up.sh
+```
+
+인프라를 의도적으로 생략하려면 아래처럼 실행합니다.
+```bash
+SKIP_INFRA=1 ./scripts/dev_up.sh
+```
+
+종료는 아래처럼 실행합니다.
+```bash
+chmod +x scripts/dev_down.sh
+./scripts/dev_down.sh
+```
+
+실제 변환/다운로드가 되는지 빠르게 점검하려면 아래 스모크 테스트를 실행합니다.
+```bash
+chmod +x scripts/smoke_conversion.sh
+./scripts/smoke_conversion.sh <PDF_파일_경로>
+```
+예시:
+```bash
+./scripts/smoke_conversion.sh ./samples/test.pdf
+```
+
+### 수동 실행
 1. 백엔드 의존성 설치
 ```bash
 python3.11 -m venv .venv
@@ -27,15 +67,22 @@ pip install -r requirements.txt
 ```bash
 cd frontend
 npm ci
+cp .env.example .env
 cd ..
 ```
 
-3. 로컬 인프라 실행
+3. 환경 변수 설정
+```bash
+cp .env.example .env
+```
+`OPENROUTER_API_KEY`를 설정하면 문맥 보정(1차: `deepseek/deepseek-v3.2`, 2차: `nvidia/nemotron-3-nano-30b-a3b`)이 활성화됩니다.
+
+4. 로컬 인프라 실행
 ```bash
 docker-compose up -d db redis
 ```
 
-4. 서버 실행
+5. 서버 실행
 ```bash
 # 백엔드
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

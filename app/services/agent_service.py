@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
@@ -94,6 +95,8 @@ class MultimodalLLMAgent(BaseAgent):
         super().__init__(AgentType.MULTIMODAL_LLM, settings)
         self.api_key = (
             self.settings.llm.api_key
+            or self.settings.openrouter_api_key
+            or os.getenv("OPENROUTER_API_KEY")
             or self.settings.deepseek_api_key
             or self.settings.openai_api_key
         )

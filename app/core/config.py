@@ -2,6 +2,32 @@ import os
 from typing import Optional, List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+ENV_FILE = ".env"
+
+
+def _load_env_file_to_environ(path: str) -> None:
+    """루트 .env 파일을 os.environ으로 로드합니다.
+
+    이미 존재하는 환경변수는 덮어쓰지 않습니다.
+    """
+    if not os.path.exists(path):
+        return
+
+    try:
+        with open(path, "r", encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except Exception:
+        # .env 파싱 실패 시 기존 환경변수만 사용
+        return
+
 
 class DatabaseSettings(BaseSettings):
     """데이터베이스 설정"""
@@ -20,6 +46,11 @@ class RedisSettings(BaseSettings):
     port: int = 6379
     db: int = 0
     password: Optional[str] = None
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.password == "":
+            self.password = None
 
     @property
     def url(self) -> str:
@@ -47,6 +78,8 @@ class LLMSettings(BaseSettings):
 
     provider: str = "openrouter"
     model_name: str = "deepseek/deepseek-chat"
+    context_primary_model: str = "deepseek/deepseek-v3.2"
+    context_fallback_model: str = "nvidia/nemotron-3-nano-30b-a3b"
     api_key: Optional[str] = None
     max_tokens: int = 4000
     temperature: float = 0.1
@@ -132,6 +165,7 @@ class Settings(BaseSettings):
     supabase_key: Optional[str] = None
 
     # AI 서비스 설정
+    openrouter_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
     deepseek_api_key: Optional[str] = None
 
@@ -176,10 +210,13 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         case_sensitive=True,
         env_prefix="APP_",
+        env_file=ENV_FILE,
+        env_file_encoding="utf-8",
         extra="ignore",
     )
 
     def __init__(self, **kwargs):
+        _load_env_file_to_environ(ENV_FILE)
         super().__init__(**kwargs)
 
         # 환경 변수에서 값 읽기
@@ -191,12 +228,19 @@ class Settings(BaseSettings):
             "SECURITY_API_KEY",
             os.getenv("APP_SECURITY_API_KEY", self.security_api_key),
         )
+        self.openrouter_api_key = os.getenv(
+            "OPENROUTER_API_KEY", self.openrouter_api_key
+        )
 
         # 중첩된 설정 업데이트
         self.database = DatabaseSettings()
         self.redis = RedisSettings()
         self.ocr = OCRSettings()
         self.llm = LLMSettings()
+        if not self.llm.api_key and self.openrouter_api_key:
+            self.llm.api_key = self.openrouter_api_key
+        if not self.llm.base_url or not self.llm.base_url.strip():
+            self.llm.base_url = "https://openrouter.ai/api/v1"
         self.conversion = ConversionSettings()
 
         # CORS 출처 업데이트

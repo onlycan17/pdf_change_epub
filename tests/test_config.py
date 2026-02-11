@@ -273,8 +273,8 @@ class TestSettingsEdgeCases:
         monkeypatch.setenv("REDIS_PASSWORD", "")
 
         settings = RedisSettings()
-        # pydantic-settings는 빈 문자열을 그대로 유지함
-        assert settings.password == ""
+        # 빈 문자열은 None으로 정규화
+        assert settings.password is None
 
     def test_partial_settings_override(self, monkeypatch):
         """부분 설정만 변경된 경우 테스트"""

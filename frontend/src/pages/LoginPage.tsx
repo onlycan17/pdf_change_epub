@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
+import { useApp } from '@contexts/AppContext';
 
 const LoginPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { dispatch } = useApp();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -14,10 +20,39 @@ const LoginPage: React.FC = () => {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Login logic will be implemented later
-    console.log('Login attempt:', formData);
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      const body = new URLSearchParams();
+      body.set('username', formData.email);
+      body.set('password', formData.password);
+
+      const response = await fetch('/api/v1/auth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      });
+
+      if (!response.ok) {
+        throw new Error('로그인에 실패했습니다. 계정 정보를 확인해주세요.');
+      }
+
+      const payload = (await response.json()) as { access_token: string };
+      localStorage.setItem('auth_token', payload.access_token);
+      dispatch({ type: 'SET_AUTHENTICATED', payload: true });
+      navigate('/upload');
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : '로그인 중 오류가 발생했습니다.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -40,6 +75,18 @@ const LoginPage: React.FC = () => {
             >
               새 계정 만들기
             </Link>
+          </p>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            로그인 없이도 사용 가능합니다.{' '}
+            <Link
+              to="/upload"
+              className="font-medium text-blue-600 hover:text-blue-500"
+            >
+              바로 변환 시작
+            </Link>
+          </p>
+          <p className="mt-2 text-center text-xs text-gray-500">
+            데모 계정: 무료 `testuser / testpass`, 구독 `premiumuser / testpass`
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
@@ -104,13 +151,29 @@ const LoginPage: React.FC = () => {
             </div>
           </div>
 
+          {errorMessage && (
+            <p className="text-sm text-red-600" role="alert">
+              {errorMessage}
+            </p>
+          )}
+
           <div>
             <button
               type="submit"
+              disabled={isSubmitting}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
-              로그인
+              {isSubmitting ? '로그인 중...' : '로그인'}
             </button>
+          </div>
+
+          <div>
+            <Link
+              to="/"
+              className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            >
+              홈으로 이동
+            </Link>
           </div>
 
           <div className="mt-6">
