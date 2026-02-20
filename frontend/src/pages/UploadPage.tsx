@@ -1,6 +1,10 @@
 import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { startConversion } from '@utils/conversionApi';
+import {
+  getCurrentPlan,
+  formatBytesToMb,
+} from '@utils/subscription';
 
 const UploadPage: React.FC = () => {
   const navigate = useNavigate();
@@ -11,8 +15,8 @@ const UploadPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [ocrEnabled, setOcrEnabled] = useState(false);
 
-  const FREE_MAX_FILE_SIZE = 25 * 1024 * 1024;
-  const SUBSCRIBER_MAX_FILE_SIZE = 300 * 1024 * 1024;
+  const currentPlan = getCurrentPlan();
+  const maxSize = currentPlan.uploadLimitBytes;
 
   const formatFileSize = (size: number): string => {
     if (size < 1024 * 1024) {
@@ -29,54 +33,6 @@ const UploadPage: React.FC = () => {
     );
   };
 
-  const getTokenPayload = (): Record<string, unknown> | null => {
-    const token =
-      localStorage.getItem('auth_token') ||
-      localStorage.getItem('access_token') ||
-      localStorage.getItem('token');
-    if (!token) {
-      return null;
-    }
-
-    const parts = token.split('.');
-    if (parts.length < 2) {
-      return null;
-    }
-
-    try {
-      const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-      const decoded = atob(normalized);
-      return JSON.parse(decoded) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
-  };
-
-  const isSubscribedUser = (): boolean => {
-    const payload = getTokenPayload();
-    if (!payload) {
-      return false;
-    }
-
-    const directFlag = payload.is_subscribed ?? payload.subscription_active;
-    if (typeof directFlag === 'boolean') {
-      return directFlag;
-    }
-    if (typeof directFlag === 'string') {
-      return ['1', 'true', 'yes'].includes(directFlag.toLowerCase());
-    }
-
-    const plan =
-      typeof payload.plan === 'string'
-        ? payload.plan
-        : typeof payload.subscription_plan === 'string'
-          ? payload.subscription_plan
-          : '';
-    return ['premium', 'pro', 'business', 'enterprise'].includes(
-      plan.toLowerCase()
-    );
-  };
-
   const handleFileSelection = (file: File | null) => {
     if (!file) {
       return;
@@ -88,19 +44,11 @@ const UploadPage: React.FC = () => {
       return;
     }
 
-    const maxSize = isSubscribedUser()
-      ? SUBSCRIBER_MAX_FILE_SIZE
-      : FREE_MAX_FILE_SIZE;
-
     if (file.size > maxSize) {
       setSelectedFile(null);
-      if (maxSize === FREE_MAX_FILE_SIZE) {
-        setErrorMessage(
-          '비로그인/무료 사용자는 최대 25MB까지 업로드 가능합니다. 로그인 후 구독하면 최대 300MB까지 업로드할 수 있습니다.'
-        );
-      } else {
-        setErrorMessage('구독 플랜 업로드 한도(300MB)를 초과했습니다.');
-      }
+      setErrorMessage(
+        `${currentPlan.label} 플랜은 최대 ${formatBytesToMb(maxSize)}까지만 업로드 가능합니다.`
+      );
       return;
     }
 
@@ -164,7 +112,7 @@ const UploadPage: React.FC = () => {
           PDF 파일 업로드
         </h1>
         <p className="text-gray-600">
-          비로그인/무료는 최대 25MB, 로그인+구독은 최대 300MB까지 지원합니다.
+          현재 플랜({currentPlan.label})은 최대 {formatBytesToMb(maxSize)}까지 지원합니다.
         </p>
       </div>
 
@@ -213,7 +161,7 @@ const UploadPage: React.FC = () => {
             PDF 파일을 여기로 드래그하거나 클릭하여 선택하세요
           </p>
           <p className="text-sm text-gray-500 mb-4">
-            PDF, 무료 25MB / 구독 300MB
+            제한 용량: {formatBytesToMb(maxSize)}
           </p>
           <button
             type="button"

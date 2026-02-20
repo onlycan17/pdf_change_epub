@@ -185,6 +185,44 @@ class TestConversionIntegration:
         assert "300MB" in response.json()["detail"]
         assert captured_limit["value"] == 300 * 1024 * 1024
 
+    def test_start_conversion_upload_limit_for_yearly_subscriber(
+        self, test_client, mock_async_queue_service, sample_pdf_content, monkeypatch
+    ):
+        captured_limit = {"value": 0}
+
+        def fake_validate_file_size(file, max_size):
+            captured_limit["value"] = max_size
+            return False
+
+        monkeypatch.setattr(
+            "app.api.v1.conversion.validate_file_size", fake_validate_file_size
+        )
+
+        yearly_token = create_access_token(
+            {
+                "sub": "yearlyuser",
+                "plan": "yearly",
+                "is_subscribed": True,
+                "subscription_active": True,
+            }
+        )
+        pdf_file = BytesIO(sample_pdf_content)
+        pdf_file.name = "limit-auth-yearly.pdf"
+
+        response = test_client.post(
+            "/api/v1/conversion/start",
+            files={"file": ("limit-auth-yearly.pdf", pdf_file, "application/pdf")},
+            data={"ocr_enabled": "false"},
+            headers={
+                "X-API-Key": "your-api-key-here",
+                "Authorization": f"Bearer {yearly_token}",
+            },
+        )
+
+        assert response.status_code == 413
+        assert "500MB" in response.json()["detail"]
+        assert captured_limit["value"] == 500 * 1024 * 1024
+
     def test_get_status_endpoint(self, test_client, mock_async_queue_service):
         """상태 조회 엔드포인트 테스트"""
         # Mock job status

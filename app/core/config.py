@@ -169,13 +169,24 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     deepseek_api_key: Optional[str] = None
 
-    # Stripe 결제 설정
+    # Stripe(legacy) / Toss 결제 설정
     stripe_secret_key: Optional[str] = None
     stripe_webhook_secret: Optional[str] = None
     stripe_price_basic: Optional[str] = None
     stripe_price_pro: Optional[str] = None
     stripe_success_url: Optional[str] = None
     stripe_cancel_url: Optional[str] = None
+
+    # Toss Payments
+    toss_secret_key: Optional[str] = None
+    toss_webhook_secret: Optional[str] = None
+    toss_client_key: Optional[str] = None
+    toss_price_monthly: Optional[str] = None
+    toss_price_yearly: Optional[str] = None
+    toss_success_url: Optional[str] = None
+    toss_cancel_url: Optional[str] = None
+    toss_checkout_base_url: str = "https://pay.toss.im"
+    toss_api_base_url: str = "https://api.tosspayments.com"
 
     # 외부 서비스 설정
     smtp_host: Optional[str] = None
@@ -393,6 +404,34 @@ class Settings(BaseSettings):
     @property
     def SMTP_PASSWORD(self) -> Optional[str]:
         return self.smtp_password
+
+    @property
+    def TOSS_SECRET_KEY(self) -> Optional[str]:
+        return self.toss_secret_key or self.stripe_secret_key
+
+    @property
+    def TOSS_WEBHOOK_SECRET(self) -> Optional[str]:
+        return self.toss_webhook_secret or self.stripe_webhook_secret
+
+    @property
+    def TOSS_CLIENT_KEY(self) -> Optional[str]:
+        return self.toss_client_key
+
+    @property
+    def TOSS_PRICE_MONTHLY(self) -> Optional[str]:
+        return self.toss_price_monthly or self.stripe_price_basic
+
+    @property
+    def TOSS_PRICE_YEARLY(self) -> Optional[str]:
+        return self.toss_price_yearly or self.stripe_price_pro
+
+    @property
+    def TOSS_SUCCESS_URL(self) -> Optional[str]:
+        return self.toss_success_url or self.stripe_success_url
+
+    @property
+    def TOSS_CANCEL_URL(self) -> Optional[str]:
+        return self.toss_cancel_url or self.stripe_cancel_url
 
     @property
     def CACHE_TTL(self) -> int:

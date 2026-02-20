@@ -13,14 +13,14 @@ class CheckoutSessionRequest(BaseModel):
     """구독/일회성 결제 세션 생성 요청"""
 
     plan_code: Optional[str] = Field(
-        default=None, description="구독 플랜 코드 (basic, pro 등)"
+        default=None, description="구독 플랜 코드 (monthly, yearly, free)"
     )
     price_id: Optional[str] = Field(
-        default=None, description="Stripe Price ID (plan_code 대신 직접 지정)"
+        default=None, description="직접 결제 금액(원) 지정 시 사용(숫자 문자열)"
     )
     mode: Optional[str] = Field(
         default="subscription",
-        description="Stripe Checkout mode (subscription|payment)",
+        description="결제 모드 (subscription|payment)",
     )
     success_url: Optional[str] = Field(
         default=None, description="결제 성공 리디렉션 URL"
@@ -54,13 +54,13 @@ class CheckoutSessionRequest(BaseModel):
 
 
 class CheckoutSessionResponse(DataResponse[Dict[str, str]]):
-    """Checkout 세션 생성 응답"""
+    """구독/일회성 Checkout 세션 생성 응답"""
 
 
 class PortalSessionRequest(BaseModel):
     """청구 포털 세션 생성 요청"""
 
-    customer_id: str = Field(..., description="Stripe Customer ID")
+    customer_id: str = Field(..., description="고객 식별자")
     return_url: Optional[str] = Field(
         default=None, description="포털 종료 후 돌아갈 URL"
     )
@@ -79,7 +79,7 @@ class OneTimeCheckoutRequest(BaseModel):
     )
     amount_cents: Optional[int] = Field(
         default=None,
-        description="즉시 생성 금액(센트 단위) - price_id가 없을 때 사용",
+        description="즉시 결제 금액(원). price_id가 없을 때 사용",
         ge=1,
     )
     currency: Optional[str] = Field(
@@ -106,6 +106,25 @@ class OneTimeCheckoutRequest(BaseModel):
 
 class OneTimeCheckoutResponse(DataResponse[Dict[str, str]]):
     """단일 결제 Checkout 응답"""
+
+
+class BillingPlanData(BaseModel):
+    """구독 플랜 목록 응답 항목"""
+
+    code: str
+    label: str
+    upload_limit_bytes: int
+    upload_limit_mb: int
+    monthly_price_won: int
+    yearly_price_won: int
+    is_subscribed: bool
+    recommended: bool
+    annual_discount_rate: float
+    features: list[str]
+
+
+class BillingPlansResponse(DataResponse[Dict[str, list[BillingPlanData]]]):
+    """구독 플랜 목록 응답"""
 
 
 class BillingErrorResponse(DataResponse[Dict[str, str]]):

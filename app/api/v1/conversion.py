@@ -23,6 +23,7 @@ from app.services.pdf_service import (
 from app.services.epub_validator import validate_epub_bytes
 from app.services.async_queue_service import get_async_queue_service
 from app.api.v1.auth import verify_token
+from app.services.subscription_plans import SUBSCRIPTION_PLAN_FREE, get_plan, resolve_plan_from_payload
 from app.models.conversion import (
     ConversionJobSummary,
     ConversionJobDetail,
@@ -53,10 +54,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     tags=["Conversion"],
 )
-
-ANONYMOUS_UPLOAD_LIMIT_BYTES = 25 * 1024 * 1024
-SUBSCRIBER_UPLOAD_LIMIT_BYTES = 300 * 1024 * 1024
-
 
 def _parse_iso_datetime(value: str) -> datetime:
     if value.endswith("Z"):
@@ -149,32 +146,27 @@ def _extract_bearer_token(request: Request) -> str | None:
     return token or None
 
 
-def _is_subscribed_user(payload: dict) -> bool:
-    direct_flag = payload.get("is_subscribed") or payload.get("subscription_active")
-    if isinstance(direct_flag, bool):
-        return direct_flag
-    if isinstance(direct_flag, str) and direct_flag.lower() in {"1", "true", "yes"}:
-        return True
-
-    plan = payload.get("plan") or payload.get("subscription_plan")
-    if isinstance(plan, str):
-        return plan.lower() in {"pro", "premium", "business", "enterprise"}
-
-    return False
-
-
 def _resolve_upload_limit(request: Request) -> tuple[int, str]:
     token = _extract_bearer_token(request)
     if not token:
-        return ANONYMOUS_UPLOAD_LIMIT_BYTES, "anonymous"
+        return get_plan(SUBSCRIPTION_PLAN_FREE).upload_limit_bytes, SUBSCRIPTION_PLAN_FREE
 
     payload = verify_token(token)
     if not payload:
-        return ANONYMOUS_UPLOAD_LIMIT_BYTES, "anonymous"
+        return get_plan(SUBSCRIPTION_PLAN_FREE).upload_limit_bytes, SUBSCRIPTION_PLAN_FREE
 
-    if _is_subscribed_user(payload):
-        return SUBSCRIBER_UPLOAD_LIMIT_BYTES, "subscribed"
-    return ANONYMOUS_UPLOAD_LIMIT_BYTES, "authenticated"
+    plan_code = resolve_plan_from_payload(payload)
+    plan = get_plan(plan_code)
+    return plan.upload_limit_bytes, plan.code
+
+
+def _format_limit_message(plan_code: str) -> str:
+    plan = get_plan(plan_code)
+    if plan.code == SUBSCRIPTION_PLAN_FREE:
+        return "비로그인 또는 무료 플랜은 최대 25MB까지 업로드 가능합니다."
+    if plan.code == "yearly":
+        return "연간 구독 플랜은 최대 500MB까지 업로드 가능합니다."
+    return "월간 구독 플랜은 최대 300MB까지 업로드 가능합니다."
 
 
 # 의존성 함수
@@ -188,7 +180,7 @@ async def get_conversion_settings(settings: Settings = Depends(get_settings)) ->
         Dict: 변환 설정 정보
     """
     return {
-        "max_file_size": SUBSCRIBER_UPLOAD_LIMIT_BYTES,  # 최대 업로드 한도(구독 기준)
+        "max_file_size": get_plan(SUBSCRIPTION_PLAN_FREE).upload_limit_bytes,  # 최대 업로드 한도(현재 무료 기준)
         "supported_formats": [".pdf"],
         "output_format": "epub",
     }
@@ -225,16 +217,7 @@ async def start_conversion(
 
     # 파일 크기 검증
     if not validate_file_size(file, max_upload_size):
-        if user_tier == "subscribed":
-            detail = (
-                "파일 크기가 너무 큽니다. 구독 플랜은 최대 300MB까지 업로드 가능합니다."
-            )
-        elif user_tier == "authenticated":
-            detail = (
-                "현재 계정은 무료 플랜입니다. 25MB를 초과하려면 구독 결제가 필요합니다."
-            )
-        else:
-            detail = "비로그인 사용자는 최대 25MB까지 업로드 가능합니다. 로그인 후 구독하면 최대 300MB까지 지원됩니다."
+        detail = _format_limit_message(user_tier)
         raise HTTPException(status_code=413, detail=detail)
 
     # 변환 작업 ID 생성 및 PDF 로드

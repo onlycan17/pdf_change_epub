@@ -47,6 +47,16 @@ def test_create_checkout_session():
     assert data["data"]["checkout_url"] == "https://stripe.test/checkout"
 
 
+def test_get_billing_plans():
+    response = client.get("/api/v1/billing/plans")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    plans = data["data"]["plans"]
+    assert isinstance(plans, list)
+    assert {plan["code"] for plan in plans} >= {"free", "monthly", "yearly"}
+
+
 def test_create_one_time_session():
     response = client.post(
         "/api/v1/billing/checkout/one-time",

@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
+import { getCurrentPlan, formatBytesToMb } from '@utils/subscription';
 
 const ProfilePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('profile');
+  const currentPlan = getCurrentPlan();
 
   // Mock user data - will be replaced with actual data from context
   const userData = {
     name: '홍길동',
     email: 'hong@example.com',
     joinDate: '2024년 1월 15일',
-    subscription: '무료',
+    subscription: `${currentPlan.label} (${currentPlan.code})`,
     conversionsThisMonth: 3,
     maxConversions: 5,
   };
@@ -122,11 +124,11 @@ const ProfilePage: React.FC = () => {
                   ></div>
                 </div>
               </div>
-              <div className="text-sm text-gray-600">
-                구독 상태:{' '}
-                <span className="font-medium text-gray-900">
-                  {userData.subscription}
-                </span>
+                <div className="text-sm text-gray-600">
+                  구독 상태:{' '}
+                  <span className="font-medium text-gray-900">
+                    {userData.subscription}
+                  </span>
               </div>
               <div className="text-sm text-gray-600">
                 가입일:{' '}
@@ -314,8 +316,12 @@ const ProfilePage: React.FC = () => {
                   </h3>
                   <p className="text-blue-700">{userData.subscription} 플랜</p>
                   <p className="text-sm text-blue-600 mt-2">
-                    이번 달 남은 변환 횟수:{' '}
-                    {userData.maxConversions - userData.conversionsThisMonth}회
+                    업로드 허용 용량:{' '}
+                    {formatBytesToMb(currentPlan.uploadLimitBytes)}
+                  </p>
+                  <p className="text-sm text-blue-600 mt-2">
+                    연간 플랜 할인:{' '}
+                    {Math.round(currentPlan.annualDiscountRate * 100)}%
                   </p>
                 </div>
 
