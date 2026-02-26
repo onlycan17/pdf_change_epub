@@ -2,6 +2,8 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services.stripe_service import get_stripe_service
+from app.api.v1.auth import create_access_token
+from app.api.v1.billing import get_toss_subscription_service_factory
 
 
 class FakeStripeObject:
@@ -34,6 +36,10 @@ def setup_module() -> None:
 
 def teardown_module() -> None:
     app.dependency_overrides.pop(get_stripe_service, None)
+    app.dependency_overrides.pop(
+        get_toss_subscription_service_factory,
+        None,
+    )
 
 
 def test_create_checkout_session():
@@ -75,3 +81,68 @@ def test_create_portal_session():
     assert response.status_code == 200
     data = response.json()
     assert data["data"]["portal_url"] == "https://stripe.test/portal"
+
+
+class FakeTossSubscriptionService:
+    def __init__(self) -> None:
+        self.started: list[tuple[str, str]] = []
+        self.completed: list[tuple[str, str]] = []
+
+    def start_billing_auth(self, *, user_id: str, plan_code: str) -> dict[str, str]:
+        self.started.append((user_id, plan_code))
+        return {
+            "client_key": "test_ck",
+            "customer_key": "cust_test",
+            "success_url": "",
+            "fail_url": "",
+        }
+
+    def complete_billing_auth_and_subscribe(self, *, customer_key: str, auth_key: str):
+        self.completed.append((customer_key, auth_key))
+        return ("testuser", "monthly")
+
+
+_fake_toss_service = FakeTossSubscriptionService()
+
+
+def override_toss_service():
+    return _fake_toss_service
+
+
+def test_toss_billing_auth_start_requires_login():
+    response = client.post(
+        "/api/v1/billing/toss/billing-auth/start",
+        json={"plan_code": "monthly"},
+    )
+    assert response.status_code == 401
+
+
+def test_toss_billing_auth_start_and_complete_flow():
+    app.dependency_overrides[get_toss_subscription_service_factory] = (
+        lambda: lambda: _fake_toss_service
+    )
+    token = create_access_token({"sub": "testuser", "plan": "free"})
+
+    response = client.post(
+        "/api/v1/billing/toss/billing-auth/start",
+        json={"plan_code": "monthly"},
+        headers={"Authorization": f"Bearer {token}", "Origin": "http://localhost:3000"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["data"]["client_key"] == "test_ck"
+    assert payload["data"]["customer_key"] == "cust_test"
+    assert payload["data"]["success_url"].endswith("/payment/billing/success")
+    assert payload["data"]["fail_url"].endswith("/payment/billing/fail")
+
+    response2 = client.post(
+        "/api/v1/billing/toss/billing-auth/complete",
+        json={"customer_key": "cust_test", "auth_key": "auth_test"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response2.status_code == 200
+    payload2 = response2.json()
+    assert payload2["success"] is True
+    assert payload2["data"]["token_type"] == "bearer"
+    assert payload2["data"]["plan_code"] == "monthly"

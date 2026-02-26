@@ -65,7 +65,9 @@ def _extract_payment_url(response_payload: Dict[str, Any]) -> str:
     )
 
 
-def _extract_payment_id(response_payload: Dict[str, Any], fallback: Optional[str] = None) -> str:
+def _extract_payment_id(
+    response_payload: Dict[str, Any], fallback: Optional[str] = None
+) -> str:
     return (
         response_payload.get("paymentKey")
         or response_payload.get("sessionKey")
@@ -96,7 +98,9 @@ class StripeService:
         self.settings = settings
         self._auth_header = _build_toss_credentials(settings.toss_secret_key)
 
-    def _resolve_plan_price(self, plan_code: Optional[str], price_id: Optional[str]) -> int:
+    def _resolve_plan_price(
+        self, plan_code: Optional[str], price_id: Optional[str]
+    ) -> int:
         if price_id:
             explicit_price = _to_int_bytes(price_id)
             if explicit_price is not None:
@@ -127,7 +131,9 @@ class StripeService:
             return "연간 구독"
         return "구독"
 
-    def _request_toss(self, method: str, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _request_toss(
+        self, method: str, path: str, payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
         if not self._auth_header:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -225,7 +231,9 @@ class StripeService:
 
         return TossCheckoutResult(
             url=payment_url,
-            payment_id=_extract_payment_id(response_payload, fallback=payload["orderId"]),
+            payment_id=_extract_payment_id(
+                response_payload, fallback=payload["orderId"]
+            ),
         ).to_namespace()
 
     def create_one_time_session(
@@ -285,7 +293,9 @@ class StripeService:
         del customer_id
         del return_url
         return TossCheckoutResult(
-            url=self.settings.toss_success_url or self.settings.stripe_success_url or "",
+            url=self.settings.toss_success_url
+            or self.settings.stripe_success_url
+            or "",
             payment_id=str(uuid4()),
         ).to_namespace()
 
