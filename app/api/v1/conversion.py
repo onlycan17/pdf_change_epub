@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import uuid
 import logging
-from typing import Dict
+from typing import TypedDict
 from io import BytesIO
 from datetime import datetime, timezone
 import zipfile
@@ -23,7 +23,11 @@ from app.services.pdf_service import (
 from app.services.epub_validator import validate_epub_bytes
 from app.services.async_queue_service import get_async_queue_service
 from app.api.v1.auth import verify_token
-from app.services.subscription_plans import SUBSCRIPTION_PLAN_FREE, get_plan, resolve_plan_from_payload
+from app.services.subscription_plans import (
+    SUBSCRIPTION_PLAN_FREE,
+    get_plan,
+    resolve_plan_from_payload,
+)
 from app.models.conversion import (
     ConversionJobSummary,
     ConversionJobDetail,
@@ -54,6 +58,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     tags=["Conversion"],
 )
+
 
 def _parse_iso_datetime(value: str) -> datetime:
     if value.endswith("Z"):
@@ -149,11 +154,17 @@ def _extract_bearer_token(request: Request) -> str | None:
 def _resolve_upload_limit(request: Request) -> tuple[int, str]:
     token = _extract_bearer_token(request)
     if not token:
-        return get_plan(SUBSCRIPTION_PLAN_FREE).upload_limit_bytes, SUBSCRIPTION_PLAN_FREE
+        return (
+            get_plan(SUBSCRIPTION_PLAN_FREE).upload_limit_bytes,
+            SUBSCRIPTION_PLAN_FREE,
+        )
 
     payload = verify_token(token)
     if not payload:
-        return get_plan(SUBSCRIPTION_PLAN_FREE).upload_limit_bytes, SUBSCRIPTION_PLAN_FREE
+        return (
+            get_plan(SUBSCRIPTION_PLAN_FREE).upload_limit_bytes,
+            SUBSCRIPTION_PLAN_FREE,
+        )
 
     plan_code = resolve_plan_from_payload(payload)
     plan = get_plan(plan_code)
@@ -163,14 +174,22 @@ def _resolve_upload_limit(request: Request) -> tuple[int, str]:
 def _format_limit_message(plan_code: str) -> str:
     plan = get_plan(plan_code)
     if plan.code == SUBSCRIPTION_PLAN_FREE:
-        return "비로그인 또는 무료 플랜은 최대 25MB까지 업로드 가능합니다."
+        return "무료 플랜은 최대 25MB까지 업로드 가능합니다. 구독하면 더 큰 파일을 업로드할 수 있습니다."
     if plan.code == "yearly":
         return "연간 구독 플랜은 최대 500MB까지 업로드 가능합니다."
     return "월간 구독 플랜은 최대 300MB까지 업로드 가능합니다."
 
 
+class ConversionSettingsDict(TypedDict):
+    max_file_size: int
+    supported_formats: list[str]
+    output_format: str
+
+
 # 의존성 함수
-async def get_conversion_settings(settings: Settings = Depends(get_settings)) -> Dict:
+async def get_conversion_settings(
+    settings: Settings = Depends(get_settings),
+) -> ConversionSettingsDict:
     """변환 설정 정보를 반환하는 의존성 함수
 
     Args:
@@ -180,7 +199,9 @@ async def get_conversion_settings(settings: Settings = Depends(get_settings)) ->
         Dict: 변환 설정 정보
     """
     return {
-        "max_file_size": get_plan(SUBSCRIPTION_PLAN_FREE).upload_limit_bytes,  # 최대 업로드 한도(현재 무료 기준)
+        "max_file_size": get_plan(
+            SUBSCRIPTION_PLAN_FREE
+        ).upload_limit_bytes,  # 최대 업로드 한도(현재 무료 기준)
         "supported_formats": [".pdf"],
         "output_format": "epub",
     }
@@ -629,7 +650,7 @@ async def list_conversions(
 @router.get("/settings", response_model=ConversionSettingsResponse)
 async def get_conversion_settings_info(
     api_key: str = Depends(api_key_header),
-    settings_data: Dict = Depends(get_conversion_settings),
+    settings_data: ConversionSettingsDict = Depends(get_conversion_settings),
 ):
     """변환 설정 정보 조회 엔드포인트
 
