@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from collections.abc import Mapping
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,10 +16,14 @@ from app.core.dependencies import api_key_header
 from app.models.auth import (
     ApiKeyValidationResponse,
     AuthStatusResponse,
+    GoogleLoginRequest,
+    GoogleLoginResponse,
     LogoutResponse,
     TokenResponse,
     UserInfo,
 )
+from app.services.google_auth import verify_google_id_token
+from app.repositories.user_repository import get_user_repository
 
 
 router = APIRouter(
@@ -56,7 +61,10 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(
+    data: Mapping[str, object],
+    expires_delta: Optional[timedelta] = None,
+) -> str:
     """JWT 토큰 생성
 
     Args:
@@ -66,23 +74,22 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     Returns:
         str: JWT 토큰
     """
-    to_encode = data.copy()
+    to_encode: dict[str, object] = dict(data)
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
 
     to_encode.update({"exp": expire})
+    settings = get_settings()
     encoded_jwt = jwt.encode(
-        to_encode,
-        "your-jwt-secret-key",  # 기본값
-        algorithm="HS256",
+        to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
     )
 
     return encoded_jwt
 
 
-def verify_token(token: str) -> Optional[dict]:
+def verify_token(token: str) -> Optional[dict[str, object]]:
     """JWT 토큰 검증
 
     Args:
@@ -93,13 +100,14 @@ def verify_token(token: str) -> Optional[dict]:
     """
     try:
 
+        settings = get_settings()
         payload = jwt.decode(
-            token,
-            "your-jwt-secret-key",  # 기본값
-            algorithms=["HS256"],
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
 
-        return payload
+        if isinstance(payload, dict):
+            return payload
+        return None
 
     except JWTError:
         return None
@@ -107,8 +115,9 @@ def verify_token(token: str) -> Optional[dict]:
 
 # 토큰 검증 의존성
 async def get_current_user(
-    token: str = Depends(oauth2_scheme), settings: Settings = Depends(get_settings)
-):
+    token: str = Depends(oauth2_scheme),
+    _settings: Settings = Depends(get_settings),
+) -> dict[str, object]:
     """현재 사용자 정보를 반환하는 의존성 함수
 
     Args:
@@ -136,11 +145,12 @@ async def get_current_user(
         raise credentials_exception
     user_id: str = sub
 
-    # TODO: 실제 사용자 정보 조회 로직 구현
-    user = {
-        "id": user_id,
-        "email": f"user{user_id}@example.com",
-    }
+    settings = get_settings()
+    repo = get_user_repository(settings)
+    record = repo.get_by_user_id(user_id)
+    email = record.email if record else f"user{user_id}@example.com"
+
+    user: dict[str, object] = {"id": user_id, "email": email}
 
     return user
 
@@ -167,23 +177,21 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token_payload = {"sub": form_data.username}
+    token_payload: dict[str, object]
     if form_data.username == "premiumuser":
-        token_payload.update(
-            {
-                "is_subscribed": True,
-                "subscription_active": True,
-                "plan": "premium",
-            }
-        )
+        token_payload = {
+            "sub": form_data.username,
+            "is_subscribed": True,
+            "subscription_active": True,
+            "plan": "premium",
+        }
     else:
-        token_payload.update(
-            {
-                "is_subscribed": False,
-                "subscription_active": False,
-                "plan": "free",
-            }
-        )
+        token_payload = {
+            "sub": form_data.username,
+            "is_subscribed": False,
+            "subscription_active": False,
+            "plan": "free",
+        }
 
     access_token_expires = timedelta(minutes=30)
     access_token = create_access_token(
@@ -221,7 +229,7 @@ async def validate_api_key(
 
 # 현재 사용자 정보 엔드포인트
 @router.get("/me", response_model=UserInfo)
-async def read_users_me(current_user: dict = Depends(get_current_user)):
+async def read_users_me(current_user: dict[str, object] = Depends(get_current_user)):
     """현재 사용자 정보 조회 엔드포인트
 
     Args:
@@ -230,12 +238,67 @@ async def read_users_me(current_user: dict = Depends(get_current_user)):
     Returns:
         dict: 사용자 정보
     """
-    return UserInfo(id=current_user["id"], email=current_user["email"])
+    user_id = current_user.get("id")
+    email = current_user.get("email")
+    if not isinstance(user_id, str) or not isinstance(email, str):
+        raise HTTPException(status_code=401, detail="사용자 정보가 유효하지 않습니다.")
+    return UserInfo(id=user_id, email=email)
+
+
+@router.post("/google", response_model=GoogleLoginResponse)
+async def login_with_google(
+    payload: GoogleLoginRequest, settings: Settings = Depends(get_settings)
+):
+    google_payload = verify_google_id_token(
+        id_token=payload.id_token,
+        client_id=settings.GOOGLE_CLIENT_ID or "",
+    )
+
+    sub = google_payload.get("sub")
+    email = google_payload.get("email")
+    name = google_payload.get("name")
+    picture = google_payload.get("picture")
+    if not isinstance(sub, str) or not sub:
+        raise HTTPException(status_code=401, detail="Google 사용자 정보가 없습니다.")
+    if not isinstance(email, str) or not email:
+        raise HTTPException(status_code=401, detail="Google 이메일 정보가 없습니다.")
+
+    if name is None or not isinstance(name, str):
+        name = ""
+    if picture is None or not isinstance(picture, str):
+        picture = ""
+
+    repo = get_user_repository(settings)
+    user_record = repo.upsert_google_user(
+        provider_sub=sub,
+        email=email,
+        name=name,
+        picture=picture,
+    )
+
+    token_payload = {
+        "sub": user_record.user_id,
+        "is_subscribed": False,
+        "subscription_active": False,
+        "plan": "free",
+    }
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data=token_payload, expires_delta=access_token_expires
+    )
+
+    return GoogleLoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user_id=user_record.user_id,
+        email=email,
+    )
 
 
 # 로그아웃 엔드포인트
 @router.post("/logout", response_model=LogoutResponse)
-async def logout(current_user: dict = Depends(get_current_user)):
+async def logout(current_user: dict[str, object] = Depends(get_current_user)):
     """로그아웃 엔드포인트
 
     Args:
@@ -245,7 +308,10 @@ async def logout(current_user: dict = Depends(get_current_user)):
         dict: 로그아웃 결과
     """
     # TODO: 토큰 블랙리스트 기능 구현
-    return LogoutResponse(message="Successfully logged out", user_id=current_user["id"])
+    user_id = current_user.get("id")
+    if not isinstance(user_id, str):
+        raise HTTPException(status_code=401, detail="사용자 정보가 유효하지 않습니다.")
+    return LogoutResponse(message="Successfully logged out", user_id=user_id)
 
 
 # 간단한 상태 엔드포인트 (인증 없음)

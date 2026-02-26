@@ -27,6 +27,12 @@ class UserInfo(BaseModel):
     email: EmailStr
 
 
+class UserProfile(UserInfo):
+    provider: str | None = None
+    name: str | None = None
+    picture: str | None = None
+
+
 class LogoutResponse(BaseModel):
     """로그아웃 응답"""
 
@@ -40,3 +46,15 @@ class AuthStatusResponse(BaseModel):
     status: str
     auth_type: str
     features: List[str]
+
+
+class GoogleLoginRequest(BaseModel):
+    id_token: str
+
+
+class GoogleLoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    expires_in: int
+    user_id: str
+    email: EmailStr
