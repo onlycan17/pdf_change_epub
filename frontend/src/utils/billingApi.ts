@@ -6,6 +6,8 @@ import {
   getPlanByCode,
 } from './subscription';
 
+import { loadTossPayments } from '@tosspayments/tosspayments-sdk';
+
 interface ApiEnvelope<T> {
   data: T;
   success: boolean;
@@ -39,6 +41,29 @@ interface CheckoutSessionRequest {
   mode?: 'subscription' | 'payment';
   success_url?: string;
   cancel_url?: string;
+}
+
+interface TossBillingAuthStartRequest {
+  plan_code: SubscriptionPlanCode;
+}
+
+interface TossBillingAuthStartData {
+  client_key: string;
+  customer_key: string;
+  success_url: string;
+  fail_url: string;
+}
+
+interface TossBillingAuthCompleteRequest {
+  customer_key: string;
+  auth_key: string;
+}
+
+interface TossBillingAuthCompleteData {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  plan_code: string;
 }
 
 const parseErrorMessage = async (response: Response): Promise<string> => {
@@ -141,22 +166,94 @@ export const createCheckoutSession = async (
   return payload.data.checkout_url;
 };
 
+const startTossBillingAuth = async (
+  request: TossBillingAuthStartRequest
+): Promise<TossBillingAuthStartData> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('로그인이 필요합니다.');
+  }
+
+  const headers: Record<string, string> = createDefaultHeaders();
+  headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch('/api/v1/billing/toss/billing-auth/start', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      plan_code: request.plan_code,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const payload = (await response.json()) as ApiEnvelope<TossBillingAuthStartData>;
+  if (!payload.success) {
+    throw new Error('자동결제 카드 등록 시작에 실패했습니다.');
+  }
+  return payload.data;
+};
+
+export const completeTossBillingAuth = async (
+  request: TossBillingAuthCompleteRequest
+): Promise<TossBillingAuthCompleteData> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('로그인이 필요합니다.');
+  }
+
+  const headers: Record<string, string> = createDefaultHeaders();
+  headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch('/api/v1/billing/toss/billing-auth/complete', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      customer_key: request.customer_key,
+      auth_key: request.auth_key,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const payload = (await response.json()) as ApiEnvelope<TossBillingAuthCompleteData>;
+  if (!payload.success) {
+    throw new Error('구독 결제 완료 처리에 실패했습니다.');
+  }
+  return payload.data;
+};
+
 export const openCheckoutSession = async (
   planCode: SubscriptionPlanCode,
   mode: CheckoutSessionRequest['mode'] = 'subscription'
 ): Promise<void> => {
+  if (mode !== 'subscription') {
+    const checkoutUrl = await createCheckoutSession({
+      plan_code: planCode,
+      mode,
+      success_url: `${window.location.origin}/payment/success`,
+      cancel_url: `${window.location.origin}/payment/cancel`,
+    });
+    window.location.assign(checkoutUrl);
+    return;
+  }
+
   const targetPlan = getPlanByCode(planCode);
   if (!targetPlan || targetPlan.code === 'free') {
     return;
   }
 
-  const successUrl = `${window.location.origin}/payment/success`;
-  const cancelUrl = `${window.location.origin}/payment/cancel`;
-  const checkoutUrl = await createCheckoutSession({
-    plan_code: planCode,
-    mode,
-    success_url: successUrl,
-    cancel_url: cancelUrl,
+  const start = await startTossBillingAuth({ plan_code: planCode });
+  const tossPayments = await loadTossPayments(start.client_key);
+  const payment = tossPayments.payment({ customerKey: start.customer_key });
+
+  await payment.requestBillingAuth({
+    method: 'CARD',
+    successUrl: start.success_url,
+    failUrl: start.fail_url,
   });
-  window.location.assign(checkoutUrl);
 };

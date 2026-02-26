@@ -14,6 +14,8 @@ import PremiumPage from '@pages/PremiumPage';
 import ProfilePage from '@pages/ProfilePage';
 import LoginPage from '@pages/LoginPage';
 import RegisterPage from '@pages/RegisterPage';
+import BillingSuccessPage from '@pages/payment/BillingSuccessPage';
+import BillingFailPage from '@pages/payment/BillingFailPage';
 
 function App() {
   return (
@@ -70,6 +72,22 @@ function App() {
           />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route
+            path="/payment/billing/success"
+            element={
+              <MainLayout>
+                <BillingSuccessPage />
+              </MainLayout>
+            }
+          />
+          <Route
+            path="/payment/billing/fail"
+            element={
+              <MainLayout>
+                <BillingFailPage />
+              </MainLayout>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
