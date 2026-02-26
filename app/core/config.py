@@ -140,7 +140,7 @@ class Settings(BaseSettings):
 
     # 파일 처리 설정
     max_file_size_mb: int = 100
-    allowed_file_types: list = ["pdf"]
+    allowed_file_types: list[str] = ["pdf"]
 
     # OCR 설정
     ocr_enabled: bool = True
@@ -188,18 +188,14 @@ class Settings(BaseSettings):
     toss_checkout_base_url: str = "https://pay.toss.im"
     toss_api_base_url: str = "https://api.tosspayments.com"
 
-    # 외부 서비스 설정
-    smtp_host: Optional[str] = None
-    smtp_port: int = 587
-    smtp_username: Optional[str] = None
-    smtp_password: Optional[str] = None
+    google_client_id: Optional[str] = None
 
     # 캐시 설정
     cache_ttl: int = 3600
     cache_prefix: str = "pdf_epub_"
 
     # 보안 설정
-    cors_origins: list = [
+    cors_origins: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8080",
@@ -239,6 +235,48 @@ class Settings(BaseSettings):
             "SECURITY_API_KEY",
             os.getenv("APP_SECURITY_API_KEY", self.security_api_key),
         )
+        self.secret_key = os.getenv(
+            "APP_SECRET_KEY", os.getenv("SECRET_KEY", self.secret_key)
+        )
+
+        self.stripe_secret_key = os.getenv(
+            "APP_STRIPE_SECRET_KEY", self.stripe_secret_key
+        )
+        self.stripe_webhook_secret = os.getenv(
+            "APP_STRIPE_WEBHOOK_SECRET", self.stripe_webhook_secret
+        )
+        self.stripe_price_basic = os.getenv(
+            "APP_STRIPE_PRICE_BASIC", self.stripe_price_basic
+        )
+        self.stripe_price_pro = os.getenv("APP_STRIPE_PRICE_PRO", self.stripe_price_pro)
+        self.stripe_success_url = os.getenv(
+            "APP_STRIPE_SUCCESS_URL", self.stripe_success_url
+        )
+        self.stripe_cancel_url = os.getenv(
+            "APP_STRIPE_CANCEL_URL", self.stripe_cancel_url
+        )
+
+        self.toss_secret_key = os.getenv("APP_TOSS_SECRET_KEY", self.toss_secret_key)
+        self.toss_webhook_secret = os.getenv(
+            "APP_TOSS_WEBHOOK_SECRET", self.toss_webhook_secret
+        )
+        self.toss_client_key = os.getenv("APP_TOSS_CLIENT_KEY", self.toss_client_key)
+        self.toss_price_monthly = os.getenv(
+            "APP_TOSS_PRICE_MONTHLY", self.toss_price_monthly
+        )
+        self.toss_price_yearly = os.getenv(
+            "APP_TOSS_PRICE_YEARLY", self.toss_price_yearly
+        )
+        self.toss_success_url = os.getenv("APP_TOSS_SUCCESS_URL", self.toss_success_url)
+        self.toss_cancel_url = os.getenv("APP_TOSS_CANCEL_URL", self.toss_cancel_url)
+        self.toss_checkout_base_url = os.getenv(
+            "APP_TOSS_CHECKOUT_BASE_URL", self.toss_checkout_base_url
+        )
+        self.toss_api_base_url = os.getenv(
+            "APP_TOSS_API_BASE_URL", self.toss_api_base_url
+        )
+
+        self.google_client_id = os.getenv("APP_GOOGLE_CLIENT_ID", self.google_client_id)
         self.openrouter_api_key = os.getenv(
             "OPENROUTER_API_KEY", self.openrouter_api_key
         )
@@ -330,7 +368,7 @@ class Settings(BaseSettings):
         return self.max_file_size_mb
 
     @property
-    def ALLOWED_FILE_TYPES(self) -> list:
+    def ALLOWED_FILE_TYPES(self) -> list[str]:
         return self.allowed_file_types
 
     @property
@@ -390,22 +428,6 @@ class Settings(BaseSettings):
         return self.deepseek_api_key
 
     @property
-    def SMTP_HOST(self) -> Optional[str]:
-        return self.smtp_host
-
-    @property
-    def SMTP_PORT(self) -> int:
-        return self.smtp_port
-
-    @property
-    def SMTP_USERNAME(self) -> Optional[str]:
-        return self.smtp_username
-
-    @property
-    def SMTP_PASSWORD(self) -> Optional[str]:
-        return self.smtp_password
-
-    @property
     def TOSS_SECRET_KEY(self) -> Optional[str]:
         return self.toss_secret_key or self.stripe_secret_key
 
@@ -416,6 +438,10 @@ class Settings(BaseSettings):
     @property
     def TOSS_CLIENT_KEY(self) -> Optional[str]:
         return self.toss_client_key
+
+    @property
+    def GOOGLE_CLIENT_ID(self) -> Optional[str]:
+        return self.google_client_id
 
     @property
     def TOSS_PRICE_MONTHLY(self) -> Optional[str]:
@@ -442,7 +468,7 @@ class Settings(BaseSettings):
         return self.cache_prefix
 
     @property
-    def CORS_ORIGINS(self) -> list:
+    def CORS_ORIGINS(self) -> list[str]:
         return self.cors_origins
 
     @property
