@@ -53,3 +53,6 @@ pytest-asyncio==0.23.7
 # 인증/보안 (JWT, 비밀번호 해싱)
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
+
+# Google ID token verification
+google-auth==2.34.0
