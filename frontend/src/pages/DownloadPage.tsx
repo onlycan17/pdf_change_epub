@@ -161,6 +161,7 @@ const DownloadPage: React.FC = () => {
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
+              <title>변환 완료 아이콘</title>
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -178,7 +179,7 @@ const DownloadPage: React.FC = () => {
             {formatDuration(durationSec)}
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
+          <div className="flex justify-center mb-8">
             <button
               type="button"
               onClick={handleDownload}
@@ -186,9 +187,6 @@ const DownloadPage: React.FC = () => {
               className="bg-blue-600 text-white px-6 py-3 rounded-md font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
               {isDownloading ? '다운로드 준비 중...' : 'EPUB 파일 다운로드'}
-            </button>
-            <button className="border border-gray-300 text-gray-700 px-6 py-3 rounded-md font-medium hover:bg-gray-50 transition-colors">
-              이메일로 보내기
             </button>
           </div>
 
