@@ -85,7 +85,13 @@ PLAN_DEFINITIONS: Dict[str, SubscriptionPlan] = {
         monthly_price_won=MONTHLY_PRICE_WON,
         yearly_price_won=_annual_price(MONTHLY_PRICE_WON),
         is_subscribed=True,
-        features=("대용량 파일 지원", "고급 OCR", "우선 처리", "배치 처리", "이메일 알림"),
+        features=(
+            "대용량 파일 지원",
+            "고급 OCR",
+            "우선 처리",
+            "배치 처리",
+            "이메일 알림",
+        ),
     ),
     SUBSCRIPTION_PLAN_YEARLY: SubscriptionPlan(
         code=SUBSCRIPTION_PLAN_YEARLY,
@@ -114,7 +120,10 @@ def normalize_plan_code(plan_code: Optional[str]) -> str:
         return SUBSCRIPTION_PLAN_FREE
 
     normalized = str(plan_code).strip().lower()
-    return PLAN_ALIASES.get(normalized, normalized if normalized in PLAN_DEFINITIONS else SUBSCRIPTION_PLAN_FREE)
+    return PLAN_ALIASES.get(
+        normalized,
+        normalized if normalized in PLAN_DEFINITIONS else SUBSCRIPTION_PLAN_FREE,
+    )
 
 
 def get_plan(plan_code: Optional[str]) -> SubscriptionPlan:
@@ -150,7 +159,12 @@ def resolve_plan_from_payload(payload: Optional[Mapping[str, object]]) -> str:
     direct_flag = payload.get("is_subscribed") or payload.get("subscription_active")
     if isinstance(direct_flag, bool) and direct_flag:
         return SUBSCRIPTION_PLAN_MONTHLY
-    if isinstance(direct_flag, str) and direct_flag.lower() in {"1", "true", "yes", "y"}:
+    if isinstance(direct_flag, str) and direct_flag.lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+    }:
         return SUBSCRIPTION_PLAN_MONTHLY
 
     return SUBSCRIPTION_PLAN_FREE

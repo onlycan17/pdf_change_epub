@@ -131,3 +131,34 @@ class BillingErrorResponse(DataResponse[Dict[str, str]]):
     """결제 처리 실패 응답"""
 
     success: bool = False
+
+
+class TossBillingAuthStartRequest(BaseModel):
+    plan_code: str = Field(..., description="구독 플랜 코드 (monthly|yearly)")
+
+
+class TossBillingAuthStartData(BaseModel):
+    client_key: str
+    customer_key: str
+    success_url: str
+    fail_url: str
+
+
+class TossBillingAuthStartResponse(DataResponse[TossBillingAuthStartData]):
+    pass
+
+
+class TossBillingAuthCompleteRequest(BaseModel):
+    customer_key: str = Field(..., description="Toss customerKey")
+    auth_key: str = Field(..., description="Toss authKey")
+
+
+class TossBillingAuthCompleteData(BaseModel):
+    access_token: str
+    token_type: str
+    expires_in: int
+    plan_code: str
+
+
+class TossBillingAuthCompleteResponse(DataResponse[TossBillingAuthCompleteData]):
+    pass
