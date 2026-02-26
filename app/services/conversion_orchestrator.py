@@ -30,6 +30,7 @@ from app.services.epub_service import EpubGenerator, Chapter, EpubImage
 from app.services.epub_validator import validate_epub_bytes
 from app.services.progress_tracker import ProgressTracker
 from app.services.text_context_service import create_text_context_corrector
+from app.services.text_cleanup import clean_text_for_epub_body
 
 
 logger = logging.getLogger(__name__)
@@ -319,7 +320,9 @@ class ConversionOrchestrator:
 
                 processor = await create_scan_pdf_processor(self.settings)
                 synthesis = await processor.process_scanned_pdf(pdf_bytes)
-                synthesis_markdown = synthesis.markdown_content
+                synthesis_markdown = clean_text_for_epub_body(
+                    synthesis.markdown_content
+                )
 
             # 취소 확인
             if (await self.store.get(conversion_id)).is_cancelled():
@@ -352,7 +355,9 @@ class ConversionOrchestrator:
                 )
             elif text_result and text_result.get("total_text"):
                 # 텍스트를 단순 문단화
-                total_text: str = str(text_result.get("total_text"))
+                total_text: str = clean_text_for_epub_body(
+                    str(text_result.get("total_text"))
+                )
                 html_body = self._render_text_with_page_images(
                     total_text,
                     page_image_refs,
@@ -388,7 +393,7 @@ class ConversionOrchestrator:
 
             epub_bytes = self.epub.create_epub_bytes(
                 title="변환된 문서",
-                author="PdfToEpub Converter",
+                author="",
                 chapters=chapters,
                 images=epub_images,
                 uid=conversion_id,
@@ -557,13 +562,14 @@ class ConversionOrchestrator:
                 continue
 
             html_parts.append("<section>")
-            html_parts.append(f"<h2>페이지 {page_num}</h2>")
             for element in elements:
                 if not isinstance(element, dict):
                     continue
                 element_type = element.get("type")
                 if element_type == "text":
-                    text = str(element.get("text", "")).strip()
+                    text = clean_text_for_epub_body(
+                        str(element.get("text", ""))
+                    ).strip()
                     if not text:
                         continue
                     for paragraph in self._split_text_to_paragraphs(text):
@@ -592,7 +598,6 @@ class ConversionOrchestrator:
                 if line.strip():
                     html_parts.append(f"<p>{escape(line)}</p>")
             for page in sorted(page_image_refs.keys()):
-                html_parts.append(f"<h2>페이지 {page}</h2>")
                 html_parts.append(
                     self._render_image_figure_group(page_image_refs[page])
                 )
@@ -610,7 +615,6 @@ class ConversionOrchestrator:
             if not page_str.isdigit():
                 continue
             page_num = int(page_str)
-            html_parts.append(f"<h2>페이지 {page_num}</h2>")
             for line in body.split("\n"):
                 if line.strip():
                     html_parts.append(f"<p>{escape(line)}</p>")
@@ -623,7 +627,6 @@ class ConversionOrchestrator:
         for page in sorted(page_image_refs.keys()):
             if page in inserted_pages:
                 continue
-            html_parts.append(f"<h2>페이지 {page}</h2>")
             html_parts.append(self._render_image_figure_group(page_image_refs[page]))
 
         return "".join(html_parts)
@@ -712,7 +715,10 @@ class ConversionOrchestrator:
             if ordered or unordered:
                 flush_paragraph()
                 desired_type = "ol" if ordered else "ul"
-                item_text = (ordered or unordered).group(1).strip()  # type: ignore[union-attr]
+                match = ordered or unordered
+                if not match:
+                    continue
+                item_text = match.group(1).strip()
                 if list_type and list_type != desired_type:
                     flush_list()
                 list_type = desired_type
@@ -737,7 +743,6 @@ class ConversionOrchestrator:
         for page_num, refs in sorted(page_image_refs.items()):
             if page_num in inserted_pages:
                 continue
-            html_parts.append(f"<h2>페이지 {page_num}</h2>")
             html_parts.append(self._render_image_figure_group(refs))
 
         return "".join(html_parts)

@@ -113,14 +113,15 @@ class EpubGenerator:
             book.set_identifier(uid)
         book.set_title(title)
         book.set_language(self.language)
-        book.add_author(author)
+        if author and author.strip():
+            book.add_author(author.strip())
 
         # 공용 스타일 추가
         style_item = epub.EpubItem(
             uid="style_default",
             file_name="style/reader.css",
             media_type="text/css",
-            content=self._default_css,
+            content=self._default_css.encode("utf-8"),
         )
 
         # 챕터 추가
@@ -171,9 +172,9 @@ class EpubGenerator:
         # TOC 구성: 제목 자동 분석 또는 기본 챕터 리스트
         if auto_toc_from_headings:
             toc = self._build_toc_from_headings(chapters)
-            book.toc = toc if toc else tuple(epub_chapters)
+            book.toc = toc if toc else list(epub_chapters)
         else:
-            book.toc = tuple(epub_chapters)
+            book.toc = list(epub_chapters)
 
         # Spine 구성(nav 포함)
         book.spine = ["nav", *epub_chapters]
@@ -220,7 +221,12 @@ class EpubGenerator:
                 headings.append((level, text, href))
 
         try:
-            updated_html = html.tostring(root, encoding="unicode")
+            updated_raw = html.tostring(root, encoding="unicode")
+            updated_html = (
+                updated_raw
+                if isinstance(updated_raw, str)
+                else updated_raw.decode("utf-8", errors="ignore")
+            )
             if updated_html.startswith("<div>") and updated_html.endswith("</div>"):
                 updated_html = updated_html[5:-6]
         except Exception:
