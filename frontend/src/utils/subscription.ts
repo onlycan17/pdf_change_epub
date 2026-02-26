@@ -49,7 +49,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     isSubscribed: true,
     recommended: false,
     annualDiscountRate: 0,
-    features: ['고급 OCR', '우선 처리', '배치 처리', '이메일 알림'],
+    features: ['고급 OCR', '우선 처리', '배치 처리', '빠른 다운로드'],
   },
   {
     code: SUBSCRIPTION_PLAN_YEARLY,

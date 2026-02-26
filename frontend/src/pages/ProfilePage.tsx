@@ -62,6 +62,7 @@ const ProfilePage: React.FC = () => {
 
             <nav className="space-y-2">
               <button
+                type="button"
                 onClick={() => setActiveTab('profile')}
                 className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   activeTab === 'profile'
@@ -72,6 +73,7 @@ const ProfilePage: React.FC = () => {
                 프로필 정보
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('conversions')}
                 className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   activeTab === 'conversions'
@@ -82,6 +84,7 @@ const ProfilePage: React.FC = () => {
                 변환 기록
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('settings')}
                 className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   activeTab === 'settings'
@@ -92,6 +95,7 @@ const ProfilePage: React.FC = () => {
                 설정
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('billing')}
                 className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   activeTab === 'billing'
@@ -150,20 +154,28 @@ const ProfilePage: React.FC = () => {
               <form className="space-y-6">
                 <div className="grid md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label
+                      htmlFor="profile-name"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
                       이름
                     </label>
                     <input
+                      id="profile-name"
                       type="text"
                       defaultValue={userData.name}
                       className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label
+                      htmlFor="profile-email"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
                       이메일
                     </label>
                     <input
+                      id="profile-email"
                       type="email"
                       defaultValue={userData.email}
                       className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -171,17 +183,24 @@ const ProfilePage: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label
+                    htmlFor="profile-password"
+                    className="block text-sm font-medium text-gray-700 mb-2"
+                  >
                     비밀번호
                   </label>
                   <input
+                    id="profile-password"
                     type="password"
                     placeholder="새 비밀번호"
                     className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div className="flex justify-end">
-                  <button className="bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors">
+                  <button
+                    type="button"
+                    className="bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors"
+                  >
                     저장하기
                   </button>
                 </div>
@@ -229,7 +248,10 @@ const ProfilePage: React.FC = () => {
                         <td className="py-3 px-4 text-gray-700">{item.date}</td>
                         <td className="py-3 px-4 text-gray-700">{item.size}</td>
                         <td className="py-3 px-4">
-                          <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">
+                          <button
+                            type="button"
+                            className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                          >
                             다운로드
                           </button>
                         </td>
@@ -246,7 +268,7 @@ const ProfilePage: React.FC = () => {
               <h2 className="text-xl font-semibold text-gray-900 mb-6">설정</h2>
               <div className="space-y-6">
                 <div>
-                  <h3 className="font-medium text-gray-900 mb-4">알림 설정</h3>
+                  <h3 className="font-medium text-gray-900 mb-4">화면 알림 설정</h3>
                   <div className="space-y-3">
                     <label className="flex items-center">
                       <input
@@ -255,7 +277,7 @@ const ProfilePage: React.FC = () => {
                         defaultChecked
                       />
                       <span className="ml-2 text-sm text-gray-700">
-                        이메일 알림 받기
+                        변환 완료 알림 표시
                       </span>
                     </label>
                     <label className="flex items-center">
@@ -264,7 +286,7 @@ const ProfilePage: React.FC = () => {
                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
                       <span className="ml-2 text-sm text-gray-700">
-                        변환 완료 시 SMS 알림
+                        다운로드 오류 알림 표시
                       </span>
                     </label>
                   </div>
@@ -275,19 +297,31 @@ const ProfilePage: React.FC = () => {
                   </h3>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label
+                        htmlFor="default-language"
+                        className="block text-sm font-medium text-gray-700 mb-2"
+                      >
                         기본 언어
                       </label>
-                      <select className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <select
+                        id="default-language"
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
                         <option value="ko">한국어</option>
                         <option value="en">영어</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label
+                        htmlFor="image-quality"
+                        className="block text-sm font-medium text-gray-700 mb-2"
+                      >
                         이미지 품질
                       </label>
-                      <select className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <select
+                        id="image-quality"
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
                         <option value="medium">중간</option>
                         <option value="high">높음</option>
                         <option value="low">낮음</option>
@@ -296,7 +330,10 @@ const ProfilePage: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex justify-end">
-                  <button className="bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors">
+                  <button
+                    type="button"
+                    className="bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors"
+                  >
                     설정 저장
                   </button>
                 </div>
@@ -331,7 +368,10 @@ const ProfilePage: React.FC = () => {
                     프리미엄 플랜으로 업그레이드하여 무제한 변환과 고급 기능을
                     이용해보세요.
                   </p>
-                  <button className="bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors">
+                  <button
+                    type="button"
+                    className="bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors"
+                  >
                     프리미엄으로 업그레이드
                   </button>
                 </div>
