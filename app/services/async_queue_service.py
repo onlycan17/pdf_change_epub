@@ -73,6 +73,7 @@ class AsyncQueueService:
         filename: str,
         file_size: int,
         ocr_enabled: bool,
+        translate_to_korean: bool = False,
         pdf_bytes: bytes,
     ) -> ConversionJob:
         """변환 작업 시작 (비동기 큐에 등록)
@@ -96,6 +97,7 @@ class AsyncQueueService:
                 filename=filename,
                 file_size=file_size,
                 ocr_enabled=ocr_enabled,
+                translate_to_korean=translate_to_korean,
                 pdf_bytes=pdf_bytes,
             )
 
@@ -105,6 +107,7 @@ class AsyncQueueService:
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
+            translate_to_korean=translate_to_korean,
             source_pdf_bytes=pdf_bytes,
             state=JobState.PENDING,
             progress=0,
@@ -121,6 +124,7 @@ class AsyncQueueService:
                     "filename": filename,
                     "file_size": file_size,
                     "ocr_enabled": ocr_enabled,
+                    "translate_to_korean": translate_to_korean,
                     "pdf_bytes": pdf_bytes.hex(),  # 바이트 데이터를 16진수 문자열로 변환
                 },
                 task_id=conversion_id,

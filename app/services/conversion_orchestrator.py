@@ -57,6 +57,7 @@ class ConversionJob:
     filename: str
     file_size: int
     ocr_enabled: bool
+    translate_to_korean: bool = False
     state: JobState = JobState.PENDING
     progress: int = 0
     message: str = ""
@@ -144,6 +145,7 @@ class ConversionOrchestrator:
         filename: str,
         file_size: int,
         ocr_enabled: bool,
+        translate_to_korean: bool = False,
         pdf_bytes: bytes,
     ) -> ConversionJob:
         job = ConversionJob(
@@ -151,6 +153,7 @@ class ConversionOrchestrator:
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
+            translate_to_korean=translate_to_korean,
             source_pdf_bytes=pdf_bytes,
             state=JobState.PENDING,
             progress=0,

@@ -39,12 +39,14 @@ def async_to_sync(func):
         def run_async():
             import asyncio
 
+            loop = None
             try:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 return loop.run_until_complete(func(*args, **kwargs))
             finally:
-                loop.close()
+                if loop is not None:
+                    loop.close()
 
         # Run the async function in a thread pool
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
@@ -81,6 +83,7 @@ def start_conversion(
     file_size: int,
     ocr_enabled: bool,
     pdf_bytes: str,
+    translate_to_korean: bool = False,
 ) -> Dict[str, Any]:
     """Start PDF to EPUB conversion task.
 
@@ -108,6 +111,7 @@ def start_conversion(
                 "filename": filename,
                 "file_size": file_size,
                 "ocr_enabled": ocr_enabled,
+                "translate_to_korean": translate_to_korean,
             },
         )
 
@@ -116,6 +120,7 @@ def start_conversion(
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
+            translate_to_korean=translate_to_korean,
             pdf_bytes=raw,
         )
 
