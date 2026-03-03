@@ -80,6 +80,8 @@ class LLMSettings(BaseSettings):
     model_name: str = "deepseek/deepseek-chat"
     context_primary_model: str = "deepseek/deepseek-v3.2"
     context_fallback_model: str = "nvidia/nemotron-3-nano-30b-a3b"
+    translation_model: str = "deepseek/deepseek-v3.2"
+    translation_fallback_model: str = "nvidia/nemotron-3-nano-30b-a3b"
     api_key: Optional[str] = None
     max_tokens: int = 4000
     temperature: float = 0.1
@@ -188,6 +190,8 @@ class Settings(BaseSettings):
     toss_checkout_base_url: str = "https://pay.toss.im"
     toss_api_base_url: str = "https://api.tosspayments.com"
 
+    billing_enabled: bool = False
+
     google_client_id: Optional[str] = None
 
     # 캐시 설정
@@ -275,6 +279,10 @@ class Settings(BaseSettings):
         self.toss_api_base_url = os.getenv(
             "APP_TOSS_API_BASE_URL", self.toss_api_base_url
         )
+
+        self.billing_enabled = os.getenv(
+            "APP_BILLING_ENABLED", str(self.billing_enabled)
+        ).lower() in ("true", "1", "yes", "on")
 
         self.google_client_id = os.getenv("APP_GOOGLE_CLIENT_ID", self.google_client_id)
         self.openrouter_api_key = os.getenv(
@@ -458,6 +466,10 @@ class Settings(BaseSettings):
     @property
     def TOSS_CANCEL_URL(self) -> Optional[str]:
         return self.toss_cancel_url or self.stripe_cancel_url
+
+    @property
+    def BILLING_ENABLED(self) -> bool:
+        return self.billing_enabled
 
     @property
     def CACHE_TTL(self) -> int:

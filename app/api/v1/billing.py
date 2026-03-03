@@ -35,6 +35,14 @@ from app.api.v1.auth import verify_token, create_access_token
 router = APIRouter()
 
 
+def _require_billing_enabled(settings: Settings) -> None:
+    if not settings.billing_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="결제 기능은 현재 준비 중입니다. 지금은 무료 기능과 후원으로 운영합니다.",
+        )
+
+
 def _extract_bearer_token(request: Request) -> str | None:
     auth_header = request.headers.get("Authorization", "").strip()
     if not auth_header.lower().startswith("bearer "):
@@ -78,8 +86,11 @@ def get_toss_subscription_service_factory(
 async def create_checkout_session(
     request: CheckoutSessionRequest,
     stripe_service: StripeService = Depends(get_stripe_service),
+    settings: Settings = Depends(get_settings),
 ) -> CheckoutSessionResponse:
     """구독 또는 결제 Checkout 세션 생성"""
+
+    _require_billing_enabled(settings)
 
     session = stripe_service.create_checkout_session(
         plan_code=request.plan_code,
@@ -98,9 +109,12 @@ async def create_checkout_session(
 
 
 @router.get("/plans", response_model=BillingPlansResponse)
-async def get_billing_plans() -> BillingPlansResponse:
+async def get_billing_plans(
+    settings: Settings = Depends(get_settings),
+) -> BillingPlansResponse:
     """구독 플랜 목록 반환"""
 
+    free_only = [plan for plan in all_plans() if plan.code == "free"]
     plans = [
         BillingPlanData(
             code=plan.code,
@@ -109,16 +123,16 @@ async def get_billing_plans() -> BillingPlansResponse:
             upload_limit_mb=plan.upload_limit_mb,
             monthly_price_won=plan.monthly_price_won,
             yearly_price_won=plan.yearly_price_won,
-            is_subscribed=plan.is_subscribed,
-            recommended=plan.recommended,
-            annual_discount_rate=plan.annual_discount_rate,
+            is_subscribed=False,
+            recommended=False,
+            annual_discount_rate=0,
             features=list(plan.features),
         )
-        for plan in all_plans()
+        for plan in free_only
     ]
     return BillingPlansResponse(
         data={"plans": plans},
-        message="구독 플랜 목록 조회 성공",
+        message="현재는 무료 플랜만 제공됩니다.",
     )
 
 
@@ -126,8 +140,11 @@ async def get_billing_plans() -> BillingPlansResponse:
 async def create_one_time_checkout(
     request: OneTimeCheckoutRequest,
     stripe_service: StripeService = Depends(get_stripe_service),
+    settings: Settings = Depends(get_settings),
 ) -> OneTimeCheckoutResponse:
     """단일 결제 Checkout 세션 생성"""
+
+    _require_billing_enabled(settings)
 
     if not request.price_id and not request.amount_cents:
         raise HTTPException(
@@ -157,8 +174,11 @@ async def create_one_time_checkout(
 async def create_portal_session(
     request: PortalSessionRequest,
     stripe_service: StripeService = Depends(get_stripe_service),
+    settings: Settings = Depends(get_settings),
 ) -> PortalSessionResponse:
     """청구 포털 세션 생성"""
+
+    _require_billing_enabled(settings)
 
     session = stripe_service.create_portal_session(
         customer_id=request.customer_id,
@@ -181,7 +201,9 @@ async def toss_billing_auth_start(
     toss_service_factory: Callable[[], TossSubscriptionService] = Depends(
         get_toss_subscription_service_factory
     ),
+    settings: Settings = Depends(get_settings),
 ) -> TossBillingAuthStartResponse:
+    _require_billing_enabled(settings)
     user_id = _require_user_id(request)
     toss_service = toss_service_factory()
     data = toss_service.start_billing_auth(user_id=user_id, plan_code=body.plan_code)
@@ -210,7 +232,9 @@ async def toss_billing_auth_complete(
     toss_service_factory: Callable[[], TossSubscriptionService] = Depends(
         get_toss_subscription_service_factory
     ),
+    settings: Settings = Depends(get_settings),
 ) -> TossBillingAuthCompleteResponse:
+    _require_billing_enabled(settings)
     user_id = _require_user_id(request)
     toss_service = toss_service_factory()
     resolved_user_id, plan_code = toss_service.complete_billing_auth_and_subscribe(

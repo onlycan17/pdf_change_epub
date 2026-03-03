@@ -10,7 +10,7 @@ const Header: React.FC = () => {
   const navigation = [
     { name: '홈', href: '/' },
     { name: '변환하기', href: '/upload' },
-    { name: '프리미엄', href: '/premium' },
+    { name: '후원', href: '/support' },
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -54,7 +54,10 @@ const Header: React.FC = () => {
                 >
                   프로필
                 </Link>
-                <button className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors">
+                <button
+                  type="button"
+                  className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
+                >
                   로그아웃
                 </button>
               </>
@@ -78,8 +81,10 @@ const Header: React.FC = () => {
 
           {/* Mobile menu button */}
           <button
+            type="button"
             className="md:hidden p-2 rounded-md text-gray-700 hover:text-blue-600 hover:bg-gray-50"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
+            aria-label={isMenuOpen ? '메뉴 닫기' : '메뉴 열기'}
           >
             <svg
               className="w-6 h-6"
@@ -87,6 +92,7 @@ const Header: React.FC = () => {
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
+              <title>{isMenuOpen ? '메뉴 닫기' : '메뉴 열기'}</title>
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -124,7 +130,10 @@ const Header: React.FC = () => {
                   >
                     프로필
                   </Link>
-                  <button className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50">
+                  <button
+                    type="button"
+                    className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50"
+                  >
                     로그아웃
                   </button>
                 </>

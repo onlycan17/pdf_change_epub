@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import AdSlot from '@components/common/AdSlot';
 
 const API_KEY = import.meta.env.VITE_API_KEY || 'your-api-key-here';
 
@@ -248,11 +249,15 @@ const DownloadPage: React.FC = () => {
             </Link>
             <span className="text-gray-300">|</span>
             <Link
-              to="/premium"
+              to="/support"
               className="text-blue-600 hover:text-blue-700 font-medium"
             >
-              프리미엄으로 업그레이드
+              후원 / 운영 안내
             </Link>
+          </div>
+
+          <div className="mt-8">
+            <AdSlot label="다운로드 페이지 광고" heightClassName="h-28" />
           </div>
         </div>
       </div>

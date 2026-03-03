@@ -22,11 +22,9 @@ from app.services.pdf_service import (
 )
 from app.services.epub_validator import validate_epub_bytes
 from app.services.async_queue_service import get_async_queue_service
-from app.api.v1.auth import verify_token
 from app.services.subscription_plans import (
     SUBSCRIPTION_PLAN_FREE,
     get_plan,
-    resolve_plan_from_payload,
 )
 from app.models.conversion import (
     ConversionJobSummary,
@@ -75,6 +73,7 @@ def _job_to_summary(job) -> ConversionJobSummary:
         filename=job.filename,
         file_size=job.file_size,
         ocr_enabled=job.ocr_enabled,
+        translate_to_korean=getattr(job, "translate_to_korean", False),
         status=ConversionStatus(status_value),
         progress=job.progress,
         created_at=_parse_iso_datetime(created_at),
@@ -143,41 +142,18 @@ def validate_file_size(file: UploadFile, max_size: int) -> bool:
     return content_length <= max_size
 
 
-def _extract_bearer_token(request: Request) -> str | None:
-    auth_header = request.headers.get("Authorization", "").strip()
-    if not auth_header.lower().startswith("bearer "):
-        return None
-    token = auth_header[7:].strip()
-    return token or None
-
-
-def _resolve_upload_limit(request: Request) -> tuple[int, str]:
-    token = _extract_bearer_token(request)
-    if not token:
-        return (
-            get_plan(SUBSCRIPTION_PLAN_FREE).upload_limit_bytes,
-            SUBSCRIPTION_PLAN_FREE,
-        )
-
-    payload = verify_token(token)
-    if not payload:
-        return (
-            get_plan(SUBSCRIPTION_PLAN_FREE).upload_limit_bytes,
-            SUBSCRIPTION_PLAN_FREE,
-        )
-
-    plan_code = resolve_plan_from_payload(payload)
-    plan = get_plan(plan_code)
-    return plan.upload_limit_bytes, plan.code
+def _resolve_upload_limit(_request: Request) -> tuple[int, str]:
+    return (
+        get_plan(SUBSCRIPTION_PLAN_FREE).upload_limit_bytes,
+        SUBSCRIPTION_PLAN_FREE,
+    )
 
 
 def _format_limit_message(plan_code: str) -> str:
     plan = get_plan(plan_code)
     if plan.code == SUBSCRIPTION_PLAN_FREE:
-        return "무료 플랜은 최대 25MB까지 업로드 가능합니다. 구독하면 더 큰 파일을 업로드할 수 있습니다."
-    if plan.code == "yearly":
-        return "연간 구독 플랜은 최대 500MB까지 업로드 가능합니다."
-    return "월간 구독 플랜은 최대 300MB까지 업로드 가능합니다."
+        return "현재는 무료 베타로 운영 중이며 최대 25MB까지 업로드 가능합니다."
+    return "현재는 무료 베타로 운영 중이며 최대 25MB까지 업로드 가능합니다."
 
 
 class ConversionSettingsDict(TypedDict):
@@ -213,6 +189,7 @@ async def start_conversion(
     request: Request,
     file: UploadFile = File(..., description="변환할 PDF 파일"),
     ocr_enabled: bool = Form(False, description="OCR 처리 활성화 여부"),
+    translate_to_korean: bool = Form(False, description="영문 텍스트를 한글로 번역"),
     api_key: str = Depends(api_key_header),
     settings: Settings = Depends(get_settings),
 ):
@@ -252,6 +229,7 @@ async def start_conversion(
         filename=file.filename or "uploaded.pdf",
         file_size=len(pdf_bytes),
         ocr_enabled=ocr_enabled,
+        translate_to_korean=translate_to_korean,
         pdf_bytes=pdf_bytes,
     )
 

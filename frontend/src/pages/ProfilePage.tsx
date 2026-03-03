@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getCurrentPlan, formatBytesToMb } from '@utils/subscription';
+import { getCurrentPlan } from '@utils/subscription';
 
 const ProfilePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('profile');
@@ -94,17 +94,6 @@ const ProfilePage: React.FC = () => {
               >
                 설정
               </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('billing')}
-                className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'billing'
-                    ? 'bg-blue-100 text-blue-600'
-                    : 'text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                결제 정보
-              </button>
             </nav>
           </div>
 
@@ -128,11 +117,11 @@ const ProfilePage: React.FC = () => {
                   ></div>
                 </div>
               </div>
-                <div className="text-sm text-gray-600">
-                  구독 상태:{' '}
-                  <span className="font-medium text-gray-900">
-                    {userData.subscription}
-                  </span>
+              <div className="text-sm text-gray-600">
+                구독 상태:{' '}
+                <span className="font-medium text-gray-900">
+                  {userData.subscription}
+                </span>
               </div>
               <div className="text-sm text-gray-600">
                 가입일:{' '}
@@ -268,7 +257,9 @@ const ProfilePage: React.FC = () => {
               <h2 className="text-xl font-semibold text-gray-900 mb-6">설정</h2>
               <div className="space-y-6">
                 <div>
-                  <h3 className="font-medium text-gray-900 mb-4">화면 알림 설정</h3>
+                  <h3 className="font-medium text-gray-900 mb-4">
+                    화면 알림 설정
+                  </h3>
                   <div className="space-y-3">
                     <label className="flex items-center">
                       <input
@@ -341,43 +332,12 @@ const ProfilePage: React.FC = () => {
             </div>
           )}
 
-          {activeTab === 'billing' && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-6">
-                결제 정보
-              </h2>
-              <div className="space-y-6">
-                <div className="bg-blue-50 rounded-lg p-4">
-                  <h3 className="font-semibold text-blue-900 mb-2">
-                    현재 구독
-                  </h3>
-                  <p className="text-blue-700">{userData.subscription} 플랜</p>
-                  <p className="text-sm text-blue-600 mt-2">
-                    업로드 허용 용량:{' '}
-                    {formatBytesToMb(currentPlan.uploadLimitBytes)}
-                  </p>
-                  <p className="text-sm text-blue-600 mt-2">
-                    연간 플랜 할인:{' '}
-                    {Math.round(currentPlan.annualDiscountRate * 100)}%
-                  </p>
-                </div>
-
-                <div>
-                  <h3 className="font-medium text-gray-900 mb-4">구독 변경</h3>
-                  <p className="text-gray-600 mb-4">
-                    프리미엄 플랜으로 업그레이드하여 무제한 변환과 고급 기능을
-                    이용해보세요.
-                  </p>
-                  <button
-                    type="button"
-                    className="bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors"
-                  >
-                    프리미엄으로 업그레이드
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <p className="text-sm text-gray-700">
+              결제 기능은 추후 도입 예정입니다. 현재는 무료 베타로 운영하며,
+              서비스 유지를 위해 후원을 받고 있어요.
+            </p>
+          </div>
         </div>
       </div>
     </div>

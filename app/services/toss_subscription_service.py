@@ -55,6 +55,15 @@ class InMemorySubscriptionStore:
 
 class TossSubscriptionService:
     def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self._auth_header = ""
+        self._pending_by_customer: dict[str, dict[str, str]] = {}
+        self.subscriptions = InMemorySubscriptionStore()
+        self._billing_issue_path = "/v1/billing/authorizations/issue"
+
+        if not settings.billing_enabled:
+            return
+
         if not settings.toss_secret_key:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -66,12 +75,7 @@ class TossSubscriptionService:
                 detail="Toss Payments client key가 설정되지 않았습니다.",
             )
 
-        self.settings = settings
         self._auth_header = _build_basic_auth(settings.toss_secret_key)
-        self._pending_by_customer: dict[str, dict[str, str]] = {}
-        self.subscriptions = InMemorySubscriptionStore()
-
-        self._billing_issue_path = "/v1/billing/authorizations/issue"
 
     def start_billing_auth(self, *, user_id: str, plan_code: str) -> dict[str, str]:
         normalized = normalize_plan_code(plan_code)

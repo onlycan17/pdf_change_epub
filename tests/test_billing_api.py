@@ -47,10 +47,7 @@ def test_create_checkout_session():
         "/api/v1/billing/checkout/session",
         json={"plan_code": "basic"},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["success"] is True
-    assert data["data"]["checkout_url"] == "https://stripe.test/checkout"
+    assert response.status_code == 503
 
 
 def test_get_billing_plans():
@@ -60,7 +57,7 @@ def test_get_billing_plans():
     assert data["success"] is True
     plans = data["data"]["plans"]
     assert isinstance(plans, list)
-    assert {plan["code"] for plan in plans} >= {"free", "monthly", "yearly"}
+    assert {plan["code"] for plan in plans} == {"free"}
 
 
 def test_create_one_time_session():
@@ -68,9 +65,7 @@ def test_create_one_time_session():
         "/api/v1/billing/checkout/one-time",
         json={"price_id": "price_test"},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["data"]["checkout_url"] == "https://stripe.test/one-time"
+    assert response.status_code == 503
 
 
 def test_create_portal_session():
@@ -78,9 +73,7 @@ def test_create_portal_session():
         "/api/v1/billing/portal/session",
         json={"customer_id": "cus_test"},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["data"]["portal_url"] == "https://stripe.test/portal"
+    assert response.status_code == 503
 
 
 class FakeTossSubscriptionService:
@@ -114,7 +107,7 @@ def test_toss_billing_auth_start_requires_login():
         "/api/v1/billing/toss/billing-auth/start",
         json={"plan_code": "monthly"},
     )
-    assert response.status_code == 401
+    assert response.status_code == 503
 
 
 def test_toss_billing_auth_start_and_complete_flow():
@@ -128,21 +121,4 @@ def test_toss_billing_auth_start_and_complete_flow():
         json={"plan_code": "monthly"},
         headers={"Authorization": f"Bearer {token}", "Origin": "http://localhost:3000"},
     )
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["success"] is True
-    assert payload["data"]["client_key"] == "test_ck"
-    assert payload["data"]["customer_key"] == "cust_test"
-    assert payload["data"]["success_url"].endswith("/payment/billing/success")
-    assert payload["data"]["fail_url"].endswith("/payment/billing/fail")
-
-    response2 = client.post(
-        "/api/v1/billing/toss/billing-auth/complete",
-        json={"customer_key": "cust_test", "auth_key": "auth_test"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert response2.status_code == 200
-    payload2 = response2.json()
-    assert payload2["success"] is True
-    assert payload2["data"]["token_type"] == "bearer"
-    assert payload2["data"]["plan_code"] == "monthly"
+    assert response.status_code == 503

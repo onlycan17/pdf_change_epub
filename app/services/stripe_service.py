@@ -90,6 +90,11 @@ class StripeService:
     """기존 이름 유지: 백엔드 결제 서비스 래퍼"""
 
     def __init__(self, settings: Settings) -> None:
+        if not settings.billing_enabled:
+            self.settings = settings
+            self._auth_header = ""
+            return
+
         if not settings.toss_secret_key:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

@@ -55,7 +55,7 @@ class TestConversionIntegration:
         response = test_client.post(
             "/api/v1/conversion/start",
             files={"file": ("test.pdf", pdf_file, "application/pdf")},
-            data={"ocr_enabled": "true"},
+            data={"ocr_enabled": "true", "translate_to_korean": "true"},
             headers={"X-API-Key": "your-api-key-here"},
         )
 
@@ -69,6 +69,12 @@ class TestConversionIntegration:
 
         # Verify service call
         mock_async_queue_service.start_conversion.assert_called_once()
+        assert (
+            mock_async_queue_service.start_conversion.call_args.kwargs.get(
+                "translate_to_korean"
+            )
+            is True
+        )
 
     def test_start_conversion_invalid_file(self, test_client, mock_async_queue_service):
         """변환 시작 - 유효하지 않은 파일 테스트"""
@@ -144,7 +150,7 @@ class TestConversionIntegration:
         )
 
         assert response.status_code == 413
-        assert "구독" in response.json()["detail"]
+        assert "25MB" in response.json()["detail"]
         assert captured_limit["value"] == 25 * 1024 * 1024
 
     def test_start_conversion_upload_limit_for_subscriber(
@@ -182,8 +188,8 @@ class TestConversionIntegration:
         )
 
         assert response.status_code == 413
-        assert "300MB" in response.json()["detail"]
-        assert captured_limit["value"] == 300 * 1024 * 1024
+        assert "25MB" in response.json()["detail"]
+        assert captured_limit["value"] == 25 * 1024 * 1024
 
     def test_start_conversion_upload_limit_for_yearly_subscriber(
         self, test_client, mock_async_queue_service, sample_pdf_content, monkeypatch
@@ -220,8 +226,8 @@ class TestConversionIntegration:
         )
 
         assert response.status_code == 413
-        assert "500MB" in response.json()["detail"]
-        assert captured_limit["value"] == 500 * 1024 * 1024
+        assert "25MB" in response.json()["detail"]
+        assert captured_limit["value"] == 25 * 1024 * 1024
 
     def test_get_status_endpoint(self, test_client, mock_async_queue_service):
         """상태 조회 엔드포인트 테스트"""

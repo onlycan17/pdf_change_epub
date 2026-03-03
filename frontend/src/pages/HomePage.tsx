@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import AdSlot from '@components/common/AdSlot';
 
 const HomePage: React.FC = () => {
   return (
@@ -22,13 +23,17 @@ const HomePage: React.FC = () => {
             무료로 시작하기
           </Link>
           <Link
-            to="/premium"
+            to="/support"
             className="border border-blue-600 text-blue-600 px-8 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors"
           >
-            프리미엄 기능 보기
+            후원 / 운영 안내
           </Link>
         </div>
       </section>
+
+      <div className="py-6">
+        <AdSlot label="메인 광고" heightClassName="h-28" />
+      </div>
 
       {/* Features Section */}
       <section className="py-16">
@@ -50,7 +55,10 @@ const HomePage: React.FC = () => {
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                role="img"
+                aria-label="고품질 변환"
               >
+                <title>고품질 변환</title>
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -75,7 +83,10 @@ const HomePage: React.FC = () => {
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                role="img"
+                aria-label="빠른 처리 속도"
               >
+                <title>빠른 처리 속도</title>
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -99,7 +110,10 @@ const HomePage: React.FC = () => {
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                role="img"
+                aria-label="안전한 보안"
               >
+                <title>안전한 보안</title>
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -123,8 +137,8 @@ const HomePage: React.FC = () => {
       <section className="bg-blue-600 rounded-2xl p-8 md:p-12 text-center text-white">
         <h2 className="text-3xl font-bold mb-4">지금 바로 시작해보세요</h2>
         <p className="text-blue-100 mb-6 max-w-2xl mx-auto">
-          무료 계정으로 매월 5개의 PDF를 EPUB으로 변환할 수 있습니다.
-          프리미엄으로 업그레이드하면 제한 없이 사용 가능합니다.
+          무료 계정으로 매월 5개의 PDF를 EPUB으로 변환할 수 있습니다. 현재는
+          무료 베타로 운영되며 업로드 한도는 25MB입니다.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link
@@ -134,10 +148,10 @@ const HomePage: React.FC = () => {
             무료 변환 시작
           </Link>
           <Link
-            to="/premium"
+            to="/support"
             className="border border-white text-white px-8 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
           >
-            프리미엄 알아보기
+            후원하기
           </Link>
         </div>
       </section>
