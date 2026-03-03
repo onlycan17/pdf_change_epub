@@ -1,0 +1,34 @@
+# Host-level Caddy config for production
+# - Serves frontend static build from frontend/dist
+# - Proxies backend API paths to uvicorn on 127.0.0.1:8000
+#
+# Prereqs:
+# - DNS A records for pdf-epub.kr and pdf-epub.co.kr -> this server public IP
+# - Ports 80 and 443 reachable from the Internet
+
+pdf-epub.kr, www.pdf-epub.kr, pdf-epub.co.kr, www.pdf-epub.co.kr {
+	encode zstd gzip
+
+	@backend path /api/* /docs* /openapi.json /redoc* /health*
+	handle @backend {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	@ads path /ads.txt
+	handle @ads {
+		header Content-Type text/plain
+		respond "google.com, pub-2304781060968997, DIRECT, f08c47fec0942fa0" 200
+	}
+
+	@home path /
+	handle @home {
+		header Content-Type "text/html; charset=utf-8"
+		respond "<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\" /><link rel=\"icon\" type=\"image/svg+xml\" href=\"/vite.svg\" /><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" /><script async src=\"https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2304781060968997\" crossorigin=\"anonymous\"></script><title>PDF to EPUB Converter</title><link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" /><link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin /><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap\" rel=\"stylesheet\" /><script type=\"module\" crossorigin src=\"/assets/index-0b0dd5a1.js\"></script><link rel=\"stylesheet\" href=\"/assets/index-918b036b.css\"></head><body><div id=\"root\"></div></body></html>" 200
+	}
+
+	handle {
+		root * /var/www/pdf-epub/dist
+		try_files {path} /index.html
+		file_server
+	}
+}

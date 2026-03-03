@@ -1,0 +1,23 @@
+# Local non-root verification config
+# Runs on :8080 so it can be tested without sudo.
+
+:8080 {
+	encode zstd gzip
+
+	@backend path /api/* /docs* /openapi.json /redoc* /health*
+	handle @backend {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	@ads path /ads.txt
+	handle @ads {
+		root * /home/jinseok/workspaces/sideprojects/pdf_change_epub/frontend/dist
+		file_server
+	}
+
+	handle {
+		root * /home/jinseok/workspaces/sideprojects/pdf_change_epub/frontend/dist
+		try_files {path} /index.html
+		file_server
+	}
+}
