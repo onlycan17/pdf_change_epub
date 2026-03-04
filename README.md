@@ -118,4 +118,5 @@ npm run build
 - [개발 계획](docs/development_plan.md)
 - [UI 명세](docs/ui_spec.md)
 - [배포 가이드](docs/DEPLOYMENT.md)
+- [운영 런북(기동/중지/재기동)](docs/OPERATIONS_RUNBOOK.md)
 - [리팩토링 계획서(2026-02-09)](docs/refactoring/2026-02-09_sync_plan.md)

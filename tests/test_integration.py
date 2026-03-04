@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 from io import BytesIO
+from typing import Any
 
 from app.main import app
 from app.services.conversion_orchestrator import ConversionJob, JobState
@@ -51,12 +52,25 @@ class TestConversionIntegration:
         pdf_file = BytesIO(sample_pdf_content)
         pdf_file.name = "test.pdf"
 
+        free_token = create_access_token(
+            {
+                "sub": "testuser",
+                "email": "testuser@example.com",
+                "plan": "free",
+                "is_subscribed": False,
+                "subscription_active": False,
+            }
+        )
+
         # Execute
         response = test_client.post(
             "/api/v1/conversion/start",
             files={"file": ("test.pdf", pdf_file, "application/pdf")},
             data={"ocr_enabled": "true", "translate_to_korean": "true"},
-            headers={"X-API-Key": "your-api-key-here"},
+            headers={
+                "X-API-Key": "your-api-key-here",
+                "Authorization": f"Bearer {free_token}",
+            },
         )
 
         # Assertions
@@ -82,12 +96,25 @@ class TestConversionIntegration:
         invalid_file = BytesIO(b"not a pdf")
         invalid_file.name = "test.txt"
 
+        free_token = create_access_token(
+            {
+                "sub": "testuser-invalid",
+                "email": "testuser-invalid@example.com",
+                "plan": "free",
+                "is_subscribed": False,
+                "subscription_active": False,
+            }
+        )
+
         # Execute
         response = test_client.post(
             "/api/v1/conversion/start",
             files={"file": ("test.txt", invalid_file, "text/plain")},
             data={"ocr_enabled": "true"},
-            headers={"X-API-Key": "your-api-key-here"},
+            headers={
+                "X-API-Key": "your-api-key-here",
+                "Authorization": f"Bearer {free_token}",
+            },
         )
 
         # Assertions
@@ -116,9 +143,9 @@ class TestConversionIntegration:
             headers={"X-API-Key": "your-api-key-here"},
         )
 
-        assert response.status_code == 413
-        assert "25MB" in response.json()["detail"]
-        assert captured_limit["value"] == 25 * 1024 * 1024
+        assert response.status_code == 401
+        assert "로그인" in response.json()["detail"]
+        assert captured_limit["value"] == 0
 
     def test_start_conversion_upload_limit_for_authenticated_free_user(
         self, test_client, mock_async_queue_service, sample_pdf_content, monkeypatch
@@ -228,6 +255,107 @@ class TestConversionIntegration:
         assert response.status_code == 413
         assert "25MB" in response.json()["detail"]
         assert captured_limit["value"] == 25 * 1024 * 1024
+
+    def test_start_conversion_upload_limit_for_privileged_email(
+        self, test_client, mock_async_queue_service, sample_pdf_content, monkeypatch
+    ):
+        captured_limit = {"value": 0}
+
+        def fake_validate_file_size(file, max_size):
+            captured_limit["value"] = max_size
+            return False
+
+        monkeypatch.setattr(
+            "app.api.v1.conversion.validate_file_size", fake_validate_file_size
+        )
+
+        privileged_token = create_access_token(
+            {
+                "sub": "onlycan17@gmail.com",
+                "email": "onlycan17@gmail.com",
+                "plan": "yearly",
+                "is_subscribed": True,
+                "subscription_active": True,
+            }
+        )
+        pdf_file = BytesIO(sample_pdf_content)
+        pdf_file.name = "limit-auth-privileged.pdf"
+
+        response = test_client.post(
+            "/api/v1/conversion/start",
+            files={"file": ("limit-auth-privileged.pdf", pdf_file, "application/pdf")},
+            data={"ocr_enabled": "false"},
+            headers={
+                "X-API-Key": "your-api-key-here",
+                "Authorization": f"Bearer {privileged_token}",
+            },
+        )
+
+        assert response.status_code == 413
+        assert "500MB" in response.json()["detail"]
+        assert captured_limit["value"] == 500 * 1024 * 1024
+
+    def test_start_conversion_daily_limit_for_free_user(
+        self, test_client, mock_async_queue_service, sample_pdf_content, monkeypatch
+    ):
+        class FakeFreeUsageService:
+            def __init__(self):
+                self.count_by_user = {}
+
+            def try_consume(self, user_id: str) -> bool:
+                used = self.count_by_user.get(user_id, 0)
+                if used >= 2:
+                    return False
+                self.count_by_user[user_id] = used + 1
+                return True
+
+        fake_service = FakeFreeUsageService()
+        monkeypatch.setattr(
+            "app.api.v1.conversion.get_free_usage_limit_service",
+            lambda _db_url: fake_service,
+        )
+
+        mock_job = ConversionJob(
+            conversion_id="daily-limit-123",
+            filename="daily-limit.pdf",
+            file_size=len(sample_pdf_content),
+            ocr_enabled=False,
+            state=JobState.PENDING,
+            progress=0,
+        )
+        mock_async_queue_service.start_conversion.return_value = mock_job
+
+        free_token = create_access_token(
+            {
+                "sub": "daily-free-user",
+                "email": "daily-free-user@example.com",
+                "plan": "free",
+                "is_subscribed": False,
+                "subscription_active": False,
+            }
+        )
+
+        def request_start() -> Any:
+            pdf_file = BytesIO(sample_pdf_content)
+            pdf_file.name = "daily-limit.pdf"
+            return test_client.post(
+                "/api/v1/conversion/start",
+                files={"file": ("daily-limit.pdf", pdf_file, "application/pdf")},
+                data={"ocr_enabled": "false"},
+                headers={
+                    "X-API-Key": "your-api-key-here",
+                    "Authorization": f"Bearer {free_token}",
+                },
+            )
+
+        first = request_start()
+        second = request_start()
+        third = request_start()
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert third.status_code == 429
+        assert "하루 2회" in third.json()["detail"]
 
     def test_get_status_endpoint(self, test_client, mock_async_queue_service):
         """상태 조회 엔드포인트 테스트"""

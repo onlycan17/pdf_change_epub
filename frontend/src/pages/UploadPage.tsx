@@ -1,10 +1,13 @@
-import React, { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { startConversion } from '@utils/conversionApi';
 import {
   getCurrentPlan,
   formatBytesToMb,
 } from '@utils/subscription';
+import { fetchCurrentUserProfile, isPrivilegedEmail } from '@utils/authApi';
+
+const PRIVILEGED_LIMIT_BYTES = 500 * 1024 * 1024;
 
 const UploadPage: React.FC = () => {
   const navigate = useNavigate();
@@ -14,9 +17,26 @@ const UploadPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [ocrEnabled, setOcrEnabled] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+  const [loadingUser, setLoadingUser] = useState(true);
 
   const currentPlan = getCurrentPlan();
-  const maxSize = currentPlan.uploadLimitBytes;
+  const isPrivileged = useMemo(() => isPrivilegedEmail(userEmail), [userEmail]);
+  const maxSize = isPrivileged
+    ? PRIVILEGED_LIMIT_BYTES
+    : currentPlan.uploadLimitBytes;
+
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const profile = await fetchCurrentUserProfile();
+        setUserEmail(profile?.email || '');
+      } finally {
+        setLoadingUser(false);
+      }
+    };
+    void run();
+  }, []);
 
   const formatFileSize = (size: number): string => {
     if (size < 1024 * 1024) {
@@ -46,9 +66,15 @@ const UploadPage: React.FC = () => {
 
     if (file.size > maxSize) {
       setSelectedFile(null);
-      setErrorMessage(
-        `${currentPlan.label} 플랜은 최대 ${formatBytesToMb(maxSize)}까지만 업로드 가능합니다.`
-      );
+      if (!isPrivileged && userEmail && file.size <= PRIVILEGED_LIMIT_BYTES) {
+        setErrorMessage(
+          `현재 계정은 최대 ${formatBytesToMb(maxSize)} 업로드만 가능합니다. 대용량 파일은 대용량 변환 요청 페이지를 이용해주세요.`
+        );
+      } else {
+        setErrorMessage(
+          `${isPrivileged ? '운영자' : currentPlan.label} 계정은 최대 ${formatBytesToMb(maxSize)}까지만 업로드 가능합니다.`
+        );
+      }
       return;
     }
 
@@ -77,6 +103,12 @@ const UploadPage: React.FC = () => {
   };
 
   const handleStartConversion = async () => {
+    if (!userEmail) {
+      setErrorMessage('무료 변환은 로그인한 사용자만 이용할 수 있습니다. 로그인 후 다시 시도해주세요.');
+      navigate('/login');
+      return;
+    }
+
     if (!selectedFile) {
       setErrorMessage('먼저 PDF 파일을 선택해주세요.');
       return;
@@ -112,9 +144,54 @@ const UploadPage: React.FC = () => {
           PDF 파일 업로드
         </h1>
         <p className="text-gray-600">
-          현재 플랜({currentPlan.label})은 최대 {formatBytesToMb(maxSize)}까지 지원합니다.
+          현재 계정({isPrivileged ? '운영자' : currentPlan.label})은 최대{' '}
+          {formatBytesToMb(maxSize)}까지 지원합니다.
         </p>
       </div>
+
+      {!loadingUser && userEmail && !isPrivileged && (
+        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm text-amber-900">
+            25MB를 초과하는 문서는 대용량 요청으로 접수해주세요. 계좌이체 안내,
+            요청사항 입력, 최대 500MB 파일 첨부를 지원합니다.
+          </p>
+          <Link
+            to="/large-file-request"
+            className="inline-flex mt-3 text-sm font-medium text-blue-700 hover:underline"
+          >
+            대용량 변환 요청 페이지로 이동
+          </Link>
+        </div>
+      )}
+
+      {!loadingUser && !userEmail && (
+        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4">
+          <p className="text-sm text-red-900">
+            변환 기능은 로그인한 사용자만 이용할 수 있습니다. 무료 사용자는
+            하루 2회까지 변환 가능합니다.
+          </p>
+          <Link
+            to="/login"
+            className="inline-flex mt-3 text-sm font-medium text-blue-700 hover:underline"
+          >
+            로그인 페이지로 이동
+          </Link>
+        </div>
+      )}
+
+      {!loadingUser && isPrivileged && (
+        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <p className="text-sm text-blue-900">
+            운영자 계정으로 로그인되어 최대 500MB 직접 변환이 활성화되었습니다.
+          </p>
+          <Link
+            to="/large-file-requests"
+            className="inline-flex mt-3 text-sm font-medium text-blue-700 hover:underline"
+          >
+            대용량 요청 처리 페이지 열기
+          </Link>
+        </div>
+      )}
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
         <input

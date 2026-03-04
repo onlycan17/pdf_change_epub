@@ -148,7 +148,11 @@ async def get_current_user(
     settings = get_settings()
     repo = get_user_repository(settings)
     record = repo.get_by_user_id(user_id)
-    email = record.email if record else f"user{user_id}@example.com"
+    payload_email = payload.get("email")
+    if isinstance(payload_email, str) and payload_email:
+        email = payload_email
+    else:
+        email = record.email if record else f"user{user_id}@example.com"
 
     user: dict[str, object] = {"id": user_id, "email": email}
 
@@ -170,6 +174,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     if form_data.password != "testpass" or form_data.username not in {
         "testuser",
         "premiumuser",
+        "onlycan17@gmail.com",
     }:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -181,13 +186,23 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     if form_data.username == "premiumuser":
         token_payload = {
             "sub": form_data.username,
+            "email": "premiumuser@example.com",
             "is_subscribed": True,
             "subscription_active": True,
             "plan": "premium",
         }
+    elif form_data.username == "onlycan17@gmail.com":
+        token_payload = {
+            "sub": form_data.username,
+            "email": "onlycan17@gmail.com",
+            "is_subscribed": True,
+            "subscription_active": True,
+            "plan": "yearly",
+        }
     else:
         token_payload = {
             "sub": form_data.username,
+            "email": "testuser@example.com",
             "is_subscribed": False,
             "subscription_active": False,
             "plan": "free",
@@ -278,6 +293,7 @@ async def login_with_google(
 
     token_payload = {
         "sub": user_record.user_id,
+        "email": email,
         "is_subscribed": False,
         "subscription_active": False,
         "plan": "free",

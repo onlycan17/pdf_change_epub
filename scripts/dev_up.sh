@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV_DIR="${ROOT_DIR}/.venv"
+VENV_DIR="${ROOT_DIR}/venv"
 REQUIREMENTS_FILE="${ROOT_DIR}/requirements.txt"
 FRONTEND_DIR="${ROOT_DIR}/frontend"
 BACKEND_HOST="0.0.0.0"

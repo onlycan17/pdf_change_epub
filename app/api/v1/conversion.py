@@ -5,21 +5,26 @@ from __future__ import annotations
 import os
 import uuid
 import logging
+from pathlib import Path
 from typing import TypedDict
 from io import BytesIO
 from datetime import datetime, timezone
 import zipfile
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import StreamingResponse  # type: ignore
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse  # type: ignore
 
 from app.core.config import Settings, get_settings
 from app.core.dependencies import api_key_header
+from app.api.v1.auth import verify_token
+from app.repositories.user_repository import get_user_repository
 from app.services.pdf_service import (
     create_pdf_analyzer,
     create_pdf_metadata_extractor,
     PDFType,
 )
+from app.services.large_file_request_service import get_large_file_request_service
+from app.services.free_usage_limit_service import get_free_usage_limit_service
 from app.services.epub_validator import validate_epub_bytes
 from app.services.async_queue_service import get_async_queue_service
 from app.services.subscription_plans import (
@@ -51,6 +56,11 @@ from app.models.conversion import (
 
 # 로거 설정
 logger = logging.getLogger(__name__)
+
+PRIVILEGED_EMAIL = "onlycan17@gmail.com"
+STANDARD_UPLOAD_LIMIT_BYTES = 25 * 1024 * 1024
+LARGE_UPLOAD_LIMIT_BYTES = 500 * 1024 * 1024
+FREE_DAILY_CONVERSION_LIMIT = 2
 
 
 router = APIRouter(
@@ -132,17 +142,25 @@ def validate_file_size(file: UploadFile, max_size: int) -> bool:
     Returns:
         bool: 유효성 검사 결과
     """
-    # 파일 크기 확인 (Content-Length 헤더)
     content_length = file.size
+    if content_length is not None:
+        return content_length <= max_size
 
-    if content_length is None:
-        # 파일 크기를 확인할 수 없는 경우 임시 처리
-        return True
-
-    return content_length <= max_size
+    stream = file.file
+    try:
+        current_position = stream.tell()
+        stream.seek(0, os.SEEK_END)
+        inferred_size = stream.tell()
+        stream.seek(current_position, os.SEEK_SET)
+        return inferred_size <= max_size
+    except Exception:
+        return False
 
 
 def _resolve_upload_limit(_request: Request) -> tuple[int, str]:
+    user = _resolve_request_user(_request)
+    if user["email"].lower() == PRIVILEGED_EMAIL:
+        return LARGE_UPLOAD_LIMIT_BYTES, "privileged_500mb"
     return (
         get_plan(SUBSCRIPTION_PLAN_FREE).upload_limit_bytes,
         SUBSCRIPTION_PLAN_FREE,
@@ -150,10 +168,142 @@ def _resolve_upload_limit(_request: Request) -> tuple[int, str]:
 
 
 def _format_limit_message(plan_code: str) -> str:
+    if plan_code == "privileged_500mb":
+        return "특별 계정은 최대 500MB까지 업로드 가능합니다."
     plan = get_plan(plan_code)
     if plan.code == SUBSCRIPTION_PLAN_FREE:
         return "현재는 무료 베타로 운영 중이며 최대 25MB까지 업로드 가능합니다."
     return "현재는 무료 베타로 운영 중이며 최대 25MB까지 업로드 가능합니다."
+
+
+def _extract_bearer_token(request: Request) -> str | None:
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header[7:].strip()
+    return token or None
+
+
+def _resolve_request_user(request: Request) -> dict[str, str]:
+    token = _extract_bearer_token(request)
+    if not token:
+        return {"id": "", "email": ""}
+
+    payload = verify_token(token)
+    if payload is None:
+        return {"id": "", "email": ""}
+
+    user_id = payload.get("sub")
+    if not isinstance(user_id, str) or not user_id:
+        return {"id": "", "email": ""}
+
+    payload_email = payload.get("email")
+    if isinstance(payload_email, str) and payload_email:
+        return {"id": user_id, "email": payload_email}
+
+    settings = get_settings()
+    repo = get_user_repository(settings)
+    record = repo.get_by_user_id(user_id)
+    email = record.email if record else f"user{user_id}@example.com"
+    return {"id": user_id, "email": email}
+
+
+def _resolve_request_auth(request: Request) -> dict[str, object]:
+    token = _extract_bearer_token(request)
+    if not token:
+        return {
+            "id": "",
+            "email": "",
+            "plan": "free",
+            "is_subscribed": False,
+            "subscription_active": False,
+        }
+
+    payload = verify_token(token)
+    if payload is None:
+        return {
+            "id": "",
+            "email": "",
+            "plan": "free",
+            "is_subscribed": False,
+            "subscription_active": False,
+        }
+
+    user = _resolve_request_user(request)
+    plan_raw = payload.get("plan")
+    is_subscribed_raw = payload.get("is_subscribed")
+    subscription_active_raw = payload.get("subscription_active")
+
+    plan = plan_raw if isinstance(plan_raw, str) and plan_raw else "free"
+    is_subscribed = bool(is_subscribed_raw) if isinstance(is_subscribed_raw, bool) else False
+    subscription_active = (
+        bool(subscription_active_raw) if isinstance(subscription_active_raw, bool) else False
+    )
+
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "plan": plan,
+        "is_subscribed": is_subscribed,
+        "subscription_active": subscription_active,
+    }
+
+
+def _require_authenticated_user(request: Request) -> dict[str, str]:
+    user = _resolve_request_user(request)
+    if not user["id"] or not user["email"]:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    return user
+
+
+def _ensure_privileged_user(request: Request) -> dict[str, str]:
+    user = _require_authenticated_user(request)
+    if user["email"].lower() != PRIVILEGED_EMAIL:
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+    return user
+
+
+def _is_free_user(auth: dict[str, object]) -> bool:
+    if (auth.get("email") or "").__str__().lower() == PRIVILEGED_EMAIL:
+        return False
+
+    plan = auth.get("plan")
+    is_subscribed = auth.get("is_subscribed")
+    subscription_active = auth.get("subscription_active")
+
+    if isinstance(is_subscribed, bool) and isinstance(subscription_active, bool):
+        if is_subscribed and subscription_active:
+            return False
+
+    if isinstance(plan, str) and plan in {"premium", "yearly", "enterprise"}:
+        return False
+
+    return True
+
+
+def _serialize_large_file_request(record) -> dict[str, object]:
+    return {
+        "request_id": record.request_id,
+        "requester_user_id": record.requester_user_id,
+        "requester_email": record.requester_email,
+        "request_note": record.request_note,
+        "bank_transfer_note": record.bank_transfer_note,
+        "attachment_filename": record.attachment_filename,
+        "attachment_size": record.attachment_size,
+        "status": record.status,
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
+        "handled_by_email": record.handled_by_email,
+        "conversion_id": record.conversion_id,
+    }
+
+
+def _resolve_safe_attachment_path(record, storage_dir: Path) -> Path:
+    resolved_storage = storage_dir.resolve()
+    resolved_attachment = Path(record.attachment_path).resolve()
+    if resolved_storage not in resolved_attachment.parents:
+        raise HTTPException(status_code=400, detail="유효하지 않은 첨부 경로입니다.")
+    return resolved_attachment
 
 
 class ConversionSettingsDict(TypedDict):
@@ -204,6 +354,13 @@ async def start_conversion(
     Returns:
         Dict: 변환 작업 정보
     """
+    auth = _resolve_request_auth(request)
+    if not auth.get("id") or not auth.get("email"):
+        raise HTTPException(
+            status_code=401,
+            detail="무료 변환은 로그인한 사용자만 사용할 수 있습니다.",
+        )
+
     # 파일 형식 검증
     if not validate_file_type(file):
         raise HTTPException(
@@ -217,6 +374,15 @@ async def start_conversion(
     if not validate_file_size(file, max_upload_size):
         detail = _format_limit_message(user_tier)
         raise HTTPException(status_code=413, detail=detail)
+
+    if _is_free_user(auth):
+        free_usage_limit_service = get_free_usage_limit_service(settings.database.url)
+        allowed = free_usage_limit_service.try_consume(str(auth["id"]))
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail=f"무료 사용자는 하루 {FREE_DAILY_CONVERSION_LIMIT}회까지 변환할 수 있습니다.",
+            )
 
     # 변환 작업 ID 생성 및 PDF 로드
     conversion_id = str(uuid.uuid4())
@@ -239,6 +405,172 @@ async def start_conversion(
         message="변환 작업이 시작되었습니다.",
         data=summary,
     )
+
+
+@router.post("/large-file-requests")
+async def create_large_file_request(
+    request: Request,
+    file: UploadFile = File(..., description="대용량 변환 요청 PDF"),
+    request_note: str = Form("", description="요청사항"),
+    bank_transfer_note: str = Form("", description="계좌이체 관련 내용"),
+    api_key: str = Depends(api_key_header),
+):
+    del api_key
+
+    user = _require_authenticated_user(request)
+    if user["email"].lower() == PRIVILEGED_EMAIL:
+        raise HTTPException(
+            status_code=400,
+            detail="관리자 계정은 일반 요청 대신 대용량 요청 처리 페이지를 사용하세요.",
+        )
+
+    if not validate_file_type(file):
+        raise HTTPException(
+            status_code=422,
+            detail="지원하지 않는 파일 형식입니다. PDF 파일만 업로드 가능합니다.",
+        )
+    if not validate_file_size(file, LARGE_UPLOAD_LIMIT_BYTES):
+        raise HTTPException(
+            status_code=413,
+            detail="대용량 요청 첨부는 최대 500MB까지 가능합니다.",
+        )
+
+    file_bytes = await file.read()
+    service = get_large_file_request_service()
+    record = service.create_request(
+        requester_user_id=user["id"],
+        requester_email=user["email"],
+        request_note=request_note,
+        bank_transfer_note=bank_transfer_note,
+        attachment_filename=file.filename or "uploaded.pdf",
+        attachment_bytes=file_bytes,
+    )
+
+    return {
+        "success": True,
+        "message": "대용량 변환 요청이 접수되었습니다.",
+        "data": _serialize_large_file_request(record),
+    }
+
+
+@router.get("/large-file-requests")
+async def list_large_file_requests(
+    request: Request,
+    requester_email: str = Query("", description="요청자 이메일 필터"),
+    status: str = Query("", description="요청 상태 필터"),
+    keyword: str = Query("", description="요청사항/첨부명 검색 키워드"),
+    api_key: str = Depends(api_key_header),
+):
+    del api_key
+
+    _ensure_privileged_user(request)
+    service = get_large_file_request_service()
+    items = [
+        _serialize_large_file_request(item)
+        for item in service.list_requests(
+            requester_email=requester_email,
+            status=status,
+            keyword=keyword,
+        )
+    ]
+    return {
+        "success": True,
+        "data": {
+            "items": items,
+            "total": len(items),
+        },
+    }
+
+
+@router.get("/large-file-requests/{request_id}/attachment")
+async def download_large_file_request_attachment(
+    request_id: str,
+    request: Request,
+    api_key: str = Depends(api_key_header),
+):
+    del api_key
+
+    _ensure_privileged_user(request)
+    service = get_large_file_request_service()
+    record = service.get_request(request_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="요청을 찾을 수 없습니다.")
+
+    safe_attachment_path = _resolve_safe_attachment_path(record, service.get_storage_dir())
+    if not safe_attachment_path.exists():
+        raise HTTPException(status_code=404, detail="첨부 파일을 찾을 수 없습니다.")
+
+    return FileResponse(
+        str(safe_attachment_path),
+        media_type="application/pdf",
+        filename=record.attachment_filename,
+    )
+
+
+@router.post("/large-file-requests/{request_id}/start-conversion")
+async def start_large_file_request_conversion(
+    request_id: str,
+    request: Request,
+    file: UploadFile | None = File(None, description="관리자가 업로드한 변환용 PDF"),
+    ocr_enabled: bool = Form(False, description="OCR 처리 활성화 여부"),
+    translate_to_korean: bool = Form(False, description="영문 텍스트를 한글로 번역"),
+    api_key: str = Depends(api_key_header),
+):
+    del api_key
+
+    user = _ensure_privileged_user(request)
+    service = get_large_file_request_service()
+    request_record = service.get_request(request_id)
+    if request_record is None:
+        raise HTTPException(status_code=404, detail="요청을 찾을 수 없습니다.")
+
+    conversion_id = str(uuid.uuid4())
+    source_filename = request_record.attachment_filename
+
+    if file is not None:
+        if not validate_file_type(file):
+            raise HTTPException(
+                status_code=422,
+                detail="지원하지 않는 파일 형식입니다. PDF 파일만 업로드 가능합니다.",
+            )
+        if not validate_file_size(file, LARGE_UPLOAD_LIMIT_BYTES):
+            raise HTTPException(
+                status_code=413,
+                detail="관리자 업로드는 최대 500MB까지 가능합니다.",
+            )
+        pdf_bytes = await file.read()
+        source_filename = file.filename or source_filename
+    else:
+        safe_attachment_path = _resolve_safe_attachment_path(
+            request_record, service.get_storage_dir()
+        )
+        if not safe_attachment_path.exists():
+            raise HTTPException(status_code=404, detail="원본 첨부 파일을 찾을 수 없습니다.")
+        with open(safe_attachment_path, "rb") as attached_pdf:
+            pdf_bytes = attached_pdf.read()
+
+    async_queue_service = get_async_queue_service()
+    job = await async_queue_service.start_conversion(
+        conversion_id=conversion_id,
+        filename=source_filename,
+        file_size=len(pdf_bytes),
+        ocr_enabled=ocr_enabled,
+        translate_to_korean=translate_to_korean,
+        pdf_bytes=pdf_bytes,
+    )
+
+    service.mark_conversion_started(
+        request_id=request_id,
+        conversion_id=conversion_id,
+        handled_by_email=user["email"],
+    )
+
+    summary = _job_to_summary(job)
+    return {
+        "success": True,
+        "message": "요청 건 변환이 시작되었습니다.",
+        "data": summary.model_dump(),
+    }
 
 
 # 변환 상태 조회 엔드포인트

@@ -1,7 +1,9 @@
+import type { FC, ReactNode } from 'react';
 import {
   createBrowserRouter,
   Navigate,
   RouterProvider,
+  useLocation,
 } from 'react-router-dom';
 import { AppProvider } from '@contexts/AppContext';
 import MainLayout from '@components/layout/MainLayout';
@@ -13,39 +15,75 @@ import SupportPage from '@pages/SupportPage';
 import ProfilePage from '@pages/ProfilePage';
 import LoginPage from '@pages/LoginPage';
 import RegisterPage from '@pages/RegisterPage';
+import LargeFileRequestPage from '@pages/LargeFileRequestPage';
+import LargeFileRequestsAdminPage from '@pages/LargeFileRequestsAdminPage';
+import { hasUsableAuthToken } from '@utils/subscription';
+
+type RequireAuthProps = {
+  children: ReactNode;
+};
+
+const RequireAuth: FC<RequireAuthProps> = ({ children }) => {
+  const location = useLocation();
+  const isAuthenticated = hasUsableAuthToken();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  return <>{children}</>;
+};
+
+const RequireGuest: FC<RequireAuthProps> = ({ children }) => {
+  const isAuthenticated = hasUsableAuthToken();
+
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+};
 
 const router = createBrowserRouter(
   [
     {
       path: '/',
       element: (
-        <MainLayout>
-          <HomePage />
-        </MainLayout>
+        <RequireAuth>
+          <MainLayout>
+            <HomePage />
+          </MainLayout>
+        </RequireAuth>
       ),
     },
     {
       path: '/upload',
       element: (
-        <MainLayout>
-          <UploadPage />
-        </MainLayout>
+        <RequireAuth>
+          <MainLayout>
+            <UploadPage />
+          </MainLayout>
+        </RequireAuth>
       ),
     },
     {
       path: '/convert',
       element: (
-        <MainLayout>
-          <ConvertPage />
-        </MainLayout>
+        <RequireAuth>
+          <MainLayout>
+            <ConvertPage />
+          </MainLayout>
+        </RequireAuth>
       ),
     },
     {
       path: '/download',
       element: (
-        <MainLayout>
-          <DownloadPage />
-        </MainLayout>
+        <RequireAuth>
+          <MainLayout>
+            <DownloadPage />
+          </MainLayout>
+        </RequireAuth>
       ),
     },
     {
@@ -55,26 +93,58 @@ const router = createBrowserRouter(
     {
       path: '/support',
       element: (
-        <MainLayout>
-          <SupportPage />
-        </MainLayout>
+        <RequireAuth>
+          <MainLayout>
+            <SupportPage />
+          </MainLayout>
+        </RequireAuth>
       ),
     },
     {
       path: '/profile',
       element: (
-        <MainLayout>
-          <ProfilePage />
-        </MainLayout>
+        <RequireAuth>
+          <MainLayout>
+            <ProfilePage />
+          </MainLayout>
+        </RequireAuth>
+      ),
+    },
+    {
+      path: '/large-file-request',
+      element: (
+        <RequireAuth>
+          <MainLayout>
+            <LargeFileRequestPage />
+          </MainLayout>
+        </RequireAuth>
+      ),
+    },
+    {
+      path: '/large-file-requests',
+      element: (
+        <RequireAuth>
+          <MainLayout>
+            <LargeFileRequestsAdminPage />
+          </MainLayout>
+        </RequireAuth>
       ),
     },
     {
       path: '/login',
-      element: <LoginPage />,
+      element: (
+        <RequireGuest>
+          <LoginPage />
+        </RequireGuest>
+      ),
     },
     {
       path: '/register',
-      element: <RegisterPage />,
+      element: (
+        <RequireGuest>
+          <RegisterPage />
+        </RequireGuest>
+      ),
     },
     {
       path: '/payment/billing/success',

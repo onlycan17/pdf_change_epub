@@ -1,15 +1,31 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useApp } from '@contexts/AppContext';
+import { fetchCurrentUserProfile, isPrivilegedEmail } from '@utils/authApi';
 
 const Header: React.FC = () => {
   const { state } = useApp();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+
+  useEffect(() => {
+    const run = async () => {
+      const profile = await fetchCurrentUserProfile();
+      setUserEmail(profile?.email || '');
+    };
+    void run();
+  }, [state.isAuthenticated]);
+
+  const privileged = useMemo(() => isPrivilegedEmail(userEmail), [userEmail]);
 
   const navigation = [
     { name: '홈', href: '/' },
     { name: '변환하기', href: '/upload' },
+    {
+      name: privileged ? '요청관리' : '대용량 요청',
+      href: privileged ? '/large-file-requests' : '/large-file-request',
+    },
     { name: '후원', href: '/support' },
   ];
 

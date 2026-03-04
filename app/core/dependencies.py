@@ -10,12 +10,80 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, HTTPException, Request, Response
 from fastapi.params import Depends as DependsParam
 from fastapi.security import APIKeyHeader  # type: ignore
+from jose import JWTError, jwt
 
 from app.core.config import Settings, get_settings
+from app.repositories.user_repository import get_user_repository
 
 
 # 로거 설정
 logger = logging.getLogger(__name__)
+
+PRIVILEGED_EMAIL = "onlycan17@gmail.com"
+DEFAULT_MAX_REQUEST_SIZE = 50 * 1024 * 1024
+LARGE_REQUEST_SIZE = 500 * 1024 * 1024
+
+
+def _extract_bearer_token(request: Request) -> Optional[str]:
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header[7:].strip()
+    return token or None
+
+
+def _resolve_email_from_bearer_token(request: Request, settings: Settings) -> str:
+    token = _extract_bearer_token(request)
+    if not token:
+        return ""
+
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except JWTError:
+        return ""
+
+    email = payload.get("email")
+    if isinstance(email, str) and email:
+        return email
+
+    user_id = payload.get("sub")
+    if not isinstance(user_id, str) or not user_id:
+        return ""
+
+    try:
+        repo = get_user_repository(settings)
+        record = repo.get_by_user_id(user_id)
+    except Exception:
+        return ""
+
+    if record:
+        return record.email
+    return f"user{user_id}@example.com"
+
+
+def _resolve_content_length_limit(request: Request, settings: Settings) -> int:
+    path = request.url.path
+    if request.method != "POST":
+        return DEFAULT_MAX_REQUEST_SIZE
+
+    if path == "/api/v1/conversion/large-file-requests":
+        if _resolve_email_from_bearer_token(request, settings):
+            return LARGE_REQUEST_SIZE
+        return DEFAULT_MAX_REQUEST_SIZE
+
+    if path == "/api/v1/conversion/start":
+        email = _resolve_email_from_bearer_token(request, settings)
+        if email.lower() == PRIVILEGED_EMAIL:
+            return LARGE_REQUEST_SIZE
+
+    if path.startswith("/api/v1/conversion/large-file-requests/") and path.endswith(
+        "/start-conversion"
+    ):
+        email = _resolve_email_from_bearer_token(request, settings)
+        if email.lower() == PRIVILEGED_EMAIL:
+            return LARGE_REQUEST_SIZE
+
+    return DEFAULT_MAX_REQUEST_SIZE
 
 
 def get_settings_dependency() -> Settings:
@@ -288,10 +356,11 @@ async def validate_request(
     content_length = request.headers.get("Content-Length")
     if content_length:
         size = int(content_length)
-        if size > 50 * 1024 * 1024:  # 기본값 50MB
+        max_size = _resolve_content_length_limit(request, settings)
+        if size > max_size:
             raise HTTPException(
                 status_code=413,
-                detail="Request entity too large. Maximum size: 50MB bytes",
+                detail=f"Request entity too large. Maximum size: {max_size // (1024 * 1024)}MB bytes",
             )
 
     return True

@@ -4,6 +4,19 @@ import { Link } from 'react-router-dom';
 import { useApp } from '@contexts/AppContext';
 import GoogleSignInButton from '@components/auth/GoogleSignInButton';
 
+const parseJsonSafely = async <T,>(response: Response): Promise<T | null> => {
+  const raw = await response.text();
+  if (!raw.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+};
+
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const { dispatch } = useApp();
@@ -37,11 +50,16 @@ const LoginPage: React.FC = () => {
         body: body.toString(),
       });
 
+      const payload = await parseJsonSafely<{ access_token?: string }>(response);
+
       if (!response.ok) {
         throw new Error('로그인에 실패했습니다. 계정 정보를 확인해주세요.');
       }
 
-      const payload = (await response.json()) as { access_token: string };
+      if (!payload?.access_token) {
+        throw new Error('로그인 응답이 올바르지 않습니다. 잠시 후 다시 시도해주세요.');
+      }
+
       localStorage.setItem('auth_token', payload.access_token);
       dispatch({ type: 'SET_AUTHENTICATED', payload: true });
       navigate('/upload');
@@ -71,12 +89,21 @@ const LoginPage: React.FC = () => {
         body: JSON.stringify({ id_token: credential }),
       });
 
+      const payload = await parseJsonSafely<{
+        detail?: string;
+        access_token?: string;
+      }>(response);
+
       if (!response.ok) {
-        const body = (await response.json()) as { detail?: string };
-        throw new Error(body.detail || 'Google 로그인에 실패했습니다.');
+        throw new Error(payload?.detail || 'Google 로그인에 실패했습니다.');
       }
 
-      const payload = (await response.json()) as { access_token: string };
+      if (!payload?.access_token) {
+        throw new Error(
+          '로그인 서버 응답 형식이 올바르지 않습니다. 잠시 후 다시 시도해주세요.'
+        );
+      }
+
       localStorage.setItem('auth_token', payload.access_token);
       dispatch({ type: 'SET_AUTHENTICATED', payload: true });
       navigate('/upload');
@@ -113,16 +140,11 @@ const LoginPage: React.FC = () => {
             </Link>
           </p>
           <p className="mt-2 text-center text-sm text-gray-600">
-            로그인 없이도 사용 가능합니다.{' '}
-            <Link
-              to="/upload"
-              className="font-medium text-blue-600 hover:text-blue-500"
-            >
-              바로 변환 시작
-            </Link>
+            무료 변환은 로그인 후 이용할 수 있습니다.
           </p>
           <p className="mt-2 text-center text-xs text-gray-500">
-            데모 계정: 무료 `testuser / testpass`, 구독 `premiumuser / testpass`
+            데모 계정: 무료 `testuser / testpass`, 구독 `premiumuser / testpass`,
+            운영 `onlycan17@gmail.com / testpass`
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>

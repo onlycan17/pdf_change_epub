@@ -79,6 +79,12 @@ const findToken = (): string | null => {
   return null;
 };
 
+export const clearAuthTokens = (): void => {
+  for (const key of AUTH_TOKEN_KEYS) {
+    localStorage.removeItem(key);
+  }
+};
+
 const decodeBase64Payload = (base64Input: string): string => {
   const normalized = base64Input.replace(/-/g, '+').replace(/_/g, '/');
   const paddingNeeded = (4 - (normalized.length % 4)) % 4;
@@ -150,3 +156,30 @@ export const formatBytesToMb = (bytes: number): string => {
 };
 
 export const getAuthToken = (): string | null => findToken();
+
+export const hasUsableAuthToken = (): boolean => {
+  const token = findToken();
+  if (!token) {
+    return false;
+  }
+
+  const payload = getTokenPayload();
+  if (!payload) {
+    clearAuthTokens();
+    return false;
+  }
+
+  const exp = payload.exp;
+  if (typeof exp !== 'number') {
+    clearAuthTokens();
+    return false;
+  }
+
+  const nowInSeconds = Math.floor(Date.now() / 1000);
+  if (exp <= nowInSeconds) {
+    clearAuthTokens();
+    return false;
+  }
+
+  return true;
+};
