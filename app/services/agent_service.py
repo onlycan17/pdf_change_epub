@@ -9,14 +9,13 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 
 import httpx
-from paddleocr import PaddleOCR
 
 from app.core.config import Settings, get_settings
-from app.services.pdf_service import PDFAnalyzer, PDFExtractor
+from app.services.pdf_service import PDFAnalyzer, PDFExtractor, PDFType
 
 logger = logging.getLogger(__name__)
 
@@ -275,18 +274,26 @@ class OCRAgent(BaseAgent):
     def __init__(self, settings: Optional[Settings] = None):
         super().__init__(AgentType.OCR, settings)
         self.language = "kor+eng"  # 기본값
-        self.ocr_engine: Optional[PaddleOCR] = None
+        self.ocr_engine: None = None
 
     async def validate(self) -> bool:
         """OCR 엔진 초기화 및 검증"""
+        import pytesseract
+
         try:
-            self.ocr_engine = PaddleOCR(
-                use_angle_cls=True, lang=self.language, show_log=False
-            )
+            _ = pytesseract.get_tesseract_version()
+            langs = set(pytesseract.get_languages(config=""))
+
+            required = [p for p in self.language.split("+") if p]
+            missing = [p for p in required if p not in langs]
+            if missing:
+                raise ValueError(
+                    f"Tesseract language data missing: {', '.join(missing)} (available: {', '.join(sorted(langs))})"
+                )
             return True
         except Exception as e:
-            self.logger.error(f"PaddleOCR 초기화 실패: {str(e)}")
-            return False
+            # Raise so the orchestrator can surface a useful message.
+            raise ValueError(f"Tesseract OCR init failed: {e}")
 
     async def process(self, message: AgentMessage) -> AgentMessage:
         """이미지에서 텍스트 추출"""
@@ -328,51 +335,64 @@ class OCRAgent(BaseAgent):
             raise ValueError(f"OCR 처리 중 오류 발생: {str(e)}")
 
     async def _run_ocr(self, image_data: bytes) -> Dict[str, Any]:
-        """PaddleOCR 실행"""
+        """OCR 실행"""
         import io
         from PIL import Image
+        import pytesseract
 
         try:
             # 바이트 데이터를 PIL 이미지로 변환
             image = Image.open(io.BytesIO(image_data))
 
-            # OCR 실행 (PaddleOCR은 동기 함수이므로 스레드 풀에서 실행)
-            loop = asyncio.get_event_loop()
-            ocr_result = await loop.run_in_executor(
-                None, lambda: self.ocr_engine.ocr(image) if self.ocr_engine else []
-            )
+            def _run_tesseract() -> Dict[str, Any]:
+                data = pytesseract.image_to_data(
+                    image,
+                    lang=self.language,
+                    output_type=pytesseract.Output.DICT,
+                )
+                n = int(data.get("level") and len(data["level"]) or 0)
+                boxes: List[Dict[str, Any]] = []
+                tokens: List[str] = []
+                confidences: List[float] = []
 
-            if not ocr_result or not ocr_result[0]:
-                return {"text": "", "confidence": 0.0, "bounding_boxes": []}
+                for i in range(n):
+                    text = str(data.get("text", [""] * n)[i]).strip()
+                    if not text:
+                        continue
 
-            # 결과 처리
-            text_parts = []
-            bounding_boxes = []
+                    conf_raw = str(data.get("conf", ["-1"] * n)[i]).strip()
+                    try:
+                        conf = float(conf_raw)
+                    except ValueError:
+                        conf = -1.0
 
-            for line in ocr_result[0]:
-                if len(line) >= 2:
-                    text_parts.append(line[1][0])  # 텍스트
-                    bounding_boxes.append(
+                    left = int(float(data.get("left", [0] * n)[i]))
+                    top = int(float(data.get("top", [0] * n)[i]))
+                    width = int(float(data.get("width", [0] * n)[i]))
+                    height = int(float(data.get("height", [0] * n)[i]))
+                    bbox = [[left, top], [left + width, top], [left + width, top + height], [left, top + height]]
+
+                    tokens.append(text)
+                    if conf >= 0:
+                        confidences.append(conf)
+
+                    boxes.append(
                         {
-                            "text": line[1][0],
-                            "bbox": line[0],
-                            "confidence": line[1][1] if len(line[1]) > 1 else 0.0,
+                            "text": text,
+                            "bbox": bbox,
+                            "confidence": max(conf, 0.0) / 100.0 if conf >= 0 else 0.0,
                         }
                     )
 
-            full_text = " ".join(text_parts)
+                avg_conf = (sum(confidences) / len(confidences)) / 100.0 if confidences else 0.0
+                return {
+                    "text": " ".join(tokens),
+                    "confidence": avg_conf,
+                    "bounding_boxes": boxes,
+                }
 
-            # 전체 신뢰도 계산
-            confidences = [
-                box["confidence"] for box in bounding_boxes if box["confidence"] > 0
-            ]
-            avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
-
-            return {
-                "text": full_text,
-                "confidence": avg_confidence,
-                "bounding_boxes": bounding_boxes,
-            }
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _run_tesseract)
 
         except Exception as e:
             self.logger.error(f"OCR 실행 실패: {str(e)}")
@@ -384,12 +404,10 @@ class SynthesisAgent(BaseAgent):
 
     def __init__(self, settings: Optional[Settings] = None):
         super().__init__(AgentType.SYNTHESIS, settings)
-        self.multimodal_agent = MultimodalLLMAgent(settings)
-        self.chunk_size = 10000  # 기본값 10000
 
     async def validate(self) -> bool:
         """하위 에이전트 유효성 검증"""
-        return await self.multimodal_agent.validate()
+        return True
 
     async def process(self, message: AgentMessage) -> AgentMessage:
         """OCR 결과와 이미지 분석 결과를 종합하여 마크다운 생성"""
@@ -448,9 +466,13 @@ class SynthesisAgent(BaseAgent):
 
             if agent_type == "multimodal_llm":
                 page_groups[page_num]["images"].append(result)
-                page_groups[page_num]["descriptions"].append(result.get("content", {}))
+                page_groups[page_num]["descriptions"].append(
+                    self._normalize_content(result.get("content", {}))
+                )
             elif agent_type == "ocr":
-                page_groups[page_num]["ocr_texts"].append(result.get("content", ""))
+                page_groups[page_num]["ocr_texts"].append(
+                    self._normalize_content(result.get("content", ""))
+                )
 
         return page_groups
 
@@ -470,7 +492,9 @@ class SynthesisAgent(BaseAgent):
             if descriptions:
                 markdown_parts.append("## 이미지 분석")
                 for i, desc in enumerate(descriptions):
-                    desc_data = desc.get("image_description", "")
+                    if not isinstance(desc, dict):
+                        desc = self._normalize_content(desc)
+                    desc_data = desc.get("image_description", "") if isinstance(desc, dict) else ""
                     if desc_data:
                         markdown_parts.append(f"### 이미지 {i+1}")
                         markdown_parts.append(desc_data)
@@ -481,7 +505,9 @@ class SynthesisAgent(BaseAgent):
             if ocr_texts:
                 markdown_parts.append("## 추출된 텍스트")
                 for i, ocr_text in enumerate(ocr_texts):
-                    text = ocr_text.get("text", "")
+                    if not isinstance(ocr_text, dict):
+                        ocr_text = self._normalize_content(ocr_text)
+                    text = ocr_text.get("text", "") if isinstance(ocr_text, dict) else ""
                     if text.strip():
                         markdown_parts.append(f"### 텍스트 블록 {i+1}")
                         markdown_parts.append(text)
@@ -503,14 +529,18 @@ class SynthesisAgent(BaseAgent):
 
         # OCR 텍스트 우선 사용
         for ocr_text in page_data.get("ocr_texts", []):
-            text = ocr_text.get("text", "")
+            if not isinstance(ocr_text, dict):
+                ocr_text = self._normalize_content(ocr_text)
+            text = ocr_text.get("text", "") if isinstance(ocr_text, dict) else ""
             if text.strip():
                 texts.append(text)
 
         # OCR 텍스트가 없으면 이미지 분석 결과 사용
         if not texts:
             for desc in page_data.get("descriptions", []):
-                text = desc.get("text_content", "")
+                if not isinstance(desc, dict):
+                    desc = self._normalize_content(desc)
+                text = desc.get("text_content", "") if isinstance(desc, dict) else ""
                 if text.strip():
                     texts.append(text)
 
@@ -532,6 +562,8 @@ class SynthesisAgent(BaseAgent):
         confidences = []
         for page in page_results.values():
             for ocr_text in page.get("ocr_texts", []):
+                if not isinstance(ocr_text, dict):
+                    ocr_text = self._normalize_content(ocr_text)
                 if isinstance(ocr_text, dict) and "confidence" in ocr_text:
                     confidences.append(ocr_text["confidence"])
 
@@ -545,6 +577,20 @@ class SynthesisAgent(BaseAgent):
             "processing_timestamp": asyncio.get_event_loop().time(),
         }
 
+    def _normalize_content(self, content: Any) -> Any:
+        if isinstance(content, dict):
+            return content
+        if is_dataclass(content):
+            if not isinstance(content, type):
+                return asdict(content)
+        model_dump = getattr(content, "model_dump", None)
+        if callable(model_dump):
+            return model_dump()
+        to_dict = getattr(content, "dict", None)
+        if callable(to_dict):
+            return to_dict()
+        return content
+
 
 class ScanPDFProcessor:
     """에이전트 기반 스캔 PDF 처리 오케스트레이터"""
@@ -554,7 +600,11 @@ class ScanPDFProcessor:
         self.logger = logging.getLogger(__name__)
 
         # 에이전트 초기화
-        self.multimodal_agent = MultimodalLLMAgent(self.settings)
+        self.multimodal_agent: Optional[MultimodalLLMAgent]
+        try:
+            self.multimodal_agent = MultimodalLLMAgent(self.settings)
+        except ValueError:
+            self.multimodal_agent = None
         self.ocr_agent = OCRAgent(self.settings)
         self.synthesis_agent = SynthesisAgent(self.settings)
 
@@ -564,16 +614,41 @@ class ScanPDFProcessor:
 
     async def validate_agents(self) -> bool:
         """모든 에이전트 유효성 검증"""
-        agents = [self.multimodal_agent, self.ocr_agent, self.synthesis_agent]
-        validation_results = await asyncio.gather(
-            *[agent.validate() for agent in agents]
+        # OCR + synthesis must be available. Multimodal LLM is optional.
+        required_agents: List[BaseAgent] = [self.ocr_agent, self.synthesis_agent]
+        optional_agents: List[BaseAgent] = []
+        if self.multimodal_agent is not None:
+            optional_agents.append(self.multimodal_agent)
+
+        required_results = await asyncio.gather(
+            *[agent.validate() for agent in required_agents],
+            return_exceptions=True,
         )
 
-        all_valid = all(validation_results)
-        if not all_valid:
-            self.logger.error("하나 이상의 에이전트 검증 실패")
+        required_errors: List[str] = []
+        for agent, result in zip(required_agents, required_results):
+            if isinstance(result, Exception):
+                required_errors.append(f"{agent.agent_type.value}: {result}")
+            elif result is not True:
+                required_errors.append(f"{agent.agent_type.value}: validate returned {result!r}")
 
-        return all_valid
+        if required_errors:
+            raise ValueError("; ".join(required_errors))
+
+        if optional_agents:
+            optional_results = await asyncio.gather(
+                *[agent.validate() for agent in optional_agents],
+                return_exceptions=True,
+            )
+            for agent, result in zip(optional_agents, optional_results):
+                if isinstance(result, Exception) or result is not True:
+                    self.logger.warning(
+                        "Optional agent validation failed; disabling",
+                        extra={"agent": agent.agent_type.value, "error": str(result)},
+                    )
+                    self.multimodal_agent = None
+
+        return True
 
     async def process_scanned_pdf(self, pdf_content: bytes) -> SynthesisResult:
         """스캔 PDF 처리 전체 워크플로우"""
@@ -581,7 +656,14 @@ class ScanPDFProcessor:
             # PDF 분석
             analysis_result = self.pdf_analyzer.analyze_pdf(pdf_content)
 
-            if analysis_result.pdf_type != analysis_result.pdf_type.SCANNED:
+            pdf_type_raw = getattr(analysis_result, "pdf_type", None)
+            pdf_type_value = getattr(pdf_type_raw, "value", pdf_type_raw)
+            if isinstance(pdf_type_value, str):
+                pdf_type_normalized = pdf_type_value.strip().lower()
+            else:
+                pdf_type_normalized = str(pdf_type_value).strip().lower()
+
+            if pdf_type_normalized != PDFType.SCANNED.value:
                 raise ValueError(
                     "텍스트 기반 PDF는 스캔 PDF 워크플로우를 사용하지 않습니다."
                 )
@@ -621,6 +703,7 @@ class ScanPDFProcessor:
     ) -> List[Dict[str, Any]]:
         """이미지들을 병렬로 처리"""
         tasks = []
+        analysis_scheduled = 0
 
         for image_info in images:
             # OCR 작업
@@ -628,9 +711,10 @@ class ScanPDFProcessor:
             tasks.append(ocr_task)
 
             # 이미지 분석 작업 (선택적 - 비용 절약을 위해 일부만)
-            if len(tasks) <= 5:  # 처음 5개 이미지만 분석
+            if self.multimodal_agent is not None and analysis_scheduled < 5:
                 analysis_task = self._process_image_with_llm(image_info)
                 tasks.append(analysis_task)
+                analysis_scheduled += 1
 
         # 병렬 실행
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -662,10 +746,15 @@ class ScanPDFProcessor:
 
         result_message = await self.ocr_agent.process(message)
 
+        content = result_message.content
+        if is_dataclass(content):
+            if not isinstance(content, type):
+                content = asdict(content)
+
         return {
             "page_number": image_info["page"],
             "agent_type": "ocr",
-            "content": result_message.content,
+            "content": content,
             "metadata": result_message.metadata,
         }
 
@@ -673,6 +762,9 @@ class ScanPDFProcessor:
         self, image_info: Dict[str, Any]
     ) -> Dict[str, Any]:
         """단일 이미지 LLM 분석"""
+        if self.multimodal_agent is None:
+            raise ValueError("LLM 에이전트가 설정되지 않았습니다.")
+
         message = AgentMessage(
             agent_type=AgentType.MULTIMODAL_LLM,
             content={
@@ -685,10 +777,15 @@ class ScanPDFProcessor:
 
         result_message = await self.multimodal_agent.process(message)
 
+        content = result_message.content
+        if is_dataclass(content):
+            if not isinstance(content, type):
+                content = asdict(content)
+
         return {
             "page_number": image_info["page"],
             "agent_type": "multimodal_llm",
-            "content": result_message.content,
+            "content": content,
             "metadata": result_message.metadata,
         }
 
@@ -700,7 +797,6 @@ async def create_scan_pdf_processor(
     """스캔 PDF 프로세서 생성 및 검증"""
     processor = ScanPDFProcessor(settings)
 
-    if not await processor.validate_agents():
-        raise ValueError("하나 이상의 에이전트 초기화에 실패했습니다.")
+    await processor.validate_agents()
 
     return processor
