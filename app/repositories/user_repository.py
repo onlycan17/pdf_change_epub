@@ -55,55 +55,79 @@ class UserRepository:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _ensure_schema_with_conn(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+              user_id TEXT PRIMARY KEY,
+              provider TEXT NOT NULL,
+              provider_sub TEXT NOT NULL,
+              email TEXT NOT NULL,
+              name TEXT NOT NULL,
+              picture TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider ON users(provider, provider_sub)"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)"
+        )
+
     def _ensure_schema(self) -> None:
         with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                  user_id TEXT PRIMARY KEY,
-                  provider TEXT NOT NULL,
-                  provider_sub TEXT NOT NULL,
-                  email TEXT NOT NULL,
-                  name TEXT NOT NULL,
-                  picture TEXT NOT NULL,
-                  created_at TEXT NOT NULL,
-                  updated_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider ON users(provider, provider_sub)"
-            )
-            conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)"
-            )
+            self._ensure_schema_with_conn(conn)
 
     def get_by_user_id(self, user_id: str) -> Optional[UserRecord]:
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM users WHERE user_id = ?",
-                (user_id,),
-            ).fetchone()
+            try:
+                row = conn.execute(
+                    "SELECT * FROM users WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                self._ensure_schema_with_conn(conn)
+                row = conn.execute(
+                    "SELECT * FROM users WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
             if not row:
                 return None
             return self._row_to_record(row)
 
     def get_by_provider(self, provider: str, provider_sub: str) -> Optional[UserRecord]:
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM users WHERE provider = ? AND provider_sub = ?",
-                (provider, provider_sub),
-            ).fetchone()
+            try:
+                row = conn.execute(
+                    "SELECT * FROM users WHERE provider = ? AND provider_sub = ?",
+                    (provider, provider_sub),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                self._ensure_schema_with_conn(conn)
+                row = conn.execute(
+                    "SELECT * FROM users WHERE provider = ? AND provider_sub = ?",
+                    (provider, provider_sub),
+                ).fetchone()
             if not row:
                 return None
             return self._row_to_record(row)
 
     def get_by_email(self, email: str) -> Optional[UserRecord]:
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM users WHERE email = ?",
-                (email,),
-            ).fetchone()
+            try:
+                row = conn.execute(
+                    "SELECT * FROM users WHERE email = ?",
+                    (email,),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                self._ensure_schema_with_conn(conn)
+                row = conn.execute(
+                    "SELECT * FROM users WHERE email = ?",
+                    (email,),
+                ).fetchone()
             if not row:
                 return None
             return self._row_to_record(row)
@@ -131,19 +155,35 @@ class UserRepository:
         now = _utcnow().isoformat()
 
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO users(
-                  user_id, provider, provider_sub, email, name, picture, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                  email=excluded.email,
-                  name=excluded.name,
-                  picture=excluded.picture,
-                  updated_at=excluded.updated_at
-                """,
-                (user_id, provider, provider_sub, email, name, picture, now, now),
-            )
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO users(
+                      user_id, provider, provider_sub, email, name, picture, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                      email=excluded.email,
+                      name=excluded.name,
+                      picture=excluded.picture,
+                      updated_at=excluded.updated_at
+                    """,
+                    (user_id, provider, provider_sub, email, name, picture, now, now),
+                )
+            except sqlite3.OperationalError:
+                self._ensure_schema_with_conn(conn)
+                conn.execute(
+                    """
+                    INSERT INTO users(
+                      user_id, provider, provider_sub, email, name, picture, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                      email=excluded.email,
+                      name=excluded.name,
+                      picture=excluded.picture,
+                      updated_at=excluded.updated_at
+                    """,
+                    (user_id, provider, provider_sub, email, name, picture, now, now),
+                )
 
         record = self.get_by_user_id(user_id)
         if not record:
