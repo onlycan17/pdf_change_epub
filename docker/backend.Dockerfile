@@ -38,6 +38,9 @@ RUN apt-get update && apt-get install -y \
     libssl3 \
     libxml2 \
     libxslt1.1 \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    tesseract-ocr-kor \
     && rm -rf /var/lib/apt/lists/*
 
 # 빌더 단계에서 패키지 복사
