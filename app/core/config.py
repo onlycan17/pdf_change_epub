@@ -1,5 +1,6 @@
 import os
 from typing import Optional, List
+from urllib.parse import urlparse
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_FILE = ".env"
@@ -284,6 +285,18 @@ class Settings(BaseSettings):
             "APP_BILLING_ENABLED", str(self.billing_enabled)
         ).lower() in ("true", "1", "yes", "on")
 
+        self.celery_broker_url = os.getenv(
+            "CELERY_BROKER_URL",
+            os.getenv("APP_CELERY_BROKER_URL", self.celery_broker_url),
+        )
+        self.celery_result_backend = os.getenv(
+            "CELERY_RESULT_BACKEND",
+            os.getenv(
+                "CELERY_BACKEND_URL",
+                os.getenv("APP_CELERY_RESULT_BACKEND", self.celery_result_backend),
+            ),
+        )
+
         self.google_client_id = os.getenv("APP_GOOGLE_CLIENT_ID", self.google_client_id)
         self.openrouter_api_key = os.getenv(
             "OPENROUTER_API_KEY", self.openrouter_api_key
@@ -292,6 +305,20 @@ class Settings(BaseSettings):
         # 중첩된 설정 업데이트
         self.database = DatabaseSettings()
         self.redis = RedisSettings()
+        raw_redis_url = os.getenv("REDIS_URL")
+        if raw_redis_url:
+            try:
+                parsed = urlparse(raw_redis_url)
+                if parsed.scheme.startswith("redis") and parsed.hostname:
+                    self.redis.host = parsed.hostname
+                    if parsed.port is not None:
+                        self.redis.port = int(parsed.port)
+                    if parsed.password:
+                        self.redis.password = parsed.password
+                    if parsed.path and parsed.path.strip("/"):
+                        self.redis.db = int(parsed.path.strip("/"))
+            except Exception:
+                pass
         self.ocr = OCRSettings()
         self.llm = LLMSettings()
         if not self.llm.api_key and self.openrouter_api_key:

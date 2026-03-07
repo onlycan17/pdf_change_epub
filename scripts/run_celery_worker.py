@@ -22,15 +22,21 @@ def main():
     try:
         # Celery 앱 가져오기
         from app.celery_config import celery_app
-        
-        # Worker 실행
-        logger.info("Starting Celery Worker...")
-        celery_app.start([
+
+        worker_args = [
             'worker',
             '--loglevel=info',
             '--concurrency=4',
-            '--hostname=worker@%h'
-        ])
+            '--hostname=worker@%h',
+        ]
+
+        pidfile = os.getenv('CELERY_WORKER_PIDFILE', '').strip()
+        if pidfile:
+            worker_args.extend(['--pidfile', pidfile])
+        
+        # Worker 실행
+        logger.info("Starting Celery Worker...")
+        celery_app.start(worker_args)
         
     except Exception as e:
         logger.error(f"Failed to start Celery Worker: {e}")

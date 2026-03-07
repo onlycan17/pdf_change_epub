@@ -11,15 +11,13 @@ BACKEND_PORT="8000"
 FRONTEND_PORT="3000"
 SKIP_INFRA="${SKIP_INFRA:-0}"
 REQUIRE_INFRA="${REQUIRE_INFRA:-0}"
+RUN_CELERY_WORKER="${RUN_CELERY_WORKER:-1}"
+CELERY_WORKER_PID=""
+CELERY_WORKER_PIDFILE="${ROOT_DIR}/.tmp/dev_celery_worker.pid"
 
 run_compose() {
-  if command -v docker-compose >/dev/null 2>&1; then
-    (cd "${ROOT_DIR}" && docker-compose "$@")
-    return 0
-  fi
-
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    (cd "${ROOT_DIR}" && docker compose "$@")
+  if [ -x "${ROOT_DIR}/scripts/compose.sh" ]; then
+    "${ROOT_DIR}/scripts/compose.sh" "$@"
     return 0
   fi
 
@@ -39,6 +37,25 @@ if ! command -v npm >/dev/null 2>&1; then
   echo "[오류] npm이 필요합니다."
   exit 1
 fi
+
+is_redis_reachable() {
+  local host="${1:-127.0.0.1}"
+  local port="${2:-6379}"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - <<PY
+import socket
+import sys
+try:
+    with socket.create_connection(("${host}", int("${port}")), timeout=1):
+        sys.exit(0)
+except Exception:
+    sys.exit(1)
+PY
+    return $?
+  fi
+
+  return 1
+}
 
 echo "[1/5] 백엔드 가상환경 준비"
 if [ ! -d "${VENV_DIR}" ]; then
@@ -78,14 +95,38 @@ echo "[4/5] 백엔드 서버 실행"
 ) &
 BACKEND_PID=$!
 
+if [ "${RUN_CELERY_WORKER}" = "1" ]; then
+  if [ "${SKIP_INFRA}" = "1" ] && ! is_redis_reachable "127.0.0.1" "6379"; then
+    echo "[경고] Redis 연결을 확인할 수 없어 Celery 워커 실행을 건너뜁니다."
+    echo "[경고] OCR/비동기 변환은 대기열에서 멈출 수 있습니다."
+  else
+    echo "[5/6] Celery 워커 실행"
+    mkdir -p "${ROOT_DIR}/.tmp"
+    rm -f "${CELERY_WORKER_PIDFILE}"
+    (
+      cd "${ROOT_DIR}"
+      export PYTHONPATH="${ROOT_DIR}:${PYTHONPATH:-}"
+      export CELERY_WORKER_PIDFILE="${CELERY_WORKER_PIDFILE}"
+      python "${ROOT_DIR}/scripts/run_celery_worker.py"
+    ) &
+    CELERY_WORKER_PID=$!
+  fi
+else
+  echo "[정보] RUN_CELERY_WORKER=0 설정으로 Celery 워커 실행을 건너뜁니다."
+fi
+
 cleanup() {
   if kill -0 "${BACKEND_PID}" >/dev/null 2>&1; then
     kill "${BACKEND_PID}" >/dev/null 2>&1 || true
   fi
+  if [ -n "${CELERY_WORKER_PID}" ] && kill -0 "${CELERY_WORKER_PID}" >/dev/null 2>&1; then
+    kill "${CELERY_WORKER_PID}" >/dev/null 2>&1 || true
+  fi
+  rm -f "${CELERY_WORKER_PIDFILE}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
-echo "[5/5] 프론트엔드 개발 서버 실행"
+echo "[6/6] 프론트엔드 개발 서버 실행"
 echo "브라우저 접속: http://localhost:${FRONTEND_PORT}"
 echo "백엔드 API: http://localhost:${BACKEND_PORT}"
 cd "${FRONTEND_DIR}"
