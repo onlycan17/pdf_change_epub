@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock
 
 from app.services.async_queue_service import AsyncQueueService
 from app.services.conversion_orchestrator import ConversionJob, JobState
@@ -13,6 +14,7 @@ class TestAsyncQueueService:
         service = AsyncQueueService()
         with patch.object(service.celery_app.control, "inspect") as inspect:
             inspect.return_value.stats.return_value = {"w1": {}}
+            inspect.return_value.ping.return_value = {"w1": {"ok": "pong"}}
             await service.initialize()
             assert service._initialized is True
 
@@ -20,7 +22,6 @@ class TestAsyncQueueService:
     async def test_start_conversion_enqueues_task_and_stores_job(self):
         service = AsyncQueueService()
         service._initialized = True
-        from unittest.mock import AsyncMock
 
         service.store = AsyncMock()
         service.celery_app = MagicMock()
@@ -50,8 +51,6 @@ class TestAsyncQueueService:
             state=JobState.PENDING,
             progress=0,
         )
-        from unittest.mock import AsyncMock
-
         service.store = AsyncMock()
         service.store.get.return_value = job
 
@@ -68,6 +67,117 @@ class TestAsyncQueueService:
         service.store.update.assert_called()
 
     @pytest.mark.asyncio
+    async def test_get_status_applies_progress_payload_from_celery(self):
+        service = AsyncQueueService()
+        service._initialized = True
+        job = ConversionJob(
+            conversion_id="cid-progress",
+            filename="progress.pdf",
+            file_size=10,
+            ocr_enabled=True,
+            state=JobState.PENDING,
+            progress=0,
+            current_step="queued",
+        )
+        await service.store.create(job)
+
+        async_result = MagicMock()
+        async_result.state = "PROGRESS"
+        async_result.info = {
+            "job": {
+                "conversion_id": "cid-progress",
+                "filename": "progress.pdf",
+                "file_size": 10,
+                "ocr_enabled": True,
+                "translate_to_korean": False,
+                "state": "processing",
+                "progress": 72,
+                "message": "OCR/LLM 처리 중 (8/11)",
+                "created_at": job.created_at,
+                "updated_at": job.updated_at,
+                "current_step": "ocr_llm",
+                "steps": [
+                    {
+                        "name": "analyze",
+                        "progress": 5,
+                        "message": "PDF 유형 분석 중",
+                    },
+                    {
+                        "name": "ocr_llm",
+                        "progress": 72,
+                        "message": "OCR/LLM 처리 중 (8/11)",
+                    },
+                ],
+                "result_path": None,
+                "error_message": None,
+                "llm_used_model": None,
+                "llm_attempt_count": 0,
+                "llm_fallback_used": False,
+                "attempts": 1,
+                "celery_task_id": "task-progress",
+            }
+        }
+
+        service.celery_app = MagicMock()
+        service.celery_app.AsyncResult.return_value = async_result
+        job.celery_task_id = "task-progress"
+
+        result = await service.get_status("cid-progress")
+
+        assert result.progress == 72
+        assert result.current_step == "ocr_llm"
+        assert result.state == JobState.PROCESSING
+        assert len(result.steps) == 2
+        assert result.celery_task_id == "task-progress"
+
+    @pytest.mark.asyncio
+    async def test_get_status_progress_payload_does_not_clear_existing_celery_task_id(self):
+        service = AsyncQueueService()
+        service._initialized = True
+        job = ConversionJob(
+            conversion_id="cid-keep-task",
+            filename="progress.pdf",
+            file_size=10,
+            ocr_enabled=True,
+            state=JobState.PENDING,
+            progress=0,
+            current_step="queued",
+        )
+        job.celery_task_id = "task-keep"
+        await service.store.create(job)
+
+        async_result = MagicMock()
+        async_result.state = "PROGRESS"
+        async_result.info = {
+            "job": {
+                "conversion_id": "cid-keep-task",
+                "filename": "progress.pdf",
+                "file_size": 10,
+                "ocr_enabled": True,
+                "translate_to_korean": False,
+                "state": "processing",
+                "progress": 15,
+                "message": "분석 중",
+                "created_at": job.created_at,
+                "updated_at": job.updated_at,
+                "current_step": "analyze",
+                "steps": [],
+                "result_path": None,
+                "error_message": None,
+                "llm_used_model": None,
+                "llm_attempt_count": 0,
+                "llm_fallback_used": False,
+                "attempts": 1,
+            }
+        }
+        service.celery_app = MagicMock()
+        service.celery_app.AsyncResult.return_value = async_result
+
+        result = await service.get_status("cid-keep-task")
+
+        assert result.celery_task_id == "task-keep"
+
+    @pytest.mark.asyncio
     async def test_cancel_conversion_revokes_celery_and_updates_store(self):
         service = AsyncQueueService()
         service._initialized = True
@@ -80,8 +190,6 @@ class TestAsyncQueueService:
             progress=10,
         )
         job.celery_task_id = "celery-task-1"
-        from unittest.mock import AsyncMock
-
         service.store = AsyncMock()
         service.store.get.return_value = job
         service.celery_app = MagicMock()
@@ -140,5 +248,78 @@ class TestAsyncQueueService:
                 filename="retry.pdf",
                 file_size=len(source_pdf),
                 ocr_enabled=True,
+                translate_to_korean=False,
                 pdf_bytes=source_pdf,
             )
+
+    @pytest.mark.asyncio
+    async def test_retry_conversion_resets_status_before_requeue(self):
+        service = AsyncQueueService()
+        service._initialized = True
+        service.use_celery = True
+        job = ConversionJob(
+            conversion_id="cid-reset",
+            filename="retry.pdf",
+            file_size=12,
+            ocr_enabled=True,
+            state=JobState.CANCELLED,
+            progress=44,
+            current_step="failed",
+        )
+        job.celery_task_id = "old-task"
+
+        await service.store.create(job)
+        service.celery_app = MagicMock()
+        service.celery_app.send_task.return_value.id = "new-task"
+
+        with patch("app.services.async_queue_service.Path.exists", return_value=True), patch(
+            "app.services.async_queue_service.Path.write_bytes"
+        ), patch("app.services.async_queue_service.Path.read_bytes", return_value=b"%PDF-1.4"):
+            result = await service.retry_conversion("cid-reset")
+
+        refreshed = await service.get_status("cid-reset")
+        assert result.celery_task_id == "new-task"
+        assert refreshed.celery_task_id == "new-task"
+        assert refreshed.state == JobState.PENDING
+        assert refreshed.progress == 0
+        assert refreshed.current_step == "queued"
+        assert refreshed.error_message is None
+        service.celery_app.control.revoke.assert_called_once_with("old-task", terminate=True)
+
+    @pytest.mark.asyncio
+    async def test_initialize_force_recovers_to_celery_after_transient_fallback(self):
+        service = AsyncQueueService()
+        service._initialized = True
+        service.use_celery = False
+        service.store = service.orchestrator.store
+
+        with patch.object(service.celery_app.control, "inspect") as inspect:
+            inspect.return_value.stats.return_value = {"w1": {}}
+            inspect.return_value.ping.return_value = {"w1": {"ok": "pong"}}
+            await service.initialize(force=True)
+
+        assert service.use_celery is True
+        assert service.store is not service.orchestrator.store
+
+    @pytest.mark.asyncio
+    async def test_get_status_falls_back_to_orchestrator_store_for_direct_mode_job(self):
+        service = AsyncQueueService()
+        service._initialized = True
+        service.use_celery = True
+        service.store = AsyncMock()
+        service.store.get.side_effect = KeyError("Job not found")
+
+        direct_job = ConversionJob(
+            conversion_id="cid-direct",
+            filename="direct.pdf",
+            file_size=10,
+            ocr_enabled=True,
+            state=JobState.PROCESSING,
+            progress=55,
+            current_step="ocr_llm",
+        )
+        await service.orchestrator.store.create(direct_job)
+
+        result = await service.get_status("cid-direct")
+
+        assert result is direct_job

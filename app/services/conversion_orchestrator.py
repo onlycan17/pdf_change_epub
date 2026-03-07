@@ -12,7 +12,7 @@ from enum import Enum
 from html import escape
 from io import BytesIO
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -85,6 +85,97 @@ class ConversionJob:
 
     def is_cancelled(self) -> bool:
         return self._cancel_event.is_set()
+
+
+JobStatusCallback = Callable[["ConversionJob"], Awaitable[None]]
+
+
+def serialize_job_status(job: ConversionJob) -> Dict[str, Any]:
+    """Serialize a conversion job into a JSON-safe status payload."""
+
+    payload = {
+        "conversion_id": job.conversion_id,
+        "filename": job.filename,
+        "file_size": job.file_size,
+        "ocr_enabled": job.ocr_enabled,
+        "translate_to_korean": job.translate_to_korean,
+        "state": getattr(job.state, "value", job.state),
+        "progress": job.progress,
+        "message": job.message,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "current_step": job.current_step,
+        "steps": [
+            {
+                "name": step.name,
+                "progress": step.progress,
+                "message": step.message,
+            }
+            for step in job.steps
+        ],
+        "result_path": job.result_path,
+        "error_message": job.error_message,
+        "llm_used_model": job.llm_used_model,
+        "llm_attempt_count": job.llm_attempt_count,
+        "llm_fallback_used": job.llm_fallback_used,
+        "attempts": job.attempts,
+    }
+
+    if isinstance(job.celery_task_id, str) and job.celery_task_id:
+        payload["celery_task_id"] = job.celery_task_id
+
+    return payload
+
+
+def apply_serialized_job_status(job: ConversionJob, payload: Dict[str, Any]) -> ConversionJob:
+    """Apply a serialized status payload onto an existing job instance."""
+
+    state_value = payload.get("state")
+    if isinstance(state_value, str):
+        try:
+            job.state = JobState(state_value)
+        except ValueError:
+            pass
+
+    for attr in (
+        "filename",
+        "file_size",
+        "ocr_enabled",
+        "translate_to_korean",
+        "progress",
+        "message",
+        "created_at",
+        "updated_at",
+        "current_step",
+        "result_path",
+        "error_message",
+        "llm_used_model",
+        "llm_attempt_count",
+        "llm_fallback_used",
+        "attempts",
+        "celery_task_id",
+    ):
+        if attr == "celery_task_id":
+            value = payload.get(attr)
+            if isinstance(value, str) and value:
+                setattr(job, attr, value)
+            continue
+        if attr in payload:
+            setattr(job, attr, payload[attr])
+
+    raw_steps = payload.get("steps")
+    if isinstance(raw_steps, list):
+        job.steps = [
+            JobStep(
+                name=str(step.get("name", "")),
+                progress=int(step.get("progress", 0)),
+                message=str(step.get("message", "")),
+            )
+            for step in raw_steps
+            if isinstance(step, dict)
+        ]
+
+    return job
 
 
 class ConversionJobStore:
@@ -165,6 +256,36 @@ class ConversionOrchestrator:
         asyncio.create_task(self._run_pipeline(job.conversion_id, pdf_bytes))
         return job
 
+    async def run_to_completion(
+        self,
+        *,
+        conversion_id: str,
+        filename: str,
+        file_size: int,
+        ocr_enabled: bool,
+        translate_to_korean: bool = False,
+        pdf_bytes: bytes,
+        status_callback: Optional[JobStatusCallback] = None,
+    ) -> ConversionJob:
+        job = ConversionJob(
+            conversion_id=conversion_id,
+            filename=filename,
+            file_size=file_size,
+            ocr_enabled=ocr_enabled,
+            translate_to_korean=translate_to_korean,
+            source_pdf_bytes=pdf_bytes,
+            state=JobState.PENDING,
+            progress=0,
+            current_step="queued",
+        )
+        await self.store.create(job)
+        await self._run_pipeline(
+            conversion_id,
+            pdf_bytes,
+            status_callback=status_callback,
+        )
+        return await self.store.get(conversion_id)
+
     async def retry(self, conversion_id: str, force: bool = False) -> ConversionJob:
         """실패한 작업 재시도(수동 호출).
 
@@ -199,8 +320,19 @@ class ConversionOrchestrator:
     async def cancel(self, conversion_id: str) -> None:
         await self.store.cancel(conversion_id)
 
-    async def _run_pipeline(self, conversion_id: str, pdf_bytes: bytes) -> None:
+    async def _run_pipeline(
+        self,
+        conversion_id: str,
+        pdf_bytes: bytes,
+        status_callback: Optional[JobStatusCallback] = None,
+    ) -> None:
         # 공통 업데이트 헬퍼
+        async def publish_status() -> None:
+            if status_callback is None:
+                return
+            job_snapshot = await self.store.get(conversion_id)
+            await status_callback(job_snapshot)
+
         async def set_step(step: str, progress: int, message: str = "") -> None:
             job = await self.store.get(conversion_id)
             job.steps.append(JobStep(name=step, progress=progress, message=message))
@@ -213,12 +345,19 @@ class ConversionOrchestrator:
                 state=JobState.PROCESSING,
                 message=message,
             )
+            await publish_status()
 
         try:
             # increment attempt counter for monitoring
             job = await self.store.get(conversion_id)
             job.attempts += 1
-            await self.store.update(conversion_id, message=f"시도 #{job.attempts}")
+            await self.store.update(
+                conversion_id,
+                state=JobState.PROCESSING,
+                current_step="started",
+                message=f"시도 #{job.attempts}",
+            )
+            await publish_status()
             # 1) 분석
             await set_step("analyze", 5, "PDF 유형 분석 중")
             analysis = self.pdf_analyzer.analyze_pdf(pdf_bytes)
@@ -321,7 +460,21 @@ class ConversionOrchestrator:
                     create_scan_pdf_processor,
                 )
 
-                processor = await create_scan_pdf_processor(self.settings)
+                async def on_scan_progress(processed_tasks: int, total_tasks: int) -> None:
+                    if total_tasks <= 0:
+                        return
+                    progress_delta = int((processed_tasks / total_tasks) * 24)
+                    scan_progress = min(79, 55 + progress_delta)
+                    await set_step(
+                        "ocr_llm",
+                        scan_progress,
+                        f"OCR/LLM 처리 중 ({processed_tasks}/{total_tasks})",
+                    )
+
+                processor = await create_scan_pdf_processor(
+                    self.settings,
+                    progress_callback=on_scan_progress,
+                )
                 synthesis = await processor.process_scanned_pdf(pdf_bytes)
                 synthesis_markdown = clean_text_for_epub_body(
                     synthesis.markdown_content
@@ -431,6 +584,7 @@ class ConversionOrchestrator:
                 message="변환 완료",
                 current_step="completed",
             )
+            await publish_status()
 
         except Exception as e:
             logger.error("변환 파이프라인 실패", exc_info=True)
@@ -452,6 +606,7 @@ class ConversionOrchestrator:
                     state=JobState.PENDING,
                     message=f"에러 발생, 자동 재시도 대기중 (backoff {backoff}s)",
                 )
+                await publish_status()
                 await asyncio.sleep(backoff)
                 asyncio.create_task(self._run_pipeline(conversion_id, pdf_bytes))
                 return
@@ -464,6 +619,7 @@ class ConversionOrchestrator:
                 error_message=str(e),
                 current_step="failed",
             )
+            await publish_status()
 
     def _build_epub_image_assets(
         self, pdf_bytes: bytes

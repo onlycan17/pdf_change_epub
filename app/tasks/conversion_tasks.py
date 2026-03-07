@@ -16,7 +16,9 @@ from app.services.async_queue_service import (
     get_async_queue_service,
 )
 from app.services.conversion_orchestrator import (
+    serialize_job_status,
     get_orchestrator,
+    JobState,
 )
 
 # Use concurrent.futures instead of asgiref.sync for better compatibility
@@ -59,6 +61,10 @@ def async_to_sync(func):
 logger = logging.getLogger(__name__)
 
 
+def _task_meta_from_job(job: Any) -> Dict[str, Any]:
+    return {"job": serialize_job_status(job)}
+
+
 def _decode_pdf_bytes(pdf_bytes: Any) -> bytes:
     """Decode PDF bytes from hex string or return as-is if already bytes."""
     if isinstance(pdf_bytes, str):
@@ -82,7 +88,8 @@ def start_conversion(
     filename: str,
     file_size: int,
     ocr_enabled: bool,
-    pdf_bytes: str,
+    pdf_bytes: str = "",
+    pdf_path: str = "",
     translate_to_korean: bool = False,
 ) -> Dict[str, Any]:
     """Start PDF to EPUB conversion task.
@@ -103,33 +110,62 @@ def start_conversion(
     """
     orch = get_orchestrator()
     try:
-        raw = _decode_pdf_bytes(pdf_bytes)
+        if pdf_path:
+            with open(pdf_path, "rb") as f:
+                raw = f.read()
+        elif pdf_bytes:
+            raw = _decode_pdf_bytes(pdf_bytes)
+        else:
+            raise ValueError("Missing pdf_bytes or pdf_path")
         logger.info(
             "Starting conversion task",
             extra={
                 "conversion_id": conversion_id,
-                "filename": filename,
+                "source_filename": filename,
                 "file_size": file_size,
                 "ocr_enabled": ocr_enabled,
                 "translate_to_korean": translate_to_korean,
             },
         )
+        task_id = getattr(self.request, "id", None)
 
-        job = async_to_sync(orch.start)(
+        async def publish_task_state(job: Any) -> None:
+            if not isinstance(task_id, str) or not task_id:
+                return
+            job.celery_task_id = task_id
+            self.update_state(
+                task_id=task_id,
+                state="PROGRESS",
+                meta=_task_meta_from_job(job),
+            )
+
+        job = async_to_sync(orch.run_to_completion)(
             conversion_id=conversion_id,
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
             translate_to_korean=translate_to_korean,
             pdf_bytes=raw,
+            status_callback=publish_task_state,
         )
+
+        if job.state == JobState.FAILED:
+            raise RuntimeError(job.error_message or "Conversion failed")
 
         logger.info(
             "Conversion task started successfully",
             extra={"conversion_id": conversion_id, "state": job.state},
         )
 
-        return {"conversion_id": job.conversion_id, "state": job.state}
+        return {
+            "conversion_id": job.conversion_id,
+            "state": job.state.value,
+            "progress": job.progress,
+            "message": job.message,
+            "current_step": job.current_step,
+            "result_path": job.result_path,
+            "job": serialize_job_status(job),
+        }
 
     except ValueError as exc:
         # Handle specific validation errors without retry

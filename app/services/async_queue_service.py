@@ -9,10 +9,12 @@ import logging
 from typing import Any, Dict, Optional
 from datetime import datetime, timezone
 import os
+from pathlib import Path
 
 from app.core.config import get_settings
 from app.celery_config import celery_app
 from app.services.conversion_orchestrator import (
+    apply_serialized_job_status,
     ConversionJob,
     JobState,
     ConversionJobStore,
@@ -29,21 +31,32 @@ class AsyncQueueService:
         self.settings = get_settings()
         self.celery_app = celery_app
         self.orchestrator = get_orchestrator(self.settings)
-        self.use_celery = os.getenv("APP_USE_CELERY", "true").strip().lower() not in (
+        self._celery_requested = os.getenv("APP_USE_CELERY", "true").strip().lower() not in (
             "0",
             "false",
         )
+        self.use_celery = self._celery_requested
         self.store = (
             ConversionJobStore() if self.use_celery else self.orchestrator.store
         )
         self._initialized = False
 
-    async def initialize(self) -> None:
+    def _activate_direct_mode(self) -> None:
+        self.use_celery = False
+        self.store = self.orchestrator.store
+
+    def _activate_celery_mode(self) -> None:
+        self.use_celery = True
+        if self.store is self.orchestrator.store:
+            self.store = ConversionJobStore()
+
+    async def initialize(self, force: bool = False) -> None:
         """서비스 초기화"""
-        if self._initialized:
+        if self._initialized and not force:
             return
 
-        if not self.use_celery:
+        if not self._celery_requested:
+            self._activate_direct_mode()
             logger.info("직접 실행 모드로 동작합니다 (Celery 비활성화)")
             self._initialized = True
             return
@@ -53,18 +66,100 @@ class AsyncQueueService:
             # Celery 워커 상태 확인
             inspect = self.celery_app.control.inspect()
             stats = inspect.stats()
-            if stats:
-                logger.info("Celery 워커 연결 성공", extra={"worker_count": len(stats)})
+            ping = inspect.ping()
+            if stats and ping:
+                self._activate_celery_mode()
+                logger.info(
+                    "Celery 워커 연결 성공",
+                    extra={"worker_count": len(stats)},
+                )
             else:
-                raise RuntimeError("Celery 워커가 연결되지 않았습니다")
+                raise RuntimeError("Celery 워커 응답을 확인할 수 없습니다")
         except Exception:
             logger.warning(
                 "Celery 연결 실패로 직접 실행 모드로 전환합니다", exc_info=True
             )
-            self.use_celery = False
-            self.store = self.orchestrator.store
+            self._activate_direct_mode()
 
         self._initialized = True
+
+    async def _ensure_runtime_mode(self) -> None:
+        if not self._initialized:
+            await self.initialize()
+            return
+
+        if self._celery_requested and not self.use_celery:
+            await self.initialize(force=True)
+
+    async def _get_job_from_available_stores(
+        self, conversion_id: str
+    ) -> Optional[ConversionJob]:
+        stores = [self.store]
+        if self.store is not self.orchestrator.store:
+            stores.append(self.orchestrator.store)
+
+        for store in stores:
+            try:
+                return await store.get(conversion_id)
+            except KeyError:
+                continue
+
+        return None
+
+    @staticmethod
+    def _extract_celery_job_payload(result: Any) -> Optional[Dict[str, Any]]:
+        info = getattr(result, "info", None)
+        if isinstance(info, dict):
+            job_payload = info.get("job")
+            if isinstance(job_payload, dict):
+                return job_payload
+        result_payload = getattr(result, "result", None)
+        if isinstance(result_payload, dict):
+            job_payload = result_payload.get("job")
+            if isinstance(job_payload, dict):
+                return job_payload
+        return None
+
+    async def _apply_celery_job_payload(
+        self,
+        conversion_id: str,
+        payload: Dict[str, Any],
+        existing_job: Optional[ConversionJob] = None,
+    ) -> ConversionJob:
+        job = existing_job or await self._get_job_from_available_stores(conversion_id)
+        if job is None:
+            job = ConversionJob(
+                conversion_id=conversion_id,
+                filename=str(payload.get("filename", "")),
+                file_size=int(payload.get("file_size", 0)),
+                ocr_enabled=bool(payload.get("ocr_enabled", False)),
+                translate_to_korean=bool(payload.get("translate_to_korean", False)),
+            )
+            await self.store.create(job)
+
+        apply_serialized_job_status(job, payload)
+        await self.store.update(
+            conversion_id,
+            filename=job.filename,
+            file_size=job.file_size,
+            ocr_enabled=job.ocr_enabled,
+            translate_to_korean=job.translate_to_korean,
+            state=job.state,
+            progress=job.progress,
+            message=job.message,
+            created_at=job.created_at,
+            updated_at=job.updated_at,
+            current_step=job.current_step,
+            steps=job.steps,
+            result_path=job.result_path,
+            error_message=job.error_message,
+            llm_used_model=job.llm_used_model,
+            llm_attempt_count=job.llm_attempt_count,
+            llm_fallback_used=job.llm_fallback_used,
+            attempts=job.attempts,
+            celery_task_id=job.celery_task_id,
+        )
+        return job
 
     async def start_conversion(
         self,
@@ -88,8 +183,7 @@ class AsyncQueueService:
         Returns:
             ConversionJob: 생성된 작업 정보
         """
-        if not self._initialized:
-            await self.initialize()
+        await self._ensure_runtime_mode()
 
         if not self.use_celery:
             return await self.orchestrator.start(
@@ -108,7 +202,7 @@ class AsyncQueueService:
             file_size=file_size,
             ocr_enabled=ocr_enabled,
             translate_to_korean=translate_to_korean,
-            source_pdf_bytes=pdf_bytes,
+            source_pdf_bytes=None,
             state=JobState.PENDING,
             progress=0,
             current_step="queued",
@@ -117,6 +211,11 @@ class AsyncQueueService:
 
         # Celery 작업 큐에 등록
         try:
+            uploads_dir = Path("./uploads")
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            pdf_path = uploads_dir / f"{conversion_id}.pdf"
+            pdf_path.write_bytes(pdf_bytes)
+
             task = self.celery_app.send_task(
                 "app.tasks.conversion_tasks.start_conversion",
                 kwargs={
@@ -125,10 +224,8 @@ class AsyncQueueService:
                     "file_size": file_size,
                     "ocr_enabled": ocr_enabled,
                     "translate_to_korean": translate_to_korean,
-                    "pdf_bytes": pdf_bytes.hex(),  # 바이트 데이터를 16진수 문자열로 변환
+                    "pdf_path": str(pdf_path),
                 },
-                task_id=conversion_id,
-                task_queue="conversion",
             )
 
             # 작업 ID 저장
@@ -152,7 +249,16 @@ class AsyncQueueService:
                 message=f"작업 등록 실패: {str(e)}",
                 error_message=str(e),
             )
-            raise
+            self.use_celery = False
+            self.store = self.orchestrator.store
+            return await self.orchestrator.start(
+                conversion_id=conversion_id,
+                filename=filename,
+                file_size=file_size,
+                ocr_enabled=ocr_enabled,
+                translate_to_korean=translate_to_korean,
+                pdf_bytes=pdf_bytes,
+            )
 
         return job
 
@@ -165,50 +271,102 @@ class AsyncQueueService:
         Returns:
             ConversionJob: 작업 상태 정보
         """
-        if not self._initialized:
-            await self.initialize()
+        await self._ensure_runtime_mode()
 
         if not self.use_celery:
             return await self.orchestrator.status(conversion_id)
 
-        job = await self.store.get(conversion_id)
+        job = await self._get_job_from_available_stores(conversion_id)
+        if job is None:
+            raise KeyError("Job not found")
 
         # Celery 작업 상태 확인
         if job.celery_task_id:
             try:
                 result = self.celery_app.AsyncResult(job.celery_task_id)
-                if result.state == "PROGRESS":
-                    # 진행률 업데이트
-                    if hasattr(result.info, "progress"):
-                        await self.store.update(
-                            conversion_id,
-                            progress=result.info.progress,
-                            message=result.info.get("message", ""),
-                        )
+                payload = self._extract_celery_job_payload(result)
+                if payload is not None:
+                    job = await self._apply_celery_job_payload(
+                        conversion_id,
+                        payload,
+                        existing_job=job,
+                    )
+
+                if result.state in {"PROGRESS", "STARTED"}:
+                    if payload is None:
+                        state = JobState.PROCESSING
+                        if result.state == "PROGRESS":
+                            await self.store.update(
+                                conversion_id,
+                                state=state,
+                                message="변환 처리 중",
+                            )
+                        else:
+                            await self.store.update(
+                                conversion_id,
+                                state=state,
+                                current_step=job.current_step or "started",
+                                message=job.message or "변환 처리 시작",
+                            )
+                        job = await self._get_job_from_available_stores(conversion_id) or job
+                elif result.state == "RETRY":
+                    await self.store.update(
+                        conversion_id,
+                        state=JobState.PENDING,
+                        current_step=job.current_step or "retrying",
+                        message=job.message or "작업 재시도 대기중",
+                    )
+                    job = await self._get_job_from_available_stores(conversion_id) or job
                 elif result.state == "SUCCESS":
                     # 작업 완료
+                    payload = result.result
+                    result_bytes: Optional[bytes] = getattr(job, "result_bytes", None)
+                    result_path: Optional[str] = getattr(job, "result_path", None)
+                    if isinstance(payload, (bytes, bytearray)):
+                        result_bytes = bytes(payload)
+                    elif isinstance(payload, dict):
+                        candidate = payload.get("result_path")
+                        if isinstance(candidate, str) and candidate:
+                            result_path = candidate
+                            try:
+                                result_bytes = Path(result_path).read_bytes()
+                            except Exception:
+                                logger.warning(
+                                    "결과 파일을 읽지 못해 기존 result_bytes를 유지합니다",
+                                    extra={
+                                        "conversion_id": conversion_id,
+                                        "result_path": result_path,
+                                    },
+                                )
                     await self.store.update(
                         conversion_id,
                         state=JobState.COMPLETED,
                         progress=100,
-                        message="변환 완료",
-                        result_bytes=result.result,
+                        message=(job.message or "변환 완료"),
+                        current_step=(job.current_step or "completed"),
+                        result_bytes=result_bytes,
+                        result_path=result_path or job.result_path,
                     )
+                    job = await self._get_job_from_available_stores(conversion_id) or job
                 elif result.state == "FAILURE":
                     # 작업 실패
                     await self.store.update(
                         conversion_id,
                         state=JobState.FAILED,
-                        message=f"작업 실패: {str(result.result)}",
-                        error_message=str(result.result),
+                        current_step="failed",
+                        message=job.message or f"작업 실패: {str(result.result)}",
+                        error_message=job.error_message or str(result.result),
                     )
+                    job = await self._get_job_from_available_stores(conversion_id) or job
                 elif result.state == "REVOKED":
                     # 작업 취소
                     await self.store.update(
                         conversion_id,
                         state=JobState.CANCELLED,
+                        current_step="cancelled",
                         message="작업이 취소되었습니다",
                     )
+                    job = await self._get_job_from_available_stores(conversion_id) or job
             except Exception as e:
                 logger.error(
                     "Celery 작업 상태 확인 실패",
@@ -226,8 +384,7 @@ class AsyncQueueService:
         Returns:
             bool: 취소 성공 여부
         """
-        if not self._initialized:
-            await self.initialize()
+        await self._ensure_runtime_mode()
 
         if not self.use_celery:
             try:
@@ -240,14 +397,19 @@ class AsyncQueueService:
                 return False
 
         try:
-            job = await self.store.get(conversion_id)
+            job = await self._get_job_from_available_stores(conversion_id)
+            if job is None:
+                raise KeyError
 
             # Celery 작업 취소
             if job.celery_task_id:
                 self.celery_app.control.revoke(job.celery_task_id, terminate=True)
 
             # 로컬 상태 업데이트
-            await self.store.cancel(conversion_id)
+            target_store = self.store
+            if self.store is not self.orchestrator.store and job.celery_task_id is None:
+                target_store = self.orchestrator.store
+            await target_store.cancel(conversion_id)
 
             logger.info(
                 "변환 작업이 취소되었습니다",
@@ -274,29 +436,65 @@ class AsyncQueueService:
         Returns:
             ConversionJob: 재시도된 작업 정보
         """
-        if not self._initialized:
-            await self.initialize()
+        await self._ensure_runtime_mode()
 
         if not self.use_celery:
             return await self.orchestrator.retry(conversion_id)
 
-        job = await self.store.get(conversion_id)
+        job = await self._get_job_from_available_stores(conversion_id)
+        if job is None:
+            raise KeyError("Job not found")
 
         if job.state not in (JobState.FAILED, JobState.CANCELLED):
             raise ValueError("재시도 가능한 상태가 아닙니다")
 
         # 기존 Celery 작업 ID 초기화
+        previous_task_id = job.celery_task_id
+        if previous_task_id:
+            self.celery_app.control.revoke(previous_task_id, terminate=True)
         job.celery_task_id = None
-        await self.store.update(conversion_id, celery_task_id=None)
+        await self.store.update(
+            conversion_id,
+            celery_task_id=None,
+            state=JobState.PENDING,
+            progress=0,
+            current_step="queued",
+            message="재시도 대기중",
+            error_message=None,
+            result_path=None,
+            result_bytes=None,
+            steps=[],
+        )
 
         # 새로운 작업 등록
-        return await self.start_conversion(
-            conversion_id=conversion_id,
-            filename=job.filename,
-            file_size=job.file_size,
-            ocr_enabled=job.ocr_enabled,
-            pdf_bytes=job.source_pdf_bytes or b"",
+        if job.source_pdf_bytes:
+            return await self.start_conversion(
+                conversion_id=conversion_id,
+                filename=job.filename,
+                file_size=job.file_size,
+                ocr_enabled=job.ocr_enabled,
+                translate_to_korean=job.translate_to_korean,
+                pdf_bytes=job.source_pdf_bytes,
+            )
+
+        pdf_path = Path("./uploads") / f"{conversion_id}.pdf"
+        if not pdf_path.exists():
+            raise KeyError("PDF file not found")
+
+        task = self.celery_app.send_task(
+            "app.tasks.conversion_tasks.start_conversion",
+            kwargs={
+                "conversion_id": conversion_id,
+                "filename": job.filename,
+                "file_size": job.file_size,
+                "ocr_enabled": job.ocr_enabled,
+                "translate_to_korean": job.translate_to_korean,
+                "pdf_path": str(pdf_path),
+            },
         )
+        job.celery_task_id = task.id
+        await self.store.update(conversion_id, celery_task_id=task.id)
+        return job
 
     async def get_queue_stats(self) -> Dict[str, Any]:
         """큐 통계 정보 조회
@@ -304,8 +502,7 @@ class AsyncQueueService:
         Returns:
             Dict[str, Any]: 큐 통계 정보
         """
-        if not self._initialized:
-            await self.initialize()
+        await self._ensure_runtime_mode()
 
         if not self.use_celery:
             jobs = getattr(self.orchestrator.store, "_jobs", {})
