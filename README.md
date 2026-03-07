@@ -81,6 +81,8 @@ cp .env.example .env
 ```
 `OPENROUTER_API_KEY`를 설정하면 문맥 보정(1차: `deepseek/deepseek-v3.2`, 2차: `nvidia/nemotron-3-nano-30b-a3b`)이 활성화됩니다.
 
+Google 로그인을 사용한다면 백엔드용 `APP_GOOGLE_CLIENT_ID`와 프론트 빌드용 `VITE_GOOGLE_CLIENT_ID`를 함께 설정하세요.
+
 4. 로컬 인프라 실행
 ```bash
 docker-compose up -d db redis

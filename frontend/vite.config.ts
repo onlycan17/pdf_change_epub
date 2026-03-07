@@ -6,7 +6,18 @@ export default defineConfig(({ mode }) => {
   const envDir = '..';
   const rootEnv = loadEnv(mode, envDir, '');
 
-  const googleClientId = rootEnv.VITE_GOOGLE_CLIENT_ID || rootEnv.APP_GOOGLE_CLIENT_ID || '';
+  const googleClientId =
+    rootEnv.VITE_GOOGLE_CLIENT_ID ||
+    process.env.VITE_GOOGLE_CLIENT_ID ||
+    rootEnv.APP_GOOGLE_CLIENT_ID ||
+    process.env.APP_GOOGLE_CLIENT_ID ||
+    '';
+
+  if (mode === 'production' && !googleClientId) {
+    throw new Error(
+      'Missing Google client id for frontend build. Set VITE_GOOGLE_CLIENT_ID (preferred) or APP_GOOGLE_CLIENT_ID in the repo root environment.'
+    );
+  }
 
   return {
     envDir,
