@@ -7,6 +7,7 @@ from app.tasks.conversion_tasks import (
     get_queue_stats,
     health_check,
 )
+from app.services.conversion_orchestrator import JobState
 
 
 class TestConversionTasks:
@@ -23,13 +24,26 @@ class TestConversionTasks:
         # Arrange
         mock_job = MagicMock()
         mock_job.conversion_id = "conv-1"
-        mock_job.state = "pending"
-
-        async def mock_start(**kwargs):
-            return mock_job
+        mock_job.filename = "test.pdf"
+        mock_job.file_size = len(sample_pdf_content)
+        mock_job.ocr_enabled = True
+        mock_job.translate_to_korean = False
+        mock_job.state = JobState.PENDING
+        mock_job.progress = 0
+        mock_job.message = ""
+        mock_job.created_at = "2026-03-07T00:00:00+00:00"
+        mock_job.updated_at = "2026-03-07T00:00:00+00:00"
+        mock_job.current_step = "queued"
+        mock_job.steps = []
+        mock_job.result_path = "results/conv-1.epub"
+        mock_job.error_message = None
+        mock_job.llm_used_model = None
+        mock_job.llm_attempt_count = 0
+        mock_job.llm_fallback_used = False
+        mock_job.attempts = 0
 
         mock_orch = MagicMock()
-        mock_orch.start = AsyncMock(side_effect=mock_start)
+        mock_orch.run_to_completion = AsyncMock(return_value=mock_job)
 
         # conversion_tasks 모듈에서 직접 import 한 get_orchestrator를 패치해야 함
         with patch(
@@ -44,8 +58,35 @@ class TestConversionTasks:
             )
 
         # Assert
-        assert result == {"conversion_id": "conv-1", "state": "pending"}
-        mock_orch.start.assert_awaited_once()
+        assert result == {
+            "conversion_id": "conv-1",
+            "state": "pending",
+            "progress": mock_job.progress,
+            "message": mock_job.message,
+            "current_step": mock_job.current_step,
+            "result_path": "results/conv-1.epub",
+            "job": {
+                "conversion_id": "conv-1",
+                "filename": mock_job.filename,
+                "file_size": mock_job.file_size,
+                "ocr_enabled": mock_job.ocr_enabled,
+                "translate_to_korean": mock_job.translate_to_korean,
+                "state": "pending",
+                "progress": mock_job.progress,
+                "message": mock_job.message,
+                "created_at": mock_job.created_at,
+                "updated_at": mock_job.updated_at,
+                "current_step": mock_job.current_step,
+                "steps": [],
+                "result_path": "results/conv-1.epub",
+                "error_message": mock_job.error_message,
+                "llm_used_model": mock_job.llm_used_model,
+                "llm_attempt_count": mock_job.llm_attempt_count,
+                "llm_fallback_used": mock_job.llm_fallback_used,
+                "attempts": mock_job.attempts,
+            },
+        }
+        mock_orch.run_to_completion.assert_awaited_once()
 
     def test_cleanup_old_jobs_success(self):
         """
