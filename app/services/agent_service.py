@@ -8,7 +8,7 @@ import json
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 
@@ -18,6 +18,13 @@ from app.core.config import Settings, get_settings
 from app.services.pdf_service import PDFAnalyzer, PDFExtractor, PDFType
 
 logger = logging.getLogger(__name__)
+
+
+def _format_exception_message(exc: Exception) -> str:
+    detail = str(exc).strip()
+    if detail:
+        return f"{type(exc).__name__}: {detail}"
+    return repr(exc)
 
 
 class AgentType(Enum):
@@ -191,8 +198,9 @@ class MultimodalLLMAgent(BaseAgent):
             )
 
         except Exception as e:
-            self.logger.error(f"이미지 분석 실패: {str(e)}")
-            raise ValueError(f"이미지 분석 중 오류 발생: {str(e)}")
+            error_detail = _format_exception_message(e)
+            self.logger.exception("이미지 분석 실패: %s", error_detail)
+            raise ValueError(f"이미지 분석 중 오류 발생: {error_detail}") from e
 
     def _build_prompt(self, context: str) -> str:
         """분석 프롬프트 생성"""
@@ -331,8 +339,9 @@ class OCRAgent(BaseAgent):
             )
 
         except Exception as e:
-            self.logger.error(f"OCR 처리 실패: {str(e)}")
-            raise ValueError(f"OCR 처리 중 오류 발생: {str(e)}")
+            error_detail = _format_exception_message(e)
+            self.logger.exception("OCR 처리 실패: %s", error_detail)
+            raise ValueError(f"OCR 처리 중 오류 발생: {error_detail}") from e
 
     async def _run_ocr(self, image_data: bytes) -> Dict[str, Any]:
         """OCR 실행"""
@@ -395,7 +404,7 @@ class OCRAgent(BaseAgent):
             return await loop.run_in_executor(None, _run_tesseract)
 
         except Exception as e:
-            self.logger.error(f"OCR 실행 실패: {str(e)}")
+            self.logger.exception("OCR 실행 실패: %s", _format_exception_message(e))
             return {"text": "", "confidence": 0.0, "bounding_boxes": []}
 
 
@@ -595,9 +604,14 @@ class SynthesisAgent(BaseAgent):
 class ScanPDFProcessor:
     """에이전트 기반 스캔 PDF 처리 오케스트레이터"""
 
-    def __init__(self, settings: Optional[Settings] = None):
+    def __init__(
+        self,
+        settings: Optional[Settings] = None,
+        progress_callback: Optional[Callable[[int, int], Awaitable[None]]] = None,
+    ):
         self.settings = settings or get_settings()
         self.logger = logging.getLogger(__name__)
+        self.progress_callback = progress_callback
 
         # 에이전트 초기화
         self.multimodal_agent: Optional[MultimodalLLMAgent]
@@ -695,8 +709,9 @@ class ScanPDFProcessor:
             return synthesis_result
 
         except Exception as e:
-            self.logger.error(f"스캔 PDF 처리 실패: {str(e)}")
-            raise ValueError(f"스캔 PDF 처리 중 오류 발생: {str(e)}")
+            error_detail = _format_exception_message(e)
+            self.logger.exception("스캔 PDF 처리 실패: %s", error_detail)
+            raise ValueError(f"스캔 PDF 처리 중 오류 발생: {error_detail}") from e
 
     async def _process_images_parallel(
         self, images: List[Dict[str, Any]]
@@ -716,14 +731,25 @@ class ScanPDFProcessor:
                 tasks.append(analysis_task)
                 analysis_scheduled += 1
 
-        # 병렬 실행
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        total_tasks = len(tasks)
+        results = []
+        completed_tasks = 0
+
+        for done in asyncio.as_completed(tasks):
+            try:
+                result = await done
+            except Exception as exc:
+                result = exc
+            results.append(result)
+            completed_tasks += 1
+            if self.progress_callback is not None:
+                await self.progress_callback(completed_tasks, max(1, total_tasks))
 
         # 예외 처리
         processed_results: List[Dict[str, Any]] = []
         for result in results:
             if isinstance(result, Exception):
-                self.logger.warning(f"이미지 처리 실패: {str(result)}")
+                self.logger.warning("이미지 처리 실패: %s", _format_exception_message(result))
                 continue
             # mypy를 위한 타입 단언
             if isinstance(result, dict):
@@ -793,9 +819,10 @@ class ScanPDFProcessor:
 # 팩토리 함수
 async def create_scan_pdf_processor(
     settings: Optional[Settings] = None,
+    progress_callback: Optional[Callable[[int, int], Awaitable[None]]] = None,
 ) -> ScanPDFProcessor:
     """스캔 PDF 프로세서 생성 및 검증"""
-    processor = ScanPDFProcessor(settings)
+    processor = ScanPDFProcessor(settings, progress_callback=progress_callback)
 
     await processor.validate_agents()
 

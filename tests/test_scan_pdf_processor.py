@@ -10,15 +10,16 @@ async def test_scan_pdf_processor_synthesis_handles_dataclass_ocr_result(
     mock_pdf_analyzer,
     mock_pdf_extractor,
 ):
+    mock_pdf_analyzer.analyze_pdf.return_value.pdf_type = PDFType.SCANNED
+
+    mock_pdf_extractor.extract_images_from_pdf.return_value = [
+        {"page": 1, "image_bytes": b"x"},
+    ]
+
     processor = ScanPDFProcessor()
     processor.pdf_analyzer = mock_pdf_analyzer
     processor.pdf_extractor = mock_pdf_extractor
-
-    processor.pdf_analyzer.analyze_pdf.return_value.pdf_type = PDFType.SCANNED
-
-    processor.pdf_extractor.extract_images_from_pdf.return_value = [
-        {"page": 1, "image_bytes": b"x"},
-    ]
+    processor.multimodal_agent = None
 
     class FakeOCRAgent(OCRAgent):
         async def process(self, message: AgentMessage) -> AgentMessage:
@@ -45,3 +46,49 @@ async def test_scan_pdf_processor_synthesis_handles_dataclass_ocr_result(
 
     assert isinstance(result.markdown_content, str)
     assert "hello" in result.markdown_content
+
+
+@pytest.mark.asyncio
+async def test_scan_pdf_processor_reports_incremental_progress(
+    sample_pdf_content: bytes,
+    mock_pdf_analyzer,
+    mock_pdf_extractor,
+):
+    mock_pdf_analyzer.analyze_pdf.return_value.pdf_type = PDFType.SCANNED
+    mock_pdf_extractor.extract_images_from_pdf.return_value = [
+        {"page": 1, "image_bytes": b"x"},
+        {"page": 2, "image_bytes": b"y"},
+    ]
+
+    progress_events = []
+
+    async def on_progress(processed_tasks: int, total_tasks: int) -> None:
+        progress_events.append((processed_tasks, total_tasks))
+
+    processor = ScanPDFProcessor(progress_callback=on_progress)
+    processor.pdf_analyzer = mock_pdf_analyzer
+    processor.pdf_extractor = mock_pdf_extractor
+    processor.multimodal_agent = None
+
+    class FakeOCRAgent(OCRAgent):
+        async def process(self, message: AgentMessage) -> AgentMessage:
+            page_number = 1
+            if isinstance(message.content, dict):
+                page_number = int(message.content.get("page_number", 1) or 1)
+
+            return AgentMessage(
+                agent_type=AgentType.OCR,
+                content=OCRResult(
+                    page_number=page_number,
+                    text=f"page-{page_number}",
+                    confidence=0.5,
+                    bounding_boxes=[],
+                ),
+                metadata={"language": "kor+eng"},
+            )
+
+    processor.ocr_agent = FakeOCRAgent(processor.settings)
+
+    await processor.process_scanned_pdf(sample_pdf_content)
+
+    assert progress_events == [(1, 2), (2, 2)]
