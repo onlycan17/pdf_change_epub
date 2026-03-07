@@ -138,7 +138,7 @@ class Settings(BaseSettings):
     # 보안 설정
     secret_key: str = "your-secret-key-here"
     security_api_key: str = "your-api-key-here"
-    access_token_expire_minutes: int = 30
+    access_token_expire_minutes: int = 7 * 24 * 60
     algorithm: str = "HS256"
 
     # 파일 처리 설정
@@ -240,6 +240,17 @@ class Settings(BaseSettings):
             "SECURITY_API_KEY",
             os.getenv("APP_SECURITY_API_KEY", self.security_api_key),
         )
+        access_token_expire_raw = os.getenv(
+            "APP_ACCESS_TOKEN_EXPIRE_MINUTES",
+            os.getenv(
+                "JWT_ACCESS_TOKEN_EXPIRE_MINUTES",
+                str(self.access_token_expire_minutes),
+            ),
+        )
+        try:
+            self.access_token_expire_minutes = int(access_token_expire_raw)
+        except (TypeError, ValueError):
+            pass
         self.secret_key = os.getenv(
             "APP_SECRET_KEY", os.getenv("SECRET_KEY", self.secret_key)
         )

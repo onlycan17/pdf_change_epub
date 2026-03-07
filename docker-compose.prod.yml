@@ -23,6 +23,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - APP_ACCESS_TOKEN_EXPIRE_MINUTES=10080
       - PYTHONPATH=/app
     expose:
       - "8000"
@@ -43,6 +44,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - APP_ACCESS_TOKEN_EXPIRE_MINUTES=10080
       - PYTHONPATH=/app
     volumes:
       - uploads_data:/app/uploads

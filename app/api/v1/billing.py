@@ -253,13 +253,14 @@ async def toss_billing_auth_complete(
         "plan": plan_code,
     }
     access_token = create_access_token(
-        token_payload, expires_delta=timedelta(minutes=30)
+        token_payload,
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
     return TossBillingAuthCompleteResponse(
         data=TossBillingAuthCompleteData(
             access_token=access_token,
             token_type="bearer",
-            expires_in=1800,
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             plan_code=plan_code,
         ),
         message="구독 결제가 완료되었습니다.",

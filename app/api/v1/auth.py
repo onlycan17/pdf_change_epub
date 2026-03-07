@@ -161,7 +161,10 @@ async def get_current_user(
 
 # 인증이 필요 없는 엔드포인트
 @router.post("/token", response_model=TokenResponse)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    settings: Settings = Depends(get_settings),
+):
     """액세스 토큰 발급 엔드포인트
 
     Args:
@@ -208,7 +211,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             "plan": "free",
         }
 
-    access_token_expires = timedelta(minutes=30)
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data=token_payload, expires_delta=access_token_expires
     )
@@ -216,7 +219,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
-        expires_in=1800,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
 

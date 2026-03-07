@@ -4,6 +4,7 @@ from app.main import app
 from app.services.stripe_service import get_stripe_service
 from app.api.v1.auth import create_access_token
 from app.api.v1.billing import get_toss_subscription_service_factory
+import app.core.config as config_module
 
 
 class FakeStripeObject:
@@ -111,6 +112,7 @@ def test_toss_billing_auth_start_requires_login():
 
 
 def test_toss_billing_auth_start_and_complete_flow():
+    config_module._settings_cache = None
     app.dependency_overrides[get_toss_subscription_service_factory] = (
         lambda: lambda: _fake_toss_service
     )
@@ -122,3 +124,26 @@ def test_toss_billing_auth_start_and_complete_flow():
         headers={"Authorization": f"Bearer {token}", "Origin": "http://localhost:3000"},
     )
     assert response.status_code == 503
+
+
+def test_toss_billing_auth_complete_uses_configured_expiry(monkeypatch):
+    monkeypatch.setenv("APP_BILLING_ENABLED", "true")
+    monkeypatch.setenv("APP_ACCESS_TOKEN_EXPIRE_MINUTES", "10080")
+    config_module._settings_cache = None
+    app.dependency_overrides[get_toss_subscription_service_factory] = (
+        lambda: lambda: _fake_toss_service
+    )
+    token = create_access_token({"sub": "testuser", "plan": "free"})
+
+    try:
+        response = client.post(
+            "/api/v1/billing/toss/billing-auth/complete",
+            json={"customer_key": "cust_test", "auth_key": "auth_test"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["data"]["plan_code"] == "monthly"
+        assert payload["data"]["expires_in"] == 10080 * 60
+    finally:
+        config_module._settings_cache = None
