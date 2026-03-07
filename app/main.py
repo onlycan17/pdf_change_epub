@@ -7,11 +7,11 @@ from contextlib import asynccontextmanager
 import socket
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 
 from app.core.app_factory import create_app
 from app.core.config import get_settings
 from app.core.dependencies import (
-    handle_exceptions,
     request_context,
     validate_request,
     get_service_dependencies,
@@ -76,7 +76,11 @@ async def global_exception_handler(request: Request, exc: Exception):
     Returns:
         Response: 오류 응답 객체
     """
-    return await handle_exceptions(request, lambda r: None, get_settings())
+    logger.exception(
+        "Unhandled exception",
+        extra={"url": str(request.url), "method": request.method},
+    )
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 # 요청 처리 미들웨어 체인

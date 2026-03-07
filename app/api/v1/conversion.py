@@ -157,6 +157,29 @@ def validate_file_size(file: UploadFile, max_size: int) -> bool:
         return False
 
 
+async def _ensure_ocr_runtime_ready(settings: Settings) -> None:
+    """OCR 실행 전 런타임 의존성을 검증합니다."""
+    if settings.is_testing:
+        return
+
+    from app.services.agent_service import OCRAgent
+
+    agent = OCRAgent(settings)
+    if settings.OCR_LANGUAGE:
+        agent.language = settings.OCR_LANGUAGE
+
+    try:
+        await agent.validate()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "OCR 실행 환경을 확인할 수 없습니다. "
+                f"시스템에 Tesseract와 언어 데이터가 설치되어 있는지 확인해주세요. ({exc})"
+            ),
+        ) from exc
+
+
 def _resolve_upload_limit(_request: Request) -> tuple[int, str]:
     user = _resolve_request_user(_request)
     if user["email"].lower() == PRIVILEGED_EMAIL:
@@ -384,6 +407,9 @@ async def start_conversion(
                 detail=f"무료 사용자는 하루 {FREE_DAILY_CONVERSION_LIMIT}회까지 변환할 수 있습니다.",
             )
 
+    if ocr_enabled:
+        await _ensure_ocr_runtime_ready(settings)
+
     # 변환 작업 ID 생성 및 PDF 로드
     conversion_id = str(uuid.uuid4())
     pdf_bytes = await file.read()
@@ -515,6 +541,7 @@ async def start_large_file_request_conversion(
     ocr_enabled: bool = Form(False, description="OCR 처리 활성화 여부"),
     translate_to_korean: bool = Form(False, description="영문 텍스트를 한글로 번역"),
     api_key: str = Depends(api_key_header),
+    settings: Settings = Depends(get_settings),
 ):
     del api_key
 
@@ -548,6 +575,9 @@ async def start_large_file_request_conversion(
             raise HTTPException(status_code=404, detail="원본 첨부 파일을 찾을 수 없습니다.")
         with open(safe_attachment_path, "rb") as attached_pdf:
             pdf_bytes = attached_pdf.read()
+
+    if ocr_enabled:
+        await _ensure_ocr_runtime_ready(settings)
 
     async_queue_service = get_async_queue_service()
     job = await async_queue_service.start_conversion(

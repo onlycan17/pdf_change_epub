@@ -345,7 +345,7 @@ async def validate_request(
             "multipart/form-data",
             "application/x-www-form-urlencoded",
         ]
-        if not any(
+        if content_type and not any(
             content_type.startswith(allowed_type) for allowed_type in allowed_types
         ):
             raise HTTPException(

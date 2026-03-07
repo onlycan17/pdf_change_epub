@@ -17,7 +17,10 @@ class TestConversionIntegration:
     @pytest.fixture
     def mock_async_queue_service(self):
         """모의 비동기 작업 큐 서비스"""
-        with patch("app.api.v1.conversion.get_async_queue_service") as mock_get_service:
+        with (
+            patch("app.api.v1.conversion.get_async_queue_service") as mock_get_service,
+            patch("app.api.v1.conversion._ensure_ocr_runtime_ready", new=AsyncMock()),
+        ):
             service = AsyncMock()
             mock_get_service.return_value = service
             yield service
