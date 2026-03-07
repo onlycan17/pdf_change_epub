@@ -1,17 +1,37 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   web:
     build:
       context: .
       dockerfile: docker/backend.Dockerfile
     env_file:
       - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - PYTHONPATH=/app
     expose:
       - "8000"
     volumes:
-      - ./app:/app
-    command: bash /app/start_app.sh
+      - uploads_data:/app/uploads
+      - results_data:/app/results
+    depends_on:
+      - redis
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   celery_worker:
     build:
@@ -19,16 +39,26 @@ services:
       dockerfile: docker/backend.Dockerfile
     env_file:
       - .env
-    depends_on:
-      - web
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - PYTHONPATH=/app
     volumes:
-      - ./app:/app
-    command: bash -c "cd /app && PYTHONPATH=/app celery -A app.celery_config:celery_app worker --loglevel=info --concurrency=4"
+      - uploads_data:/app/uploads
+      - results_data:/app/results
+    depends_on:
+      - redis
+      - web
+    command: celery -A app.celery_config:celery_app worker --loglevel=info --concurrency=4
 
   caddy:
     build:
       context: .
       dockerfile: docker/caddy.Dockerfile
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID}
+        APP_GOOGLE_CLIENT_ID: ${APP_GOOGLE_CLIENT_ID}
     depends_on:
       - web
     ports:
@@ -41,3 +71,6 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  redis_data:
+  uploads_data:
+  results_data:

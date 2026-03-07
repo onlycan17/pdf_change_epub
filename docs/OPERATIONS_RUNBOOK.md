@@ -134,6 +134,14 @@ curl -sS -o /dev/null -w "%{http_code}\n" https://www.pdf-epub.kr/health
 
 `docker-compose.prod.yml`을 사용하는 경우 절차입니다.
 
+중요: 운영/배포에는 `docker-compose` v1 대신 **Compose v2 플러그인**(`docker compose`)을 사용하세요.
+일부 최신 Docker Engine 조합에서 `docker-compose` v1.29.2는 컨테이너 recreate 과정에서
+`KeyError: 'ContainerConfig'`로 실패할 수 있습니다.
+
+```bash
+docker compose version
+```
+
 ### 2-1. 시작
 
 ```bash
