@@ -128,13 +128,13 @@ const RegisterPage: React.FC = () => {
               htmlFor="agreeTerms"
               className="ml-2 block text-sm text-gray-900"
             >
-              <a href="#" className="text-blue-600 hover:text-blue-500">
+              <Link to="/terms" className="text-blue-600 hover:text-blue-500">
                 이용약관
-              </a>
+              </Link>
               과{' '}
-              <a href="#" className="text-blue-600 hover:text-blue-500">
+              <Link to="/privacy" className="text-blue-600 hover:text-blue-500">
                 개인정보처리방침
-              </a>
+              </Link>
               에 동의합니다
             </label>
           </div>

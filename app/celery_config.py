@@ -34,16 +34,13 @@ def _get_result_backend() -> str:
     )
 
 
-def _get_task_time_limit_seconds() -> int:
-    return _env_int("APP_CELERY_TASK_TIME_LIMIT_SECONDS", 6 * 60 * 60)
+def _get_visibility_timeout_seconds() -> int:
+    return _env_int("APP_CELERY_VISIBILITY_TIMEOUT_SECONDS", 7 * 24 * 60 * 60)
 
 
-def _get_task_soft_time_limit_seconds() -> int:
-    soft = _env_int("APP_CELERY_TASK_SOFT_TIME_LIMIT_SECONDS", 5 * 60 * 60)
-    hard = _get_task_time_limit_seconds()
-    if soft >= hard:
-        return max(0, hard - 60)
-    return soft
+def _get_visibility_transport_options() -> dict[str, int]:
+    return {"visibility_timeout": _get_visibility_timeout_seconds()}
+
 
 # Celery 앱 생성
 celery_app = Celery(
@@ -61,8 +58,8 @@ celery_app.conf.update(
     timezone="Asia/Seoul",
     enable_utc=True,
     task_track_started=True,
-    task_time_limit=_get_task_time_limit_seconds(),
-    task_soft_time_limit=_get_task_soft_time_limit_seconds(),
+    broker_transport_options=_get_visibility_transport_options(),
+    result_backend_transport_options=_get_visibility_transport_options(),
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     task_reject_on_worker_lost=True,

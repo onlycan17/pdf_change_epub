@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   downloadLargeFileRequestAttachment,
@@ -40,20 +40,23 @@ const LargeFileRequestsAdminPage: React.FC = () => {
 
   const isPrivileged = useMemo(() => isPrivilegedEmail(email), [email]);
 
-  const loadRequests = async (nextFilters?: LargeFileRequestFilters) => {
-    setLoadingRequests(true);
-    setErrorMessage('');
-    try {
-      const records = await listLargeFileRequests(nextFilters ?? filters);
-      setItems(records);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : '요청 목록을 불러오지 못했습니다.'
-      );
-    } finally {
-      setLoadingRequests(false);
-    }
-  };
+  const loadRequests = useCallback(
+    async (nextFilters?: LargeFileRequestFilters) => {
+      setLoadingRequests(true);
+      setErrorMessage('');
+      try {
+        const records = await listLargeFileRequests(nextFilters ?? filters);
+        setItems(records);
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : '요청 목록을 불러오지 못했습니다.'
+        );
+      } finally {
+        setLoadingRequests(false);
+      }
+    },
+    [filters]
+  );
 
   useEffect(() => {
     const run = async () => {
@@ -71,7 +74,7 @@ const LargeFileRequestsAdminPage: React.FC = () => {
     if (!loadingUser && isPrivileged) {
       void loadRequests();
     }
-  }, [loadingUser, isPrivileged]);
+  }, [loadingUser, isPrivileged, loadRequests]);
 
   const handleStartConversion = async (item: LargeFileRequestItem) => {
     setRunningRequestId(item.request_id);

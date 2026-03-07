@@ -119,16 +119,24 @@ const Footer: React.FC = () => {
             </h3>
             <ul className="space-y-2">
               <li>
-                <span className="text-gray-600">도움말 센터 (준비중)</span>
+                <Link to="/help-center" className="text-gray-600 hover:text-blue-600">
+                  도움말 센터
+                </Link>
               </li>
               <li>
-                <span className="text-gray-600">문의하기 (준비중)</span>
+                <Link to="/contact" className="text-gray-600 hover:text-blue-600">
+                  문의하기
+                </Link>
               </li>
               <li>
-                <span className="text-gray-600">이용약관 (준비중)</span>
+                <Link to="/terms" className="text-gray-600 hover:text-blue-600">
+                  이용약관
+                </Link>
               </li>
               <li>
-                <span className="text-gray-600">개인정보처리방침 (준비중)</span>
+                <Link to="/privacy" className="text-gray-600 hover:text-blue-600">
+                  개인정보처리방침
+                </Link>
               </li>
             </ul>
           </div>
@@ -141,8 +149,12 @@ const Footer: React.FC = () => {
               © {currentYear} PDF to EPUB Converter. All rights reserved.
             </p>
             <div className="mt-4 md:mt-0 flex space-x-6 text-sm text-gray-500">
-              <span>이용약관 (준비중)</span>
-              <span>개인정보처리방침 (준비중)</span>
+              <Link to="/terms" className="hover:text-blue-600">
+                이용약관
+              </Link>
+              <Link to="/privacy" className="hover:text-blue-600">
+                개인정보처리방침
+              </Link>
               <span>쿠키정책 (준비중)</span>
             </div>
           </div>

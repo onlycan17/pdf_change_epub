@@ -12,6 +12,10 @@ import UploadPage from '@pages/UploadPage';
 import ConvertPage from '@pages/ConvertPage';
 import DownloadPage from '@pages/DownloadPage';
 import SupportPage from '@pages/SupportPage';
+import HelpCenterPage from '@pages/HelpCenterPage';
+import ContactPage from '@pages/ContactPage';
+import TermsPage from '@pages/TermsPage';
+import PrivacyPage from '@pages/PrivacyPage';
 import ProfilePage from '@pages/ProfilePage';
 import LoginPage from '@pages/LoginPage';
 import RegisterPage from '@pages/RegisterPage';
@@ -98,6 +102,38 @@ const router = createBrowserRouter(
             <SupportPage />
           </MainLayout>
         </RequireAuth>
+      ),
+    },
+    {
+      path: '/help-center',
+      element: (
+        <MainLayout>
+          <HelpCenterPage />
+        </MainLayout>
+      ),
+    },
+    {
+      path: '/contact',
+      element: (
+        <MainLayout>
+          <ContactPage />
+        </MainLayout>
+      ),
+    },
+    {
+      path: '/terms',
+      element: (
+        <MainLayout>
+          <TermsPage />
+        </MainLayout>
+      ),
+    },
+    {
+      path: '/privacy',
+      element: (
+        <MainLayout>
+          <PrivacyPage />
+        </MainLayout>
       ),
     },
     {
