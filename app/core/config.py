@@ -79,6 +79,8 @@ class LLMSettings(BaseSettings):
 
     provider: str = "openrouter"
     model_name: str = "deepseek/deepseek-chat"
+    multimodal_primary_model: str = "qwen/qwen3.5-flash-02-23"
+    multimodal_fallback_model: str = "google/gemini-3.1-flash-lite-preview"
     context_primary_model: str = "deepseek/deepseek-v3.2"
     context_fallback_model: str = "nvidia/nemotron-3-nano-30b-a3b"
     translation_model: str = "deepseek/deepseek-v3.2"

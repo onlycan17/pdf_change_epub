@@ -107,6 +107,11 @@ class TestLLMSettings:
 
         assert settings.provider == "openrouter"
         assert settings.model_name == "deepseek/deepseek-chat"
+        assert settings.multimodal_primary_model == "qwen/qwen3.5-flash-02-23"
+        assert (
+            settings.multimodal_fallback_model
+            == "google/gemini-3.1-flash-lite-preview"
+        )
         assert settings.max_tokens == 4000
         assert settings.temperature == 0.1
 
@@ -114,6 +119,8 @@ class TestLLMSettings:
         """모든 설정이 포함된 LLM 테스트"""
         monkeypatch.setenv("LLM_PROVIDER", "openai")
         monkeypatch.setenv("LLM_MODEL_NAME", "gpt-4")
+        monkeypatch.setenv("LLM_MULTIMODAL_PRIMARY_MODEL", "qwen/test-vision")
+        monkeypatch.setenv("LLM_MULTIMODAL_FALLBACK_MODEL", "google/test-fallback")
         monkeypatch.setenv("LLM_API_KEY", "test-api-key")
         monkeypatch.setenv("LLM_MAX_TOKENS", "8192")
         monkeypatch.setenv("LLM_TEMPERATURE", "0.5")
@@ -122,6 +129,8 @@ class TestLLMSettings:
 
         assert settings.provider == "openai"
         assert settings.model_name == "gpt-4"
+        assert settings.multimodal_primary_model == "qwen/test-vision"
+        assert settings.multimodal_fallback_model == "google/test-fallback"
         assert settings.api_key == "test-api-key"
         assert settings.max_tokens == 8192
         assert settings.temperature == 0.5
