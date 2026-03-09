@@ -589,11 +589,11 @@ class PDFExtractor:
 
     def extract_images_from_pdf(
         self, pdf_content: PDFContentSource
-    ) -> List[Dict[str, Union[int, bytes, str]]]:
+    ) -> List[Dict[str, Any]]:
         """PDF에서 이미지 추출"""
         try:
-            images_data: List[Dict[str, Union[int, bytes, str]]] = []
-            extracted_images: Dict[int, Dict[str, Union[int, bytes, str]]] = {}
+            images_data: List[Dict[str, Any]] = []
+            extracted_images: Dict[int, Dict[str, Any]] = {}
 
             with _pdf_file_from_source(pdf_content, self.settings) as pdf_path:
                 doc = fitz.open(str(pdf_path))
@@ -601,6 +601,7 @@ class PDFExtractor:
                 for page_num in range(len(doc)):
                     # 캐스트하여 Pylance 경고를 억제
                     page = cast(Any, doc[page_num])
+                    page_area = self._get_page_area(page)
 
                     try:
                         image_list = page.get_images()
@@ -608,6 +609,9 @@ class PDFExtractor:
                         for img_info in image_list:
                             if len(img_info) >= 1:
                                 xref = img_info[0]
+                                coverage_ratio = self._calculate_image_coverage_ratio(
+                                    page, xref, page_area
+                                )
 
                                 if xref not in extracted_images:
                                     base_image = doc.extract_image(xref)
@@ -646,6 +650,12 @@ class PDFExtractor:
                                             "xref": xref,
                                             "image_bytes": image_bytes,
                                             "format": original_ext,
+                                            "coverage_ratio": coverage_ratio,
+                                            "is_full_page_scan": (
+                                                "true"
+                                                if coverage_ratio >= 0.95
+                                                else "false"
+                                            ),
                                         }
 
                     except Exception as e:
@@ -662,6 +672,36 @@ class PDFExtractor:
         except Exception as e:
             logger.error(f"이미지 추출 실패: {str(e)}")
             raise ValueError(f"PDF 이미지 추출 실패: {str(e)}")
+
+    def _get_page_area(self, page: Any) -> float:
+        try:
+            rect = page.rect
+            return max(float(rect.width) * float(rect.height), 0.0)
+        except Exception:
+            return 0.0
+
+    def _calculate_image_coverage_ratio(
+        self, page: Any, xref: int, page_area: float
+    ) -> float:
+        if page_area <= 0:
+            return 0.0
+
+        try:
+            rects = page.get_image_rects(xref)
+        except Exception:
+            return 0.0
+
+        max_ratio = 0.0
+        for rect in rects:
+            try:
+                rect_area = max(float(rect.width), 0.0) * max(float(rect.height), 0.0)
+            except Exception:
+                continue
+            if rect_area <= 0:
+                continue
+            max_ratio = max(max_ratio, min(rect_area / page_area, 1.0))
+
+        return round(max_ratio, 4)
 
     def extract_content_flow_with_images(
         self, pdf_content: PDFContentSource
@@ -722,10 +762,24 @@ class PDFExtractor:
                         block_type = int(block[6]) if len(block) > 6 else 0
                         if block_type == 1:
                             xref: Optional[int] = None
+                            coverage_ratio = 0.0
+                            is_full_page_scan = False
                             if image_cursor < len(image_xrefs):
                                 xref = image_xrefs[image_cursor]
                                 image_cursor += 1
-                            elements.append({"type": "image", "xref": xref})
+                                page_area = self._get_page_area(page)
+                                coverage_ratio = self._calculate_image_coverage_ratio(
+                                    page, xref, page_area
+                                )
+                                is_full_page_scan = coverage_ratio >= 0.95
+                            elements.append(
+                                {
+                                    "type": "image",
+                                    "xref": xref,
+                                    "coverage_ratio": coverage_ratio,
+                                    "is_full_page_scan": is_full_page_scan,
+                                }
+                            )
                             continue
 
                         text = str(block[4]).strip() if len(block) > 4 else ""
@@ -821,13 +875,13 @@ class PDFExtractor:
 
     def extract_images_with_pypdf2(
         self, pdf_content: PDFContentSource
-    ) -> List[Dict[str, Union[int, bytes, str]]]:
+    ) -> List[Dict[str, Any]]:
         """pypdf를 사용한 이미지 추출"""
         try:
             with _pdf_file_from_source(pdf_content, self.settings) as pdf_path:
                 pdf_reader = PdfReader(str(pdf_path))
 
-            images_data: List[Dict[str, Union[int, bytes, str]]] = []
+            images_data: List[Dict[str, Any]] = []
 
             for page_num, page in enumerate(pdf_reader.pages):
                 try:

@@ -487,16 +487,25 @@ class ConversionOrchestrator:
             # 4) EPUB 생성
             await set_step("epub", 80, "EPUB 생성 중")
             content_flow = self._extract_content_flow_pages(pdf_bytes)
+            scanned_pages_for_images = (
+                set(analysis.get_scanned_pages())
+                if (await self.store.get(conversion_id)).ocr_enabled
+                else None
+            )
             (
                 epub_images,
                 image_file_by_xref,
                 image_file_by_page,
-            ) = self._build_epub_image_assets(pdf_bytes)
+            ) = self._build_epub_image_assets(
+                pdf_bytes,
+            )
             page_image_refs = self._resolve_page_image_refs(
                 content_flow,
                 image_file_by_xref,
                 image_file_by_page,
+                scanned_pages=scanned_pages_for_images,
             )
+            epub_images = self._filter_epub_images_by_usage(epub_images, page_image_refs)
 
             chapters: List[Chapter] = []
             if synthesis_markdown:
@@ -622,7 +631,8 @@ class ConversionOrchestrator:
             await publish_status()
 
     def _build_epub_image_assets(
-        self, pdf_bytes: bytes
+        self,
+        pdf_bytes: bytes,
     ) -> tuple[List[EpubImage], Dict[int, str], Dict[int, List[str]]]:
         """PDF에서 추출한 이미지를 EPUB 리소스로 변환합니다."""
         try:
@@ -640,6 +650,7 @@ class ConversionOrchestrator:
         for index, image_info in enumerate(raw_images, start=1):
             if not isinstance(image_info, dict):
                 continue
+            page_value = image_info.get("page")
             image_bytes = image_info.get("image_bytes")
             image_format = str(image_info.get("format", "png")).lower()
             if not isinstance(image_bytes, bytes) or not image_bytes:
@@ -664,11 +675,23 @@ class ConversionOrchestrator:
             xref_value = image_info.get("xref")
             if isinstance(xref_value, int):
                 image_file_by_xref[xref_value] = file_name
-            page_value = image_info.get("page")
             if isinstance(page_value, int):
                 image_file_by_page.setdefault(page_value, []).append(file_name)
 
         return assets, image_file_by_xref, image_file_by_page
+
+    def _is_page_sized_scan_image(self, image_info: Dict[str, Any]) -> bool:
+        full_page_flag = image_info.get("is_full_page_scan")
+        if isinstance(full_page_flag, str):
+            return full_page_flag.strip().lower() == "true"
+        if isinstance(full_page_flag, bool):
+            return full_page_flag
+
+        coverage_ratio = image_info.get("coverage_ratio")
+        if isinstance(coverage_ratio, (int, float)):
+            return float(coverage_ratio) >= 0.95
+
+        return False
 
     def _extract_content_flow_pages(self, pdf_bytes: bytes) -> List[Dict[str, Any]]:
         try:
@@ -686,10 +709,13 @@ class ConversionOrchestrator:
         content_flow: List[Dict[str, Any]],
         image_file_by_xref: Dict[int, str],
         image_file_by_page: Dict[int, List[str]],
+        *,
+        scanned_pages: Optional[set[int]] = None,
     ) -> Dict[int, List[str]]:
-        page_refs: Dict[int, List[str]] = {
-            page: list(refs) for page, refs in image_file_by_page.items()
-        }
+        page_refs: Dict[int, List[str]] = {}
+        if not scanned_pages:
+            page_refs = {page: list(refs) for page, refs in image_file_by_page.items()}
+
         for page_entry in content_flow:
             page_num = page_entry.get("page")
             elements = page_entry.get("elements")
@@ -699,6 +725,12 @@ class ConversionOrchestrator:
             for element in elements:
                 if not isinstance(element, dict) or element.get("type") != "image":
                     continue
+                if (
+                    scanned_pages
+                    and page_num in scanned_pages
+                    and self._is_page_sized_scan_image(element)
+                ):
+                    continue
                 xref = element.get("xref")
                 if isinstance(xref, int):
                     file_name = image_file_by_xref.get(xref)
@@ -707,6 +739,16 @@ class ConversionOrchestrator:
             if refs:
                 page_refs[page_num] = refs
         return page_refs
+
+    def _filter_epub_images_by_usage(
+        self, epub_images: List[EpubImage], page_image_refs: Dict[int, List[str]]
+    ) -> List[EpubImage]:
+        used_file_names = {
+            file_name for refs in page_image_refs.values() for file_name in refs
+        }
+        if not used_file_names:
+            return []
+        return [image for image in epub_images if image.file_name in used_file_names]
 
     def _render_content_flow_to_xhtml(
         self,

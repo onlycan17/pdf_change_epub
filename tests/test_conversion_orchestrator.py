@@ -396,6 +396,254 @@ async def test_unknown_image_format_is_normalized_to_png(monkeypatch):
     assert status.state == JobState.COMPLETED
 
 
+@pytest.mark.asyncio
+async def test_scanned_pdf_skips_full_page_scan_images_in_epub(monkeypatch):
+    orch = ConversionOrchestrator(None)
+
+    monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
+    pdf_analysis = PDFAnalysisResult(
+        pdf_type=PDFType.SCANNED,
+        total_pages=1,
+        pages_analysis=[
+            PageAnalysisResult(page_number=1, has_text=False, is_scanned_page=True)
+        ],
+        overall_confidence=1.0,
+        mixed_ratio=0.0,
+    )
+    orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
+
+    monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: []
+    orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: [
+        {
+            "page": 1,
+            "xref": 1,
+            "image_bytes": make_tiny_png_bytes(),
+            "format": "png",
+            "coverage_ratio": 0.99,
+            "is_full_page_scan": "true",
+        }
+    ]
+    orch.pdf_extractor.extract_content_flow_with_images = lambda pdf_content: {
+        "pages": [
+            {
+                "page": 1,
+                "elements": [
+                    {
+                        "type": "image",
+                        "xref": 1,
+                        "coverage_ratio": 0.99,
+                        "is_full_page_scan": True,
+                    }
+                ],
+            }
+        ]
+    }
+
+    class DummyProcessor:
+        async def process_scanned_pdf(self, _pdf_bytes: bytes):
+            return type("Synthesis", (), {"markdown_content": "# 페이지 1\nOCR 본문"})()
+
+    async def fake_create_scan_pdf_processor(settings, progress_callback=None):
+        return DummyProcessor()
+
+    import app.services.agent_service as agent_service
+
+    monkeypatch.setattr(
+        agent_service,
+        "create_scan_pdf_processor",
+        fake_create_scan_pdf_processor,
+    )
+
+    def fake_create_epub_bytes(
+        title: str,
+        author: str,
+        chapters,
+        images=None,
+        uid=None,
+        include_legacy_ncx=True,
+        auto_toc_from_headings=True,
+    ):
+        assert images == []
+        assert 'src="images/image-1.png"' not in chapters[0].content
+        assert "OCR 본문" in chapters[0].content
+        return b"EPUBBYTES"
+
+    orch.epub.create_epub_bytes = fake_create_epub_bytes
+
+    conversion_id = "scanned-image-skip-id"
+    pdf_bytes = make_dummy_pdf_bytes()
+    await orch.start(
+        conversion_id=conversion_id,
+        filename="scan.pdf",
+        file_size=len(pdf_bytes),
+        ocr_enabled=True,
+        pdf_bytes=pdf_bytes,
+    )
+
+    await asyncio.sleep(0.5)
+    status = await orch.status(conversion_id)
+    assert status.state == JobState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_scanned_pdf_without_ocr_keeps_full_page_images(monkeypatch):
+    orch = ConversionOrchestrator(None)
+
+    monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
+    pdf_analysis = PDFAnalysisResult(
+        pdf_type=PDFType.SCANNED,
+        total_pages=1,
+        pages_analysis=[
+            PageAnalysisResult(page_number=1, has_text=False, is_scanned_page=True)
+        ],
+        overall_confidence=1.0,
+        mixed_ratio=0.0,
+    )
+    orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
+
+    monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: []
+    orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: [
+        {
+            "page": 1,
+            "xref": 1,
+            "image_bytes": make_tiny_png_bytes(),
+            "format": "png",
+            "coverage_ratio": 0.99,
+            "is_full_page_scan": "true",
+        }
+    ]
+    orch.pdf_extractor.extract_content_flow_with_images = lambda pdf_content: {
+        "pages": [
+            {
+                "page": 1,
+                "elements": [
+                    {
+                        "type": "image",
+                        "xref": 1,
+                        "coverage_ratio": 0.99,
+                        "is_full_page_scan": True,
+                    }
+                ],
+            }
+        ]
+    }
+
+    def fake_create_epub_bytes(
+        title: str,
+        author: str,
+        chapters,
+        images=None,
+        uid=None,
+        include_legacy_ncx=True,
+        auto_toc_from_headings=True,
+    ):
+        assert images is not None
+        assert len(images) == 1
+        assert 'src="images/image-1.png"' in chapters[0].content
+        return b"EPUBBYTES"
+
+    orch.epub.create_epub_bytes = fake_create_epub_bytes
+
+    conversion_id = "scanned-image-keep-id"
+    pdf_bytes = make_dummy_pdf_bytes()
+    await orch.start(
+        conversion_id=conversion_id,
+        filename="scan-no-ocr.pdf",
+        file_size=len(pdf_bytes),
+        ocr_enabled=False,
+        pdf_bytes=pdf_bytes,
+    )
+
+    await asyncio.sleep(0.5)
+    status = await orch.status(conversion_id)
+    assert status.state == JobState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_mixed_pdf_with_ocr_skips_scanned_page_images(monkeypatch):
+    orch = ConversionOrchestrator(None)
+
+    monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
+    pdf_analysis = PDFAnalysisResult(
+        pdf_type=PDFType.MIXED,
+        total_pages=1,
+        pages_analysis=[
+            PageAnalysisResult(
+                page_number=1,
+                has_text=True,
+                text_content="숨겨진 OCR 레이어",
+                is_scanned_page=True,
+            )
+        ],
+        overall_confidence=1.0,
+        mixed_ratio=1.0,
+    )
+    orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
+
+    monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: []
+    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content: {
+        "total_text": "=== 페이지 1 ===\n숨겨진 OCR 레이어"
+    }
+    orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: [
+        {
+            "page": 1,
+            "xref": 1,
+            "image_bytes": make_tiny_png_bytes(),
+            "format": "png",
+            "coverage_ratio": 0.99,
+            "is_full_page_scan": "true",
+        }
+    ]
+    orch.pdf_extractor.extract_content_flow_with_images = lambda pdf_content: {
+        "pages": [
+            {
+                "page": 1,
+                "elements": [
+                    {
+                        "type": "image",
+                        "xref": 1,
+                        "coverage_ratio": 0.99,
+                        "is_full_page_scan": True,
+                    }
+                ],
+            }
+        ]
+    }
+
+    def fake_create_epub_bytes(
+        title: str,
+        author: str,
+        chapters,
+        images=None,
+        uid=None,
+        include_legacy_ncx=True,
+        auto_toc_from_headings=True,
+    ):
+        assert images == []
+        assert 'src="images/image-1.png"' not in chapters[0].content
+        assert "숨겨진 OCR 레이어" in chapters[0].content
+        return b"EPUBBYTES"
+
+    orch.epub.create_epub_bytes = fake_create_epub_bytes
+
+    conversion_id = "mixed-hidden-ocr-id"
+    pdf_bytes = make_dummy_pdf_bytes()
+    await orch.start(
+        conversion_id=conversion_id,
+        filename="mixed-hidden-ocr.pdf",
+        file_size=len(pdf_bytes),
+        ocr_enabled=True,
+        pdf_bytes=pdf_bytes,
+    )
+
+    await asyncio.sleep(0.5)
+    status = await orch.status(conversion_id)
+    assert status.state == JobState.COMPLETED
+
+
 def test_render_markdown_to_xhtml_body_removes_raw_markdown():
     orch = ConversionOrchestrator(None)
 
