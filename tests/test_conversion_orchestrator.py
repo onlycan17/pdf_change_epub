@@ -13,6 +13,7 @@ from app.services.conversion_orchestrator import (
     JobState,
     get_orchestrator,
 )
+from app.services.agent_service import SynthesisAgent
 from app.services.pdf_service import (
     PDFType,
     PDFAnalysisResult,
@@ -158,11 +159,11 @@ async def test_text_pdf_chunks_apply_context_correction(monkeypatch):
     orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
 
     monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
-    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: [
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content, chunk_chars=None: [
         {"start_page": 1, "end_page": 1, "total_text": "첫청크"},
         {"start_page": 2, "end_page": 2, "total_text": "둘청크"},
     ]
-    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content: {
+    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content, page_numbers=None: {
         "total_text": "fallback"
     }
 
@@ -180,7 +181,7 @@ async def test_text_pdf_chunks_apply_context_correction(monkeypatch):
                 await on_chunk_progress(2, 2)
             return "보정된 전체 텍스트"
 
-    orch.text_context_corrector = DummyCorrector()
+    monkeypatch.setattr(orch, "text_context_corrector", DummyCorrector())
 
     def fake_create_epub_bytes(
         title: str,
@@ -231,8 +232,8 @@ async def test_text_result_is_preferred_over_content_flow(monkeypatch):
     orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
 
     monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
-    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: []
-    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content: {
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content, chunk_chars=None: []
+    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content, page_numbers=None: {
         "total_text": "=== 페이지 1 ===\n보정된 문장"
     }
     orch.pdf_extractor.extract_content_flow_with_images = lambda pdf_content: {
@@ -293,8 +294,8 @@ async def test_epub_includes_extracted_images(monkeypatch):
     orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
 
     monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
-    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: []
-    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content: {
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content, chunk_chars=None: []
+    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content, page_numbers=None: {
         "total_text": "이미지 포함 테스트"
     }
     orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: [
@@ -350,8 +351,8 @@ async def test_unknown_image_format_is_normalized_to_png(monkeypatch):
     orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
 
     monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
-    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: []
-    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content: {
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content, chunk_chars=None: []
+    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content, page_numbers=None: {
         "total_text": "이미지 정규화 테스트"
     }
     orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: [
@@ -413,7 +414,7 @@ async def test_scanned_pdf_skips_full_page_scan_images_in_epub(monkeypatch):
     orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
 
     monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
-    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: []
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content, chunk_chars=None: []
     orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: [
         {
             "page": 1,
@@ -503,7 +504,7 @@ async def test_scanned_pdf_without_ocr_keeps_full_page_images(monkeypatch):
     orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
 
     monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
-    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: []
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content, chunk_chars=None: []
     orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: [
         {
             "page": 1,
@@ -583,8 +584,8 @@ async def test_mixed_pdf_with_ocr_skips_scanned_page_images(monkeypatch):
     orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
 
     monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
-    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content: []
-    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content: {
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content, chunk_chars=None: []
+    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content, page_numbers=None: {
         "total_text": "=== 페이지 1 ===\n숨겨진 OCR 레이어"
     }
     orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: [
@@ -644,6 +645,79 @@ async def test_mixed_pdf_with_ocr_skips_scanned_page_images(monkeypatch):
     assert status.state == JobState.COMPLETED
 
 
+@pytest.mark.asyncio
+async def test_scanned_pdf_preserves_verse_blocks_in_rendered_epub(monkeypatch):
+    orch = ConversionOrchestrator(None)
+
+    monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
+    pdf_analysis = PDFAnalysisResult(
+        pdf_type=PDFType.SCANNED,
+        total_pages=1,
+        pages_analysis=[
+            PageAnalysisResult(page_number=1, has_text=False, is_scanned_page=True)
+        ],
+        overall_confidence=1.0,
+        mixed_ratio=0.0,
+    )
+    orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
+
+    monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content, chunk_chars=None: []
+    orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: []
+    orch.pdf_extractor.extract_content_flow_with_images = lambda pdf_content: {"pages": []}
+
+    class DummyProcessor:
+        async def process_scanned_pdf(self, _pdf_bytes: bytes):
+            return type(
+                "Synthesis",
+                (),
+                {
+                    "markdown_content": "# 페이지 1\n[[VERSE]]\n[[LINE:0]]산길 조용히\n[[LINE:2]]달빛 비친다\n[[/VERSE]]"
+                },
+            )()
+
+    async def fake_create_scan_pdf_processor(settings, progress_callback=None):
+        return DummyProcessor()
+
+    import app.services.agent_service as agent_service
+
+    monkeypatch.setattr(
+        agent_service,
+        "create_scan_pdf_processor",
+        fake_create_scan_pdf_processor,
+    )
+
+    def fake_create_epub_bytes(
+        title: str,
+        author: str,
+        chapters,
+        images=None,
+        uid=None,
+        include_legacy_ncx=True,
+        auto_toc_from_headings=True,
+    ):
+        assert '<p class="verse">' in chapters[0].content
+        assert "산길 조용히<br/>" in chapters[0].content
+        assert "&nbsp;&nbsp;&nbsp;&nbsp;달빛 비친다" in chapters[0].content
+        return b"EPUBBYTES"
+
+    orch.epub.create_epub_bytes = fake_create_epub_bytes
+
+    conversion_id = "scanned-verse-render-id"
+    pdf_bytes = make_dummy_pdf_bytes()
+    await orch.start(
+        conversion_id=conversion_id,
+        filename="verse-scan.pdf",
+        file_size=len(pdf_bytes),
+        ocr_enabled=True,
+        pdf_bytes=pdf_bytes,
+    )
+
+    await asyncio.sleep(0.5)
+    status = await orch.status(conversion_id)
+    assert status.state == JobState.COMPLETED
+
+
 def test_render_markdown_to_xhtml_body_removes_raw_markdown():
     orch = ConversionOrchestrator(None)
 
@@ -665,6 +739,60 @@ def test_render_markdown_to_xhtml_body_removes_raw_markdown():
     assert "<li>항목1</li>" in html_body
     assert "<p>본문 문장입니다.</p>" in html_body
     assert "# 제목" not in html_body
+
+
+def test_render_markdown_to_xhtml_body_converts_latex_math_to_mathml():
+    orch = ConversionOrchestrator(None)
+
+    markdown_text = """# 수식
+
+이차식은 $x^2 + y^2 = z^2$ 입니다.
+
+$$\\frac{a}{b}$$
+"""
+
+    html_body = orch._render_markdown_to_xhtml_body(  # type: ignore[attr-defined]
+        markdown_text,
+        {},
+    )
+
+    assert "<math" in html_body
+    assert "<msup>" in html_body
+    assert "<mfrac>" in html_body
+    assert "$x^2 + y^2 = z^2$" not in html_body
+
+
+def test_render_text_with_page_images_auto_converts_formula_lines_to_mathml():
+    orch = ConversionOrchestrator(None)
+
+    html_body = orch._render_text_with_page_images(  # type: ignore[attr-defined]
+        "=== 페이지 1 ===\nx² + y² = z²\n설명 문장",
+        {},
+    )
+
+    assert '<div class="math-display">' in html_body
+    assert "<math" in html_body
+    assert "설명 문장" in html_body
+
+
+def test_combine_page_content_appends_detected_equations_as_latex_blocks():
+    synthesis = SynthesisAgent()
+
+    combined = synthesis._combine_page_content(  # type: ignore[attr-defined]
+        {
+            "ocr_texts": [{"text": "본문 설명"}],
+            "descriptions": [
+                {
+                    "text_content": "",
+                    "equations_latex": ["\\frac{a}{b}", "x^2+y^2=z^2"],
+                }
+            ],
+        }
+    )
+
+    assert "본문 설명" in combined
+    assert "$$ \\frac{a}{b} $$" in combined
+    assert "$$ x^2+y^2=z^2 $$" in combined
 
 
 def test_render_content_flow_places_image_in_order():
@@ -695,3 +823,128 @@ def test_render_content_flow_places_image_in_order():
     assert image_idx != -1
     assert second_text_idx != -1
     assert first_text_idx < image_idx < second_text_idx
+
+
+def test_render_markdown_to_xhtml_body_preserves_verse_line_breaks():
+    orch = ConversionOrchestrator(None)
+
+    markdown_text = """# 페이지 1
+[[VERSE]]
+[[LINE:0]]산길 조용히
+[[LINE:2]]달빛 비친다
+[[/VERSE]]
+"""
+
+    html_body = orch._render_markdown_to_xhtml_body(  # type: ignore[attr-defined]
+        markdown_text,
+        {},
+    )
+
+    assert '<p class="verse">' in html_body
+    assert "산길 조용히<br/>" in html_body
+    assert "&nbsp;&nbsp;&nbsp;&nbsp;달빛 비친다" in html_body
+
+
+def test_render_markdown_to_xhtml_body_renders_scanned_math_image_markers():
+    orch = ConversionOrchestrator(None)
+
+    html_body = orch._render_markdown_to_xhtml_body(  # type: ignore[attr-defined]
+        "# 페이지 1\n문장\n\n[[MATHIMG:page-1-eq-1]]\n",
+        {},
+        math_image_refs={
+            "[[MATHIMG:page-1-eq-1]]": {
+                "file_name": "images/scan-math-1.png",
+                "alt_text": "x^2 + y^2 = z^2",
+            }
+        },
+    )
+
+    assert 'class="math-figure"' in html_body
+    assert 'src="images/scan-math-1.png"' in html_body
+    assert "x^2 + y^2 = z^2" in html_body
+
+
+@pytest.mark.asyncio
+async def test_scanned_pdf_renders_equation_crops_as_epub_images(monkeypatch):
+    orch = ConversionOrchestrator(None)
+
+    monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
+    pdf_analysis = PDFAnalysisResult(
+        pdf_type=PDFType.SCANNED,
+        total_pages=1,
+        pages_analysis=[
+            PageAnalysisResult(page_number=1, has_text=False, is_scanned_page=True)
+        ],
+        overall_confidence=1.0,
+        mixed_ratio=0.0,
+    )
+    orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
+
+    monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content, chunk_chars=None: []
+    orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: []
+    orch.pdf_extractor.extract_content_flow_with_images = lambda pdf_content: {"pages": []}
+
+    class DummyProcessor:
+        async def process_scanned_pdf(self, _pdf_bytes: bytes):
+            return type(
+                "Synthesis",
+                (),
+                {
+                    "markdown_content": "# 페이지 1\n설명 문장\n\n[[MATHIMG:page-1-eq-1]]\n\n다음 문장",
+                    "metadata": {
+                        "equation_images": [
+                            {
+                                "marker": "[[MATHIMG:page-1-eq-1]]",
+                                "image_bytes": make_tiny_png_bytes(),
+                                "format": "png",
+                                "page_number": 1,
+                                "alt_text": "x^2 + y^2 = z^2",
+                            }
+                        ]
+                    },
+                },
+            )()
+
+    async def fake_create_scan_pdf_processor(settings, progress_callback=None):
+        return DummyProcessor()
+
+    import app.services.agent_service as agent_service
+
+    monkeypatch.setattr(
+        agent_service,
+        "create_scan_pdf_processor",
+        fake_create_scan_pdf_processor,
+    )
+
+    def fake_create_epub_bytes(
+        title: str,
+        author: str,
+        chapters,
+        images=None,
+        uid=None,
+        include_legacy_ncx=True,
+        auto_toc_from_headings=True,
+    ):
+        assert images is not None
+        assert any(image.file_name.startswith("images/scan-math-") for image in images)
+        assert 'class="math-figure"' in chapters[0].content
+        assert 'src="images/scan-math-1.png"' in chapters[0].content
+        assert "x^2 + y^2 = z^2" in chapters[0].content
+        return b"EPUBBYTES"
+
+    orch.epub.create_epub_bytes = fake_create_epub_bytes
+
+    conversion_id = "scanned-math-image-id"
+    pdf_bytes = make_dummy_pdf_bytes()
+    await orch.start(
+        conversion_id=conversion_id,
+        filename="math-scan.pdf",
+        file_size=len(pdf_bytes),
+        ocr_enabled=True,
+        pdf_bytes=pdf_bytes,
+    )
+
+    await asyncio.sleep(0.5)
+    status = await orch.status(conversion_id)
+    assert status.state == JobState.COMPLETED
