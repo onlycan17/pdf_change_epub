@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from ebooklib import epub  # type: ignore
-from lxml import html  # type: ignore
+from lxml import etree  # type: ignore
 
 
 @dataclass
@@ -56,6 +56,7 @@ class EpubGenerator:
 
             /* 문단 */
             p { margin: 0.8em 0; }
+            p.verse { margin: 0.6em 0 1em; }
             strong { font-weight: 700; }
             em { font-style: italic; }
 
@@ -66,12 +67,18 @@ class EpubGenerator:
             /* 이미지 */
             img { max-width: 100%; height: auto; display: block; margin: 0.6em auto; }
             figure { margin: 1em 0; }
+            figure.math-figure { text-align: center; }
+            figure.math-figure img { max-width: min(100%, 32rem); }
             figcaption { font-size: 0.9rem; color: #555; text-align: center; }
 
             /* 코드/인라인 */
             pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
             pre { background: #f6f8fa; padding: 0.8em; border-radius: 6px; overflow-x: auto; }
             code { background: #f6f8fa; padding: 0.15em 0.35em; border-radius: 4px; }
+
+            /* 수식 */
+            math { font-size: 1em; }
+            .math-display { display: block; text-align: center; margin: 1em 0; overflow-x: auto; }
 
             /* 표 */
             table { border-collapse: collapse; width: 100%; margin: 1em 0; }
@@ -134,6 +141,8 @@ class EpubGenerator:
             body_html, _ = self._inject_heading_ids(body_html, file_name)
 
             c = epub.EpubHtml(title=ch.title, file_name=file_name)
+            if "<math" in body_html:
+                c.properties.append("mathml")
             c.content = f"""
                 <?xml version=\"1.0\" encoding=\"utf-8\"?>
                 <!DOCTYPE html>
@@ -200,7 +209,15 @@ class EpubGenerator:
             (updated_html, headings)
         """
         try:
-            root = html.fromstring(f"<div>{body_html}</div>")
+            parser = etree.XMLParser(recover=True)
+            root = etree.fromstring(
+                (
+                    '<div xmlns="http://www.w3.org/1999/xhtml">'
+                    f"{body_html}"
+                    "</div>"
+                ).encode("utf-8"),
+                parser=parser,
+            )
         except Exception:
             return body_html, []
 
@@ -208,8 +225,8 @@ class EpubGenerator:
         counters = {1: 0, 2: 0, 3: 0}
 
         for level in (1, 2, 3):
-            for el in root.findall(f".//h{level}"):
-                text = (el.text_content() or "").strip()
+            for el in root.xpath(f".//*[local-name()='h{level}']"):
+                text = "".join(el.itertext()).strip()
                 if not text:
                     continue
                 hid = el.get("id")
@@ -221,14 +238,9 @@ class EpubGenerator:
                 headings.append((level, text, href))
 
         try:
-            updated_raw = html.tostring(root, encoding="unicode")
-            updated_html = (
-                updated_raw
-                if isinstance(updated_raw, str)
-                else updated_raw.decode("utf-8", errors="ignore")
+            updated_html = "".join(
+                etree.tostring(child, encoding="unicode") for child in root
             )
-            if updated_html.startswith("<div>") and updated_html.endswith("</div>"):
-                updated_html = updated_html[5:-6]
         except Exception:
             updated_html = body_html
 

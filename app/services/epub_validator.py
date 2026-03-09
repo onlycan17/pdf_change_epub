@@ -177,6 +177,22 @@ def validate_epub_bytes(epub_bytes: bytes) -> EPUBValidationResult:
                         path=joined,
                     )
                 )
+            elif (it.get("media-type") or "") == "application/xhtml+xml":
+                try:
+                    resource_bytes = zf.read(joined)
+                except Exception:
+                    resource_bytes = b""
+                if b"<math" in resource_bytes:
+                    props = (it.get("properties") or "").lower()
+                    if "mathml" not in props:
+                        warnings.append(
+                            EPUBValidationIssue(
+                                level="warning",
+                                code="MATHML_PROPERTY_MISSING",
+                                message="MathML이 포함된 XHTML 문서에 OPF properties=\"mathml\" 선언이 없습니다.",
+                                path=joined,
+                            )
+                        )
 
         # EPUB3: nav 확인
         try:
