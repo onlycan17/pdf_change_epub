@@ -19,6 +19,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from app.core.config import Settings, get_settings
+from app.services.mathml_service import render_block_with_math, render_text_with_math
 from app.services.pdf_service import (
     PDFAnalyzer,
     PDFExtractor,
@@ -450,6 +451,8 @@ class ConversionOrchestrator:
 
             # 3) OCR/LLM (스캔 + 옵션)
             synthesis_markdown: Optional[str] = None
+            scan_math_image_refs: Dict[str, Dict[str, str]] = {}
+            scan_math_images: List[EpubImage] = []
             if (
                 pdf_type == PDFType.SCANNED
                 and (await self.store.get(conversion_id)).ocr_enabled
@@ -476,6 +479,13 @@ class ConversionOrchestrator:
                     progress_callback=on_scan_progress,
                 )
                 synthesis = await processor.process_scanned_pdf(pdf_bytes)
+                synthesis_metadata = getattr(synthesis, "metadata", {})
+                if not isinstance(synthesis_metadata, dict):
+                    synthesis_metadata = {}
+                scan_math_image_refs = self._build_scan_math_image_assets(
+                    synthesis_metadata.get("equation_images", []),
+                    scan_math_images,
+                )
                 synthesis_markdown = clean_text_for_epub_body(
                     synthesis.markdown_content
                 )
@@ -493,7 +503,7 @@ class ConversionOrchestrator:
                 else None
             )
             (
-                epub_images,
+                base_epub_images,
                 image_file_by_xref,
                 image_file_by_page,
             ) = self._build_epub_image_assets(
@@ -505,13 +515,17 @@ class ConversionOrchestrator:
                 image_file_by_page,
                 scanned_pages=scanned_pages_for_images,
             )
-            epub_images = self._filter_epub_images_by_usage(epub_images, page_image_refs)
+            epub_images = [
+                *self._filter_epub_images_by_usage(base_epub_images, page_image_refs),
+                *scan_math_images,
+            ]
 
             chapters: List[Chapter] = []
             if synthesis_markdown:
                 html_body = self._render_markdown_to_xhtml_body(
                     synthesis_markdown,
                     page_image_refs,
+                    math_image_refs=scan_math_image_refs,
                 )
                 chapters.append(
                     Chapter(
@@ -774,7 +788,7 @@ class ConversionOrchestrator:
                     if not text:
                         continue
                     for paragraph in self._split_text_to_paragraphs(text):
-                        html_parts.append(f"<p>{escape(paragraph)}</p>")
+                        html_parts.append(self._wrap_text_block(paragraph))
                     continue
 
                 if element_type == "image":
@@ -797,7 +811,7 @@ class ConversionOrchestrator:
         if len(page_sections) <= 1:
             for line in total_text.split("\n"):
                 if line.strip():
-                    html_parts.append(f"<p>{escape(line)}</p>")
+                    html_parts.append(self._wrap_text_block(line))
             for page in sorted(page_image_refs.keys()):
                 html_parts.append(
                     self._render_image_figure_group(page_image_refs[page])
@@ -808,7 +822,7 @@ class ConversionOrchestrator:
         if leading:
             for line in leading.split("\n"):
                 if line.strip():
-                    html_parts.append(f"<p>{escape(line)}</p>")
+                    html_parts.append(self._wrap_text_block(line))
 
         for idx in range(1, len(page_sections), 2):
             page_str = page_sections[idx].strip()
@@ -818,7 +832,7 @@ class ConversionOrchestrator:
             page_num = int(page_str)
             for line in body.split("\n"):
                 if line.strip():
-                    html_parts.append(f"<p>{escape(line)}</p>")
+                    html_parts.append(self._wrap_text_block(line))
             if page_num in page_image_refs:
                 html_parts.append(
                     self._render_image_figure_group(page_image_refs[page_num])
@@ -833,7 +847,11 @@ class ConversionOrchestrator:
         return "".join(html_parts)
 
     def _render_markdown_to_xhtml_body(
-        self, markdown_text: str, page_image_refs: Dict[int, List[str]]
+        self,
+        markdown_text: str,
+        page_image_refs: Dict[int, List[str]],
+        *,
+        math_image_refs: Optional[Dict[str, Dict[str, str]]] = None,
     ) -> str:
         lines = markdown_text.splitlines()
         html_parts: List[str] = []
@@ -842,11 +860,13 @@ class ConversionOrchestrator:
         list_type: Optional[str] = None
         in_code_block = False
         code_lines: List[str] = []
+        in_verse_block = False
+        verse_lines: List[tuple[int, str]] = []
         inserted_pages: set[int] = set()
 
         def flush_paragraph() -> None:
             if paragraph_buf:
-                html_parts.append(f"<p>{escape(' '.join(paragraph_buf))}</p>")
+                html_parts.append(self._wrap_text_block(" ".join(paragraph_buf)))
                 paragraph_buf.clear()
 
         def flush_list() -> None:
@@ -855,7 +875,7 @@ class ConversionOrchestrator:
                 return
             html_parts.append(f"<{list_type}>")
             for item in list_items:
-                html_parts.append(f"<li>{escape(item)}</li>")
+                html_parts.append(f"<li>{render_text_with_math(item)}</li>")
             html_parts.append(f"</{list_type}>")
             list_items = []
             list_type = None
@@ -868,6 +888,12 @@ class ConversionOrchestrator:
                 html_parts.append("</code></pre>")
                 code_lines = []
 
+        def flush_verse() -> None:
+            nonlocal verse_lines
+            if verse_lines:
+                html_parts.append(self._render_preserved_lines_block(verse_lines))
+                verse_lines = []
+
         for raw_line in lines:
             line = raw_line.rstrip()
             stripped = line.strip()
@@ -878,6 +904,7 @@ class ConversionOrchestrator:
             if stripped.startswith("```"):
                 flush_paragraph()
                 flush_list()
+                flush_verse()
                 if in_code_block:
                     flush_code()
                     in_code_block = False
@@ -889,18 +916,56 @@ class ConversionOrchestrator:
                 code_lines.append(line)
                 continue
 
+            if stripped == "[[VERSE]]":
+                flush_paragraph()
+                flush_list()
+                flush_verse()
+                in_verse_block = True
+                continue
+
+            if stripped == "[[/VERSE]]":
+                flush_verse()
+                in_verse_block = False
+                continue
+
+            if in_verse_block:
+                verse_match = re.match(r"^\[\[LINE:(\d+)\]\](.*)$", line)
+                if verse_match:
+                    verse_lines.append((int(verse_match.group(1)), verse_match.group(2).strip()))
+                elif stripped:
+                    verse_lines.append((0, stripped))
+                continue
+
             if not stripped:
                 flush_paragraph()
                 flush_list()
+                flush_verse()
+                continue
+
+            math_marker = self._extract_math_image_marker(stripped)
+            if math_marker and math_image_refs and math_marker in math_image_refs:
+                math_image = math_image_refs[math_marker]
+                flush_paragraph()
+                flush_list()
+                flush_verse()
+                html_parts.append(
+                    self._render_image_figure(
+                        str(math_image.get("file_name", "")),
+                        alt_text=str(math_image.get("alt_text", "수식 이미지")),
+                        caption_text=str(math_image.get("alt_text", "")).strip(),
+                        css_class="math-figure",
+                    )
+                )
                 continue
 
             heading = re.match(r"^(#{1,6})\s+(.+)$", stripped)
             if heading:
                 flush_paragraph()
                 flush_list()
+                flush_verse()
                 level = len(heading.group(1))
                 title = heading.group(2).strip()
-                html_parts.append(f"<h{level}>{escape(title)}</h{level}>")
+                html_parts.append(f"<h{level}>{render_text_with_math(title)}</h{level}>")
                 page_match = re.search(r"페이지\s*(\d+)", title)
                 if page_match:
                     page_num = int(page_match.group(1))
@@ -915,6 +980,7 @@ class ConversionOrchestrator:
             unordered = re.match(r"^[-*]\s+(.+)$", stripped)
             if ordered or unordered:
                 flush_paragraph()
+                flush_verse()
                 desired_type = "ol" if ordered else "ul"
                 match = ordered or unordered
                 if not match:
@@ -929,8 +995,9 @@ class ConversionOrchestrator:
             if stripped.startswith(">"):
                 flush_paragraph()
                 flush_list()
+                flush_verse()
                 html_parts.append(
-                    f"<blockquote>{escape(stripped[1:].strip())}</blockquote>"
+                    f"<blockquote>{render_text_with_math(stripped[1:].strip())}</blockquote>"
                 )
                 continue
 
@@ -938,6 +1005,7 @@ class ConversionOrchestrator:
 
         flush_paragraph()
         flush_list()
+        flush_verse()
         if in_code_block:
             flush_code()
 
@@ -952,12 +1020,84 @@ class ConversionOrchestrator:
         parts = [segment.strip() for segment in text.split("\n") if segment.strip()]
         return parts if parts else [text]
 
+    def _wrap_text_block(self, text: str) -> str:
+        rendered = render_block_with_math(text)
+        if rendered.startswith("<div class=\"math-display\""):
+            return rendered
+        return f"<p>{rendered}</p>"
+
+    def _render_preserved_lines_block(self, lines: List[tuple[int, str]]) -> str:
+        rendered_lines: List[str] = []
+        for indent_level, text in lines:
+            safe_text = render_text_with_math(text)
+            indent_prefix = "&nbsp;" * max(indent_level, 0) * 2
+            rendered_lines.append(f"{indent_prefix}{safe_text}")
+        return f'<p class="verse">{"<br/>".join(rendered_lines)}</p>'
+
     def _render_image_figure_group(self, image_refs: List[str]) -> str:
         return "".join(self._render_image_figure(file_name) for file_name in image_refs)
 
-    def _render_image_figure(self, file_name: str) -> str:
+    def _render_image_figure(
+        self,
+        file_name: str,
+        *,
+        alt_text: str = "문서 이미지",
+        caption_text: Optional[str] = None,
+        css_class: Optional[str] = None,
+    ) -> str:
         safe_name = escape(file_name)
-        return "<figure>" f'<img src="{safe_name}" alt="문서 이미지" />' "</figure>"
+        class_attr = f' class="{escape(css_class)}"' if css_class else ""
+        figcaption = (
+            f"<figcaption>{escape(caption_text)}</figcaption>"
+            if caption_text
+            else ""
+        )
+        return (
+            f"<figure{class_attr}>"
+            f'<img src="{safe_name}" alt="{escape(alt_text)}" />'
+            f"{figcaption}"
+            "</figure>"
+        )
+
+    def _extract_math_image_marker(self, line: str) -> Optional[str]:
+        match = re.fullmatch(r"(\[\[MATHIMG:[^\]]+\]\])", line.strip())
+        return match.group(1) if match else None
+
+    def _build_scan_math_image_assets(
+        self,
+        raw_images: Any,
+        assets: List[EpubImage],
+    ) -> Dict[str, Dict[str, str]]:
+        marker_to_file: Dict[str, Dict[str, str]] = {}
+        if not isinstance(raw_images, list):
+            return marker_to_file
+
+        start_index = len(assets) + 1
+        for offset, image_info in enumerate(raw_images, start=start_index):
+            if not isinstance(image_info, dict):
+                continue
+            marker = image_info.get("marker")
+            image_bytes = image_info.get("image_bytes")
+            image_format = str(image_info.get("format", "png")).lower()
+            if not isinstance(marker, str) or not isinstance(image_bytes, bytes):
+                continue
+            normalized = self._normalize_image_for_epub(image_bytes, image_format)
+            if normalized is None:
+                continue
+            ext, media_type, normalized_bytes = normalized
+            file_name = f"images/scan-math-{offset}.{ext}"
+            assets.append(
+                EpubImage(
+                    file_name=file_name,
+                    media_type=media_type,
+                    data=normalized_bytes,
+                )
+            )
+            marker_to_file[marker] = {
+                "file_name": file_name,
+                "alt_text": str(image_info.get("alt_text", "수식 이미지")),
+            }
+        return marker_to_file
 
     def _resolve_image_format(self, image_format: str) -> tuple[str, str]:
         mapping = {

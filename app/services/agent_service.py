@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import json
 import logging
 import os
+import re
 from abc import ABC, abstractmethod
-from typing import Any, Awaitable, Callable, Dict, List, Optional
 from dataclasses import asdict, dataclass, is_dataclass
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 from enum import Enum
 
 import httpx
@@ -54,6 +56,7 @@ class ImageAnalysisResult:
     text_content: str
     confidence: float
     layout_info: Optional[Dict[str, Any]] = None
+    equations_latex: Optional[List[str]] = None
 
 
 @dataclass
@@ -64,6 +67,7 @@ class OCRResult:
     text: str
     confidence: float
     bounding_boxes: Optional[List[Dict[str, Any]]] = None
+    equation_images: Optional[List[Dict[str, Any]]] = None
 
 
 @dataclass
@@ -107,7 +111,8 @@ class MultimodalLLMAgent(BaseAgent):
             or self.settings.openai_api_key
         )
         self.base_url = self.settings.llm.base_url
-        self.model_name = self.settings.llm.model_name
+        self.model_name = self.settings.llm.multimodal_primary_model
+        self.fallback_model_name = self.settings.llm.multimodal_fallback_model
         self.max_tokens = self.settings.llm.max_tokens
         self.temperature = self.settings.llm.temperature
         self.timeout = self.settings.llm.timeout
@@ -137,52 +142,20 @@ class MultimodalLLMAgent(BaseAgent):
             image_data = message.content.get("image_bytes")
             page_number = message.content.get("page_number", 1)
             context = message.content.get("context", "")
+            image_format = str(message.content.get("image_format", "jpeg")).lower()
 
             if not image_data:
                 raise ValueError("이미지 데이터가 없습니다.")
 
             # 이미지 인코딩
             image_base64 = base64.b64encode(image_data).decode()
+            image_mime_type = self._resolve_image_mime_type(image_format)
 
-            # OpenRouter API 요청 구성
-            payload = {
-                "model": self.model_name,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": self._build_prompt(context)},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{image_base64}"
-                                },
-                            },
-                        ],
-                    }
-                ],
-                "max_tokens": self.max_tokens,
-                "temperature": self.temperature,
-            }
-
-            # API 호출
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                        "HTTP-Referer": "https://pdf-to-epub-converter.com",
-                        "X-Title": "PDF to EPUB Converter",
-                    },
-                    json=payload,
-                )
-
-                if response.status_code != 200:
-                    raise ValueError(f"OpenRouter API 오류: {response.status_code}")
-
-                result = response.json()
-                analysis = result["choices"][0]["message"]["content"]
+            analysis, result, model_used, fallback_used = await self._request_analysis(
+                image_base64=image_base64,
+                context=context,
+                image_mime_type=image_mime_type,
+            )
 
             # 결과 파싱 및 구조화
             structured_result = self._parse_analysis_result(analysis, page_number)
@@ -191,7 +164,8 @@ class MultimodalLLMAgent(BaseAgent):
                 agent_type=self.agent_type,
                 content=structured_result,
                 metadata={
-                    "model": self.model_name,
+                    "model": model_used,
+                    "fallback_used": fallback_used,
                     "tokens_used": result.get("usage", {}).get("total_tokens", 0),
                     "processing_time": message.timestamp,
                 },
@@ -202,6 +176,99 @@ class MultimodalLLMAgent(BaseAgent):
             self.logger.exception("이미지 분석 실패: %s", error_detail)
             raise ValueError(f"이미지 분석 중 오류 발생: {error_detail}") from e
 
+    async def _request_analysis(
+        self, *, image_base64: str, context: str, image_mime_type: str
+    ) -> tuple[str, Dict[str, Any], str, bool]:
+        errors: List[str] = []
+        tried_models: List[str] = []
+
+        for model_name in [self.model_name, self.fallback_model_name]:
+            if not model_name:
+                continue
+
+            tried_models.append(model_name)
+            try:
+                self.logger.info("이미지 분석 모델 호출 시도", extra={"model": model_name})
+                result = await self._request_analysis_with_model(
+                    model_name=model_name,
+                    image_base64=image_base64,
+                    context=context,
+                    image_mime_type=image_mime_type,
+                )
+                analysis = str(result["choices"][0]["message"]["content"])
+                if not analysis.strip():
+                    raise ValueError("empty response")
+                fallback_used = (
+                    model_name == self.fallback_model_name
+                    and len(tried_models) > 1
+                    and bool(self.fallback_model_name)
+                )
+                return analysis, result, model_name, fallback_used
+            except Exception as exc:
+                self.logger.warning(
+                    "이미지 분석 모델 호출 실패",
+                    extra={"model": model_name, "error": str(exc)},
+                )
+                errors.append(f"{model_name}: {_format_exception_message(exc)}")
+
+        raise RuntimeError(" / ".join(errors) or "all multimodal models failed")
+
+    async def _request_analysis_with_model(
+        self,
+        *,
+        model_name: str,
+        image_base64: str,
+        context: str,
+        image_mime_type: str,
+    ) -> Dict[str, Any]:
+        payload = {
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": self._build_prompt(context)},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{image_mime_type};base64,{image_base64}"
+                            },
+                        },
+                    ],
+                }
+            ],
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+        }
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://pdf-to-epub-converter.com",
+                    "X-Title": "PDF to EPUB Converter",
+                },
+                json=payload,
+            )
+
+        if response.status_code != 200:
+            raise ValueError(f"OpenRouter API 오류: {response.status_code}")
+
+        return response.json()
+
+    def _resolve_image_mime_type(self, image_format: str) -> str:
+        mapping = {
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "png": "image/png",
+            "webp": "image/webp",
+            "gif": "image/gif",
+            "bmp": "image/bmp",
+        }
+        return mapping.get(image_format.lower(), "image/jpeg")
+
     def _build_prompt(self, context: str) -> str:
         """분석 프롬프트 생성"""
         base_prompt = """다음 이미지를 분석하여 문서 변환에 필요한 정보를 추출해주세요.
@@ -210,6 +277,7 @@ class MultimodalLLMAgent(BaseAgent):
 {
   "description": "이미지의 전체적인 설명 (상황, 인물, 배경 등)",
   "text_content": "이미지에서 인식된 모든 텍스트",
+  "equations_latex": ["이미지에서 감지된 수식을 LaTeX로 보존한 목록. 없으면 []"],
   "layout_analysis": {
     "has_title": true/false,
     "has_header": true/false,
@@ -223,10 +291,11 @@ class MultimodalLLMAgent(BaseAgent):
 
 이미지를 분석할 때 다음 사항을 고려해주세요:
 1. 텍스트는 정확하게 추출
-2. 레이아웃 구조 파악
-3. 표나 다이어그램의 존재 여부
-4. 문서의 목적과 맥락 이해
-5. 한국어와 영어 모두 지원
+2. 수식이 있으면 가능한 한 LaTeX 형태로 정확히 보존하고 equations_latex 배열에 각 수식을 개별 항목으로 넣기
+3. 레이아웃 구조 파악
+4. 표나 다이어그램의 존재 여부
+5. 문서의 목적과 맥락 이해
+6. 한국어와 영어 모두 지원
 
 """
 
@@ -263,6 +332,11 @@ class MultimodalLLMAgent(BaseAgent):
                 text_content=parsed.get("text_content", raw_result),
                 confidence=parsed.get("confidence", 0.7),
                 layout_info=parsed.get("layout_analysis", {}),
+                equations_latex=[
+                    str(item).strip()
+                    for item in parsed.get("equations_latex", [])
+                    if str(item).strip()
+                ],
             )
 
         except json.JSONDecodeError as e:
@@ -273,6 +347,7 @@ class MultimodalLLMAgent(BaseAgent):
                 text_content=raw_result,
                 confidence=0.5,
                 layout_info={},
+                equations_latex=[],
             )
 
 
@@ -327,6 +402,7 @@ class OCRAgent(BaseAgent):
                 text=result.get("text", ""),
                 confidence=result.get("confidence", 0.0),
                 bounding_boxes=result.get("bounding_boxes", []),
+                equation_images=result.get("equation_images", []),
             )
 
             return AgentMessage(
@@ -361,7 +437,6 @@ class OCRAgent(BaseAgent):
                 )
                 n = int(data.get("level") and len(data["level"]) or 0)
                 boxes: List[Dict[str, Any]] = []
-                tokens: List[str] = []
                 confidences: List[float] = []
 
                 for i in range(n):
@@ -381,7 +456,6 @@ class OCRAgent(BaseAgent):
                     height = int(float(data.get("height", [0] * n)[i]))
                     bbox = [[left, top], [left + width, top], [left + width, top + height], [left, top + height]]
 
-                    tokens.append(text)
                     if conf >= 0:
                         confidences.append(conf)
 
@@ -394,10 +468,35 @@ class OCRAgent(BaseAgent):
                     )
 
                 avg_conf = (sum(confidences) / len(confidences)) / 100.0 if confidences else 0.0
+                document = self._build_ocr_document(data, n)
+                equation_images = self._extract_equation_images(
+                    image,
+                    document["line_records"],
+                )
+                marker_by_line = {
+                    image_info["line_key"]: image_info["marker"]
+                    for image_info in equation_images
+                    if isinstance(image_info.get("line_key"), tuple)
+                    and isinstance(image_info.get("marker"), str)
+                }
                 return {
-                    "text": " ".join(tokens),
+                    "text": self._render_ocr_document(
+                        document["paragraph_records"],
+                        document["page_width"],
+                        marker_by_line=marker_by_line,
+                    ),
                     "confidence": avg_conf,
                     "bounding_boxes": boxes,
+                    "equation_images": [
+                        {
+                            "marker": image_info["marker"],
+                            "image_bytes": image_info["image_bytes"],
+                            "format": image_info["format"],
+                            "page_number": image_info["page_number"],
+                            "alt_text": image_info["alt_text"],
+                        }
+                        for image_info in equation_images
+                    ],
                 }
 
             loop = asyncio.get_event_loop()
@@ -406,6 +505,444 @@ class OCRAgent(BaseAgent):
         except Exception as e:
             self.logger.exception("OCR 실행 실패: %s", _format_exception_message(e))
             return {"text": "", "confidence": 0.0, "bounding_boxes": []}
+
+    def _reconstruct_ocr_text(self, data: Dict[str, Any], count: int) -> str:
+        document = self._build_ocr_document(data, count)
+        return self._render_ocr_document(
+            document["paragraph_records"],
+            document["page_width"],
+        )
+
+    def _build_ocr_document(self, data: Dict[str, Any], count: int) -> Dict[str, Any]:
+        tokens = self._build_ocr_tokens(data, count)
+        if not tokens:
+            return {"page_width": 0, "line_records": [], "paragraph_records": []}
+
+        page_width = max((token["right"] for token in tokens), default=0)
+        line_records = self._build_ocr_line_records(tokens)
+        paragraph_records = self._build_ocr_paragraph_records(line_records)
+        return {
+            "page_width": page_width,
+            "line_records": line_records,
+            "paragraph_records": paragraph_records,
+        }
+
+    def _render_ocr_document(
+        self,
+        paragraph_records: List[Dict[str, Any]],
+        page_width: int,
+        *,
+        marker_by_line: Optional[Dict[tuple[int, int, int], str]] = None,
+    ) -> str:
+        ordered_paragraphs = self._order_paragraph_records(paragraph_records, page_width)
+        rendered_paragraphs = [
+            self._render_ocr_paragraph(
+                paragraph,
+                page_width,
+                marker_by_line=marker_by_line or {},
+            )
+            for paragraph in ordered_paragraphs
+        ]
+        return "\n\n".join(
+            paragraph for paragraph in rendered_paragraphs if paragraph.strip()
+        )
+
+    def _build_ocr_tokens(self, data: Dict[str, Any], count: int) -> List[Dict[str, Any]]:
+        tokens: List[Dict[str, Any]] = []
+
+        def parse_index(field: str, index: int) -> int:
+            values = data.get(field, [0] * count)
+            try:
+                return int(float(values[index]))
+            except (TypeError, ValueError, IndexError):
+                return 0
+
+        for index in range(count):
+            text_values = data.get("text", [""] * count)
+            try:
+                text = str(text_values[index]).strip()
+            except IndexError:
+                text = ""
+            if not text:
+                continue
+
+            left = parse_index("left", index)
+            top = parse_index("top", index)
+            width = parse_index("width", index)
+            height = parse_index("height", index)
+            tokens.append(
+                {
+                    "text": text,
+                    "block_num": parse_index("block_num", index),
+                    "par_num": parse_index("par_num", index),
+                    "line_num": parse_index("line_num", index),
+                    "left": left,
+                    "top": top,
+                    "width": width,
+                    "height": height,
+                    "right": left + width,
+                }
+            )
+
+        return tokens
+
+    def _build_ocr_line_records(
+        self, tokens: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        grouped: Dict[tuple[int, int, int], List[Dict[str, Any]]] = {}
+        for token in tokens:
+            key = (
+                int(token.get("block_num", 0)),
+                int(token.get("par_num", 0)),
+                int(token.get("line_num", 0)),
+            )
+            grouped.setdefault(key, []).append(token)
+
+        lines: List[Dict[str, Any]] = []
+        for key, members in grouped.items():
+            members.sort(key=lambda item: (int(item.get("left", 0)), int(item.get("top", 0))))
+            left = min(int(item.get("left", 0)) for item in members)
+            top = min(int(item.get("top", 0)) for item in members)
+            right = max(int(item.get("right", 0)) for item in members)
+            height = max(int(item.get("height", 0)) for item in members)
+            lines.append(
+                {
+                    "block_num": key[0],
+                    "par_num": key[1],
+                    "line_num": key[2],
+                    "left": left,
+                    "top": top,
+                    "right": right,
+                    "width": max(right - left, 0),
+                    "height": height,
+                    "text": " ".join(
+                        str(item.get("text", "")).strip() for item in members if str(item.get("text", "")).strip()
+                    ).strip(),
+                }
+            )
+
+        lines.sort(key=lambda item: (int(item.get("top", 0)), int(item.get("left", 0))))
+        return lines
+
+    def _build_ocr_paragraph_records(
+        self, lines: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        grouped: Dict[tuple[int, int], List[Dict[str, Any]]] = {}
+        for line in lines:
+            block_num = int(line.get("block_num", 0))
+            par_num = int(line.get("par_num", 0))
+            paragraph_key = (block_num, par_num if par_num > 0 else 0)
+            grouped.setdefault(paragraph_key, []).append(line)
+
+        paragraphs: List[Dict[str, Any]] = []
+        for key, paragraph_lines in grouped.items():
+            paragraph_lines.sort(
+                key=lambda item: (int(item.get("top", 0)), int(item.get("left", 0)))
+            )
+            left = min(int(line.get("left", 0)) for line in paragraph_lines)
+            top = min(int(line.get("top", 0)) for line in paragraph_lines)
+            right = max(int(line.get("right", 0)) for line in paragraph_lines)
+            bottom = max(
+                int(line.get("top", 0)) + max(int(line.get("height", 0)), 0)
+                for line in paragraph_lines
+            )
+            paragraphs.append(
+                {
+                    "block_num": key[0],
+                    "par_num": key[1],
+                    "left": left,
+                    "top": top,
+                    "right": right,
+                    "bottom": bottom,
+                    "width": max(right - left, 0),
+                    "lines": paragraph_lines,
+                }
+            )
+
+        return paragraphs
+
+    def _order_paragraph_records(
+        self, paragraphs: List[Dict[str, Any]], page_width: int
+    ) -> List[Dict[str, Any]]:
+        if len(paragraphs) < 2 or page_width <= 0:
+            return sorted(
+                paragraphs,
+                key=lambda item: (int(item.get("top", 0)), int(item.get("left", 0))),
+            )
+
+        left_positions = sorted(int(paragraph.get("left", 0)) for paragraph in paragraphs)
+        gaps = [
+            (left_positions[idx + 1] - left_positions[idx], idx)
+            for idx in range(len(left_positions) - 1)
+        ]
+        max_gap, gap_index = max(gaps, default=(0, -1))
+        if max_gap < max(int(page_width * 0.18), 80):
+            return sorted(
+                paragraphs,
+                key=lambda item: (int(item.get("top", 0)), int(item.get("left", 0))),
+            )
+
+        threshold = (left_positions[gap_index] + left_positions[gap_index + 1]) / 2
+        left_column = [p for p in paragraphs if int(p.get("left", 0)) <= threshold]
+        right_column = [p for p in paragraphs if int(p.get("left", 0)) > threshold]
+        if not left_column or not right_column:
+            return sorted(
+                paragraphs,
+                key=lambda item: (int(item.get("top", 0)), int(item.get("left", 0))),
+            )
+
+        if len(paragraphs) < 4 and not self._columns_overlap_vertically(left_column, right_column):
+            return sorted(
+                paragraphs,
+                key=lambda item: (int(item.get("top", 0)), int(item.get("left", 0))),
+            )
+
+        return sorted(
+            paragraphs,
+            key=lambda item: (
+                0 if int(item.get("left", 0)) <= threshold else 1,
+                int(item.get("top", 0)),
+                int(item.get("left", 0)),
+            ),
+        )
+
+    def _columns_overlap_vertically(
+        self, left_column: List[Dict[str, Any]], right_column: List[Dict[str, Any]]
+    ) -> bool:
+        left_top = min(int(paragraph.get("top", 0)) for paragraph in left_column)
+        left_bottom = max(int(paragraph.get("bottom", 0)) for paragraph in left_column)
+        right_top = min(int(paragraph.get("top", 0)) for paragraph in right_column)
+        right_bottom = max(int(paragraph.get("bottom", 0)) for paragraph in right_column)
+        return min(left_bottom, right_bottom) > max(left_top, right_top)
+
+    def _render_ocr_paragraph(
+        self,
+        paragraph: Dict[str, Any],
+        page_width: int,
+        *,
+        marker_by_line: Dict[tuple[int, int, int], str],
+    ) -> str:
+        lines = paragraph.get("lines", [])
+        if not isinstance(lines, list) or not lines:
+            return ""
+
+        if self._should_preserve_line_breaks(lines, page_width):
+            return self._render_preserved_line_block(lines, marker_by_line)
+
+        return self._render_standard_paragraph(lines, marker_by_line)
+
+    def _render_standard_paragraph(
+        self,
+        lines: List[Dict[str, Any]],
+        marker_by_line: Dict[tuple[int, int, int], str],
+    ) -> str:
+        segments: List[str] = []
+        text_buffer: List[str] = []
+
+        def flush_text_buffer() -> None:
+            nonlocal text_buffer
+            if not text_buffer:
+                return
+            merged = self._merge_ocr_lines(text_buffer)
+            if merged:
+                segments.append(merged)
+            text_buffer = []
+
+        for line in lines:
+            marker = marker_by_line.get(self._line_record_key(line))
+            if marker:
+                flush_text_buffer()
+                segments.append(marker)
+                continue
+            text = str(line.get("text", "")).strip()
+            if text:
+                text_buffer.append(text)
+
+        flush_text_buffer()
+        return "\n\n".join(segment for segment in segments if segment.strip())
+
+    def _should_preserve_line_breaks(
+        self, lines: List[Dict[str, Any]], page_width: int
+    ) -> bool:
+        if len(lines) < 2:
+            return False
+
+        if any(self._looks_like_list_item(str(line.get("text", ""))) for line in lines):
+            return False
+
+        line_widths = [max(int(line.get("width", 0)), 0) for line in lines]
+        max_width = max(line_widths, default=0)
+        if max_width <= 0:
+            return False
+
+        nonfinal_lines = lines[:-1] if len(lines) > 2 else lines
+        short_nonfinal_lines = sum(
+            1
+            for line in nonfinal_lines
+            if max(int(line.get("width", 0)), 0) < max_width * 0.75
+        )
+        short_text_lines = sum(
+            1
+            for line in lines
+            if len(str(line.get("text", "")).split()) <= 6
+            or len(str(line.get("text", "")).strip()) <= 18
+        )
+        punctuation_endings = sum(
+            1
+            for line in lines
+            if str(line.get("text", "")).rstrip().endswith((".", "!", "?", ";", ":"))
+        )
+
+        left_positions = [int(line.get("left", 0)) for line in lines]
+        indent_variation = max(left_positions) - min(left_positions)
+        avg_line_height = max(
+            sum(max(int(line.get("height", 0)), 0) for line in lines) / max(len(lines), 1),
+            1.0,
+        )
+        narrow_block = max_width < max(page_width * 0.45, avg_line_height * 12)
+
+        if short_nonfinal_lines >= max(1, len(nonfinal_lines) // 2) and short_text_lines >= max(2, len(lines) // 2):
+            return True
+        if narrow_block and punctuation_endings <= 1 and short_text_lines >= max(2, len(lines) - 1):
+            return True
+        if indent_variation >= avg_line_height * 1.5 and short_text_lines >= max(2, len(lines) // 2):
+            return True
+
+        return False
+
+    def _render_preserved_line_block(
+        self,
+        lines: List[Dict[str, Any]],
+        marker_by_line: Dict[tuple[int, int, int], str],
+    ) -> str:
+        min_left = min(int(line.get("left", 0)) for line in lines)
+        avg_line_height = max(
+            sum(max(int(line.get("height", 0)), 0) for line in lines) / max(len(lines), 1),
+            1.0,
+        )
+        indent_unit = max(avg_line_height * 1.25, 12.0)
+        segments: List[str] = []
+        verse_lines: List[str] = []
+
+        def flush_verse() -> None:
+            nonlocal verse_lines
+            if len(verse_lines) <= 1:
+                verse_lines = []
+                return
+            verse_lines.append("[[/VERSE]]")
+            segments.append("\n".join(verse_lines))
+            verse_lines = []
+
+        for line in lines:
+            marker = marker_by_line.get(self._line_record_key(line))
+            if marker:
+                flush_verse()
+                segments.append(marker)
+                continue
+            text = str(line.get("text", "")).strip()
+            if not text:
+                continue
+            indent_px = max(int(line.get("left", 0)) - min_left, 0)
+            indent_level = max(int(round(indent_px / indent_unit)), 0)
+            if not verse_lines:
+                verse_lines.append("[[VERSE]]")
+            verse_lines.append(f"[[LINE:{indent_level}]]{text}")
+
+        flush_verse()
+        return "\n\n".join(segment for segment in segments if segment.strip())
+
+    def _line_record_key(self, line: Dict[str, Any]) -> tuple[int, int, int]:
+        return (
+            int(line.get("block_num", 0)),
+            int(line.get("par_num", 0)),
+            int(line.get("line_num", 0)),
+        )
+
+    def _looks_like_list_item(self, text: str) -> bool:
+        stripped = text.strip()
+        if not stripped:
+            return False
+        return bool(
+            re.match(r"^(?:\d+\.|[A-Za-z]\.|\(\d+\)|[-*•◦●])\s+", stripped)
+        )
+
+    def _looks_like_equation_line(self, text: str) -> bool:
+        stripped = text.strip()
+        if not stripped or len(stripped) < 3 or self._looks_like_list_item(stripped):
+            return False
+
+        math_symbol_count = len(
+            re.findall(r"[=+\-*/×÷±≈≠≤≥∑∫√^(){}\[\]]", stripped)
+        )
+        alpha_digit_mix = bool(re.search(r"[A-Za-z]\s*\d|\d\s*[A-Za-z]", stripped))
+        variable_pattern = bool(re.search(r"\b[a-zA-Z]\b", stripped))
+
+        if math_symbol_count >= 2 and (alpha_digit_mix or variable_pattern):
+            return True
+        if re.search(r"\b\d+\s*[=<>]\s*\d+", stripped):
+            return True
+        if re.search(r"[A-Za-z0-9]\s*[=<>±≈≠≤≥]\s*[A-Za-z0-9]", stripped):
+            return True
+        return False
+
+    def _extract_equation_images(
+        self,
+        image: Any,
+        line_records: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        equation_images: List[Dict[str, Any]] = []
+        for index, line in enumerate(line_records, start=1):
+            text = str(line.get("text", "")).strip()
+            if not self._looks_like_equation_line(text):
+                continue
+            image_bytes = self._crop_line_image(image, line)
+            if not image_bytes:
+                continue
+            equation_images.append(
+                {
+                    "marker": f"[[MATHIMG:eq-{index}]]",
+                    "line_key": self._line_record_key(line),
+                    "image_bytes": image_bytes,
+                    "format": "png",
+                    "page_number": 1,
+                    "alt_text": text,
+                }
+            )
+        return equation_images
+
+    def _crop_line_image(self, image: Any, line: Dict[str, Any]) -> bytes:
+        from PIL import Image
+
+        left = max(int(line.get("left", 0)) - 12, 0)
+        top = max(int(line.get("top", 0)) - 10, 0)
+        right = min(int(line.get("right", 0)) + 12, image.width)
+        bottom = min(
+            int(line.get("top", 0)) + max(int(line.get("height", 0)), 0) + 10,
+            image.height,
+        )
+        if right <= left or bottom <= top:
+            return b""
+        cropped = image.crop((left, top, right, bottom))
+        if not isinstance(cropped, Image.Image):
+            return b""
+        buffer = io.BytesIO()
+        cropped.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def _merge_ocr_lines(self, lines: List[str]) -> str:
+        merged = ""
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+            if not merged:
+                merged = line
+                continue
+            if merged.endswith("-") and line[:1].isalnum():
+                merged = f"{merged[:-1]}{line}"
+                continue
+            merged = f"{merged} {line}"
+        return merged.strip()
 
 
 class SynthesisAgent(BaseAgent):
@@ -440,6 +977,12 @@ class SynthesisAgent(BaseAgent):
                     "total_images": sum(
                         len(page.get("images", [])) for page in page_results.values()
                     ),
+                    "equation_images": [
+                        equation_image
+                        for page in page_results.values()
+                        for equation_image in page.get("equation_images", [])
+                        if isinstance(equation_image, dict)
+                    ],
                     "total_text_length": len(markdown_content),
                 },
                 processing_stats=stats,
@@ -471,6 +1014,7 @@ class SynthesisAgent(BaseAgent):
                     "images": [],
                     "ocr_texts": [],
                     "descriptions": [],
+                    "equation_images": [],
                 }
 
             if agent_type == "multimodal_llm":
@@ -479,9 +1023,17 @@ class SynthesisAgent(BaseAgent):
                     self._normalize_content(result.get("content", {}))
                 )
             elif agent_type == "ocr":
-                page_groups[page_num]["ocr_texts"].append(
-                    self._normalize_content(result.get("content", ""))
-                )
+                normalized_content = self._normalize_content(result.get("content", ""))
+                page_groups[page_num]["ocr_texts"].append(normalized_content)
+                if isinstance(normalized_content, dict):
+                    raw_equation_images = normalized_content.get("equation_images") or []
+                    page_groups[page_num]["equation_images"].extend(
+                        [
+                            equation_image
+                            for equation_image in raw_equation_images
+                            if isinstance(equation_image, dict)
+                        ]
+                    )
 
         return page_groups
 
@@ -542,7 +1094,7 @@ class SynthesisAgent(BaseAgent):
                 ocr_text = self._normalize_content(ocr_text)
             text = ocr_text.get("text", "") if isinstance(ocr_text, dict) else ""
             if text.strip():
-                texts.append(text)
+                texts.append(text.strip())
 
         # OCR 텍스트가 없으면 이미지 분석 결과 사용
         if not texts:
@@ -551,9 +1103,23 @@ class SynthesisAgent(BaseAgent):
                     desc = self._normalize_content(desc)
                 text = desc.get("text_content", "") if isinstance(desc, dict) else ""
                 if text.strip():
-                    texts.append(text)
+                    texts.append(text.strip())
 
-        return " ".join(texts)
+        equations: List[str] = []
+        for desc in page_data.get("descriptions", []):
+            if not isinstance(desc, dict):
+                desc = self._normalize_content(desc)
+            if not isinstance(desc, dict):
+                continue
+            for item in desc.get("equations_latex", []) or []:
+                equation = str(item).strip()
+                if equation and equation not in equations:
+                    equations.append(equation)
+
+        for equation in equations:
+            texts.append(f"\n$$ {equation} $$\n")
+
+        return "\n\n".join(texts)
 
     def _generate_processing_stats(
         self, page_results: Dict[int, Dict[str, Any]]
@@ -720,14 +1286,18 @@ class ScanPDFProcessor:
         tasks = []
         analysis_scheduled = 0
 
-        for image_info in images:
+        for image_index, image_info in enumerate(images, start=1):
+            scoped_image_info = {
+                **image_info,
+                "_image_scope": f"page-{image_info.get('page', 1)}-img-{image_index}",
+            }
             # OCR 작업
-            ocr_task = self._process_image_with_ocr(image_info)
+            ocr_task = self._process_image_with_ocr(scoped_image_info)
             tasks.append(ocr_task)
 
             # 이미지 분석 작업 (선택적 - 비용 절약을 위해 일부만)
             if self.multimodal_agent is not None and analysis_scheduled < 5:
-                analysis_task = self._process_image_with_llm(image_info)
+                analysis_task = self._process_image_with_llm(scoped_image_info)
                 tasks.append(analysis_task)
                 analysis_scheduled += 1
 
@@ -777,6 +1347,33 @@ class ScanPDFProcessor:
             if not isinstance(content, type):
                 content = asdict(content)
 
+        if isinstance(content, dict):
+            equation_images = content.get("equation_images", [])
+            if isinstance(equation_images, list):
+                for equation_image in equation_images:
+                    if not isinstance(equation_image, dict):
+                        continue
+                    marker = equation_image.get("marker")
+                    if isinstance(marker, str):
+                        image_scope = str(
+                            image_info.get(
+                                "_image_scope",
+                                f"page-{image_info['page']}",
+                            )
+                        )
+                        scoped_marker = marker.replace(
+                            "[[MATHIMG:",
+                            f"[[MATHIMG:{image_scope}-",
+                            1,
+                        )
+                        equation_image["marker"] = scoped_marker
+                        if isinstance(content.get("text"), str):
+                            content["text"] = str(content["text"]).replace(
+                                marker,
+                                scoped_marker,
+                            )
+                    equation_image["page_number"] = image_info["page"]
+
         return {
             "page_number": image_info["page"],
             "agent_type": "ocr",
@@ -796,6 +1393,7 @@ class ScanPDFProcessor:
             content={
                 "image_bytes": image_info["image_bytes"],
                 "page_number": image_info["page"],
+                "image_format": image_info.get("format", "jpeg"),
                 "context": "PDF 문서에서 추출된 이미지입니다. 문서 내용을 파악하여 정확한 설명을 제공해주세요.",
             },
             timestamp=asyncio.get_event_loop().time(),
