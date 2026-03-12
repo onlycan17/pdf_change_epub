@@ -12,6 +12,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import Settings, get_settings
+from app.core.dependencies import PRIVILEGED_EMAIL
 from app.core.dependencies import api_key_header
 from app.models.auth import (
     ApiKeyValidationResponse,
@@ -260,7 +261,11 @@ async def read_users_me(current_user: dict[str, object] = Depends(get_current_us
     email = current_user.get("email")
     if not isinstance(user_id, str) or not isinstance(email, str):
         raise HTTPException(status_code=401, detail="사용자 정보가 유효하지 않습니다.")
-    return UserInfo(id=user_id, email=email)
+    return UserInfo(
+        id=user_id,
+        email=email,
+        is_privileged=email.lower() == PRIVILEGED_EMAIL,
+    )
 
 
 @router.post("/google", response_model=GoogleLoginResponse)

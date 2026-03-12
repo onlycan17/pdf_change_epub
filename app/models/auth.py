@@ -25,6 +25,7 @@ class UserInfo(BaseModel):
 
     id: str
     email: EmailStr
+    is_privileged: bool = False
 
 
 class UserProfile(UserInfo):
