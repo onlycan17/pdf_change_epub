@@ -53,21 +53,17 @@ const router = createBrowserRouter(
     {
       path: '/',
       element: (
-        <RequireAuth>
-          <MainLayout>
-            <HomePage />
-          </MainLayout>
-        </RequireAuth>
+        <MainLayout>
+          <HomePage />
+        </MainLayout>
       ),
     },
     {
       path: '/upload',
       element: (
-        <RequireAuth>
-          <MainLayout>
-            <UploadPage />
-          </MainLayout>
-        </RequireAuth>
+        <MainLayout>
+          <UploadPage />
+        </MainLayout>
       ),
     },
     {

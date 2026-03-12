@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { startConversion } from '@utils/conversionApi';
 import {
   getCurrentPlan,
@@ -10,6 +10,7 @@ import { fetchCurrentUserProfile } from '@utils/authApi';
 const PRIVILEGED_LIMIT_BYTES = 500 * 1024 * 1024;
 
 const UploadPage: React.FC = () => {
+  const location = useLocation();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -106,7 +107,7 @@ const UploadPage: React.FC = () => {
   const handleStartConversion = async () => {
     if (!userEmail) {
       setErrorMessage('무료 변환은 로그인한 사용자만 이용할 수 있습니다. 로그인 후 다시 시도해주세요.');
-      navigate('/login');
+      navigate('/login', { state: { from: location } });
       return;
     }
 
@@ -173,6 +174,7 @@ const UploadPage: React.FC = () => {
           </p>
           <Link
             to="/login"
+            state={{ from: location }}
             className="inline-flex mt-3 text-sm font-medium text-blue-700 hover:underline"
           >
             로그인 페이지로 이동
@@ -314,7 +316,6 @@ const UploadPage: React.FC = () => {
               <input
                 type="checkbox"
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                defaultChecked
               />
               <span className="ml-2 text-sm text-gray-700">
                 원본 레이아웃 보존
@@ -324,7 +325,6 @@ const UploadPage: React.FC = () => {
               <input
                 type="checkbox"
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                defaultChecked
               />
               <span className="ml-2 text-sm text-gray-700">
                 메타데이터 포함

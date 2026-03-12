@@ -1,8 +1,31 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { useApp } from '@contexts/AppContext';
 import GoogleSignInButton from '@components/auth/GoogleSignInButton';
+
+type LoginLocationState = {
+  from?:
+    | string
+    | {
+        pathname?: string;
+        search?: string;
+        hash?: string;
+      };
+};
+
+const resolveRedirectPath = (state: LoginLocationState | null): string => {
+  const from = state?.from;
+  if (typeof from === 'string' && from.trim()) {
+    return from;
+  }
+
+  if (from && typeof from === 'object' && from.pathname) {
+    return `${from.pathname}${from.search || ''}${from.hash || ''}`;
+  }
+
+  return '/upload';
+};
 
 const parseJsonSafely = async <T,>(response: Response): Promise<T | null> => {
   const raw = await response.text();
@@ -18,8 +41,11 @@ const parseJsonSafely = async <T,>(response: Response): Promise<T | null> => {
 };
 
 const LoginPage: React.FC = () => {
+  const location = useLocation();
   const navigate = useNavigate();
   const { dispatch } = useApp();
+  const locationState = location.state as LoginLocationState | null;
+  const redirectPath = resolveRedirectPath(locationState);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -62,7 +88,7 @@ const LoginPage: React.FC = () => {
 
       localStorage.setItem('auth_token', payload.access_token);
       dispatch({ type: 'SET_AUTHENTICATED', payload: true });
-      navigate('/upload');
+      navigate(redirectPath, { replace: true });
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -106,7 +132,7 @@ const LoginPage: React.FC = () => {
 
       localStorage.setItem('auth_token', payload.access_token);
       dispatch({ type: 'SET_AUTHENTICATED', payload: true });
-      navigate('/upload');
+      navigate(redirectPath, { replace: true });
     } catch (error) {
       setErrorMessage(
         error instanceof Error

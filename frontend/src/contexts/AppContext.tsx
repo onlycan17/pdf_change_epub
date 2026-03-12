@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, ReactNode } from 'react';
 import { User, ConversionJob, Notification } from '@/types';
+import { hasUsableAuthToken } from '@utils/subscription';
 
 interface AppState {
   user: User | null;
@@ -26,7 +27,7 @@ interface AppContextType {
 
 const initialState: AppState = {
   user: null,
-  isAuthenticated: false,
+  isAuthenticated: hasUsableAuthToken(),
   isLoading: false,
   conversionJobs: [],
   notifications: [],
