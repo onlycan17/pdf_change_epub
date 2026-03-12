@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   createLargeFileRequest,
   type LargeFileRequestItem,
 } from '@utils/conversionApi';
-import { fetchCurrentUserProfile, isPrivilegedEmail } from '@utils/authApi';
+import { fetchCurrentUserProfile } from '@utils/authApi';
 
 const MAX_LARGE_FILE_SIZE = 500 * 1024 * 1024;
 
@@ -18,6 +18,7 @@ const formatSize = (bytes: number): string => {
 const LargeFileRequestPage: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [email, setEmail] = useState('');
+  const [isPrivileged, setIsPrivileged] = useState(false);
   const [loadingUser, setLoadingUser] = useState(true);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [requestNote, setRequestNote] = useState('');
@@ -33,14 +34,13 @@ const LargeFileRequestPage: React.FC = () => {
       try {
         const profile = await fetchCurrentUserProfile();
         setEmail(profile?.email || '');
+        setIsPrivileged(Boolean(profile?.is_privileged));
       } finally {
         setLoadingUser(false);
       }
     };
     void run();
   }, []);
-
-  const isPrivileged = useMemo(() => isPrivilegedEmail(email), [email]);
 
   const handleSelectFile = (file: File | null) => {
     if (!file) {

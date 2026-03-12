@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { startConversion } from '@utils/conversionApi';
 import {
   getCurrentPlan,
   formatBytesToMb,
 } from '@utils/subscription';
-import { fetchCurrentUserProfile, isPrivilegedEmail } from '@utils/authApi';
+import { fetchCurrentUserProfile } from '@utils/authApi';
 
 const PRIVILEGED_LIMIT_BYTES = 500 * 1024 * 1024;
 
@@ -18,10 +18,10 @@ const UploadPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [ocrEnabled, setOcrEnabled] = useState(false);
   const [userEmail, setUserEmail] = useState('');
+  const [isPrivileged, setIsPrivileged] = useState(false);
   const [loadingUser, setLoadingUser] = useState(true);
 
   const currentPlan = getCurrentPlan();
-  const isPrivileged = useMemo(() => isPrivilegedEmail(userEmail), [userEmail]);
   const maxSize = isPrivileged
     ? PRIVILEGED_LIMIT_BYTES
     : currentPlan.uploadLimitBytes;
@@ -31,6 +31,7 @@ const UploadPage: React.FC = () => {
       try {
         const profile = await fetchCurrentUserProfile();
         setUserEmail(profile?.email || '');
+        setIsPrivileged(Boolean(profile?.is_privileged));
       } finally {
         setLoadingUser(false);
       }

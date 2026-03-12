@@ -5,6 +5,7 @@ const API_KEY = import.meta.env.VITE_API_KEY || 'your-api-key-here';
 export interface CurrentUserProfile {
   id: string;
   email: string;
+  is_privileged: boolean;
 }
 
 export const fetchCurrentUserProfile = async (): Promise<CurrentUserProfile | null> => {
@@ -30,8 +31,4 @@ export const fetchCurrentUserProfile = async (): Promise<CurrentUserProfile | nu
   }
 
   return payload;
-};
-
-export const isPrivilegedEmail = (email: string | null | undefined): boolean => {
-  return (email || '').trim().toLowerCase() === 'onlycan17@gmail.com';
 };

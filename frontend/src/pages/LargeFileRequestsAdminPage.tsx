@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   downloadLargeFileRequestAttachment,
@@ -7,7 +7,7 @@ import {
   type LargeFileRequestFilters,
   type LargeFileRequestItem,
 } from '@utils/conversionApi';
-import { fetchCurrentUserProfile, isPrivilegedEmail } from '@utils/authApi';
+import { fetchCurrentUserProfile } from '@utils/authApi';
 
 const formatSize = (bytes: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
@@ -21,6 +21,7 @@ const formatDate = (isoDate: string): string => {
 const LargeFileRequestsAdminPage: React.FC = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
+  const [isPrivileged, setIsPrivileged] = useState(false);
   const [loadingUser, setLoadingUser] = useState(true);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [items, setItems] = useState<LargeFileRequestItem[]>([]);
@@ -37,8 +38,6 @@ const LargeFileRequestsAdminPage: React.FC = () => {
     status: '',
     keyword: '',
   });
-
-  const isPrivileged = useMemo(() => isPrivilegedEmail(email), [email]);
 
   const loadRequests = useCallback(
     async (nextFilters?: LargeFileRequestFilters) => {
@@ -63,6 +62,7 @@ const LargeFileRequestsAdminPage: React.FC = () => {
       try {
         const profile = await fetchCurrentUserProfile();
         setEmail(profile?.email || '');
+        setIsPrivileged(Boolean(profile?.is_privileged));
       } finally {
         setLoadingUser(false);
       }
