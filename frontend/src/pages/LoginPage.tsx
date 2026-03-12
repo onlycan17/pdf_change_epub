@@ -142,10 +142,6 @@ const LoginPage: React.FC = () => {
           <p className="mt-2 text-center text-sm text-gray-600">
             무료 변환은 로그인 후 이용할 수 있습니다.
           </p>
-          <p className="mt-2 text-center text-xs text-gray-500">
-            데모 계정: 무료 `testuser / testpass`, 구독 `premiumuser / testpass`,
-            운영 `onlycan17@gmail.com / testpass`
-          </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="rounded-md shadow-sm -space-y-px">
