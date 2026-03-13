@@ -6,14 +6,19 @@ from datetime import datetime, timedelta
 from collections.abc import Mapping
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
+from app.core.auth_session import (
+    clear_auth_cookies,
+    extract_access_token,
+    is_privileged_email,
+    set_auth_cookies,
+)
 from app.core.config import Settings, get_settings
-from app.core.dependencies import PRIVILEGED_EMAIL
-from app.core.dependencies import api_key_header
+from app.core.dependencies import get_api_key
 from app.models.auth import (
     ApiKeyValidationResponse,
     AuthStatusResponse,
@@ -61,8 +66,6 @@ DEMO_USERS: dict[str, dict[str, object]] = {
 }
 
 
-# OAuth2 스킬 설정
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 
@@ -162,7 +165,7 @@ def verify_token(token: str) -> Optional[dict[str, object]]:
 
 # 토큰 검증 의존성
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
     _settings: Settings = Depends(get_settings),
 ) -> dict[str, object]:
     """현재 사용자 정보를 반환하는 의존성 함수
@@ -182,6 +185,10 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    token = extract_access_token(request)
+    if not token:
+        raise credentials_exception
 
     payload = verify_token(token)
     if payload is None:
@@ -209,6 +216,7 @@ async def get_current_user(
 # 인증이 필요 없는 엔드포인트
 @router.post("/token", response_model=TokenResponse)
 async def login_for_access_token(
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     settings: Settings = Depends(get_settings),
 ):
@@ -255,6 +263,13 @@ async def login_for_access_token(
     access_token = create_access_token(
         data=token_payload, expires_delta=access_token_expires
     )
+    set_auth_cookies(
+        response,
+        token=access_token,
+        plan_code=str(token_payload.get("plan") or "free"),
+        expires_in_seconds=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        settings=settings,
+    )
 
     return TokenResponse(
         access_token=access_token,
@@ -299,7 +314,7 @@ async def register_user(
 # API 키 인증 엔드포인트 (간단한 방식)
 @router.post("/api-key", response_model=ApiKeyValidationResponse)
 async def validate_api_key(
-    api_key: str = Depends(api_key_header), settings: Settings = Depends(get_settings)
+    api_key: str | None = Depends(get_api_key),
 ):
     """API 키 유효성 검증 엔드포인트
 
@@ -310,10 +325,7 @@ async def validate_api_key(
     Returns:
         dict: 유효성 검증 결과
     """
-    if not settings.DEBUG and api_key != settings.SECURITY_API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key"
-        )
+    del api_key
 
     return ApiKeyValidationResponse(valid=True, message="API key is valid")
 
@@ -336,13 +348,15 @@ async def read_users_me(current_user: dict[str, object] = Depends(get_current_us
     return UserInfo(
         id=user_id,
         email=email,
-        is_privileged=email.lower() == PRIVILEGED_EMAIL,
+        is_privileged=is_privileged_email(email),
     )
 
 
 @router.post("/google", response_model=GoogleLoginResponse)
 async def login_with_google(
-    payload: GoogleLoginRequest, settings: Settings = Depends(get_settings)
+    payload: GoogleLoginRequest,
+    response: Response,
+    settings: Settings = Depends(get_settings),
 ):
     google_payload = verify_google_id_token(
         id_token=payload.id_token,
@@ -379,6 +393,13 @@ async def login_with_google(
     access_token = create_access_token(
         data=token_payload, expires_delta=access_token_expires
     )
+    set_auth_cookies(
+        response,
+        token=access_token,
+        plan_code="free",
+        expires_in_seconds=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        settings=settings,
+    )
 
     return GoogleLoginResponse(
         access_token=access_token,
@@ -391,7 +412,11 @@ async def login_with_google(
 
 # 로그아웃 엔드포인트
 @router.post("/logout", response_model=LogoutResponse)
-async def logout(current_user: dict[str, object] = Depends(get_current_user)):
+async def logout(
+    response: Response,
+    current_user: dict[str, object] = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+):
     """로그아웃 엔드포인트
 
     Args:
@@ -404,6 +429,7 @@ async def logout(current_user: dict[str, object] = Depends(get_current_user)):
     user_id = current_user.get("id")
     if not isinstance(user_id, str):
         raise HTTPException(status_code=401, detail="사용자 정보가 유효하지 않습니다.")
+    clear_auth_cookies(response, settings)
     return LogoutResponse(message="Successfully logged out", user_id=user_id)
 
 

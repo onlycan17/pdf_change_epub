@@ -48,7 +48,9 @@ const LargeFileRequestsAdminPage: React.FC = () => {
         setItems(records);
       } catch (error) {
         setErrorMessage(
-          error instanceof Error ? error.message : '요청 목록을 불러오지 못했습니다.'
+          error instanceof Error
+            ? error.message
+            : '요청 목록을 불러오지 못했습니다.'
         );
       } finally {
         setLoadingRequests(false);
@@ -95,7 +97,9 @@ const LargeFileRequestsAdminPage: React.FC = () => {
       });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : '요청 변환 시작에 실패했습니다.'
+        error instanceof Error
+          ? error.message
+          : '요청 변환 시작에 실패했습니다.'
       );
     } finally {
       setRunningRequestId('');
@@ -109,8 +113,12 @@ const LargeFileRequestsAdminPage: React.FC = () => {
   if (!email) {
     return (
       <div className="max-w-3xl mx-auto bg-white rounded-lg border border-gray-200 p-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-3">대용량 요청 처리</h1>
-        <p className="text-gray-700 mb-4">로그인 후 접근할 수 있는 페이지입니다.</p>
+        <h1 className="text-2xl font-bold text-gray-900 mb-3">
+          대용량 요청 처리
+        </h1>
+        <p className="text-gray-700 mb-4">
+          로그인 후 접근할 수 있는 페이지입니다.
+        </p>
         <Link
           to="/login"
           className="inline-flex bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors"
@@ -124,7 +132,9 @@ const LargeFileRequestsAdminPage: React.FC = () => {
   if (!isPrivileged) {
     return (
       <div className="max-w-3xl mx-auto bg-white rounded-lg border border-gray-200 p-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-3">대용량 요청 처리</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-3">
+          대용량 요청 처리
+        </h1>
         <p className="text-gray-700 mb-4">운영자 전용 페이지입니다.</p>
         <Link
           to="/large-file-request"
@@ -140,7 +150,9 @@ const LargeFileRequestsAdminPage: React.FC = () => {
     <div className="max-w-6xl mx-auto">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">대용량 변환 요청 관리</h1>
+          <h1 className="text-3xl font-bold text-gray-900">
+            대용량 변환 요청 관리
+          </h1>
           <p className="text-gray-600">
             일반 계정이 접수한 요청을 다운로드하고 변환을 시작할 수 있습니다.
           </p>
@@ -225,7 +237,9 @@ const LargeFileRequestsAdminPage: React.FC = () => {
         </div>
       </form>
 
-      {errorMessage && <p className="mb-4 text-sm text-red-600">{errorMessage}</p>}
+      {errorMessage && (
+        <p className="mb-4 text-sm text-red-600">{errorMessage}</p>
+      )}
 
       <div className="space-y-4">
         {items.map((item) => (
@@ -239,7 +253,8 @@ const LargeFileRequestsAdminPage: React.FC = () => {
                   요청 #{item.request_id.slice(0, 8)}
                 </h2>
                 <p className="text-sm text-gray-600">
-                  요청자: {item.requester_email} · 접수일: {formatDate(item.created_at)}
+                  요청자: {item.requester_email} · 접수일:{' '}
+                  {formatDate(item.created_at)}
                 </p>
               </div>
               <span className="inline-flex px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
@@ -264,7 +279,8 @@ const LargeFileRequestsAdminPage: React.FC = () => {
 
             <div className="flex flex-wrap items-center gap-2 mb-4">
               <span className="text-sm text-gray-700">
-                첨부: {item.attachment_filename} ({formatSize(item.attachment_size)})
+                첨부: {item.attachment_filename} (
+                {formatSize(item.attachment_size)})
               </span>
               <button
                 type="button"
@@ -282,8 +298,8 @@ const LargeFileRequestsAdminPage: React.FC = () => {
 
             <div className="rounded-md border border-gray-200 p-3 space-y-3">
               <p className="text-sm text-gray-700">
-                필요하면 다운로드한 파일을 수정해서 다시 업로드한 뒤 변환 시작할 수
-                있습니다.
+                필요하면 다운로드한 파일을 수정해서 다시 업로드한 뒤 변환 시작할
+                수 있습니다.
               </p>
               <input
                 type="file"

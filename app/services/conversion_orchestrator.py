@@ -59,6 +59,7 @@ class ConversionJob:
     filename: str
     file_size: int
     ocr_enabled: bool
+    owner_user_id: Optional[str] = None
     translate_to_korean: bool = False
     state: JobState = JobState.PENDING
     progress: int = 0
@@ -100,6 +101,7 @@ def serialize_job_status(job: ConversionJob) -> Dict[str, Any]:
         "filename": job.filename,
         "file_size": job.file_size,
         "ocr_enabled": job.ocr_enabled,
+        "owner_user_id": job.owner_user_id,
         "translate_to_korean": job.translate_to_korean,
         "state": getattr(job.state, "value", job.state),
         "progress": job.progress,
@@ -145,6 +147,7 @@ def apply_serialized_job_status(
         "filename",
         "file_size",
         "ocr_enabled",
+        "owner_user_id",
         "translate_to_korean",
         "progress",
         "message",
@@ -252,6 +255,7 @@ class ConversionOrchestrator:
         filename: str,
         file_size: int,
         ocr_enabled: bool,
+        owner_user_id: Optional[str] = None,
         translate_to_korean: bool = False,
         pdf_bytes: bytes,
     ) -> ConversionJob:
@@ -260,6 +264,7 @@ class ConversionOrchestrator:
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
+            owner_user_id=owner_user_id,
             translate_to_korean=translate_to_korean,
             source_pdf_bytes=pdf_bytes,
             state=JobState.PENDING,

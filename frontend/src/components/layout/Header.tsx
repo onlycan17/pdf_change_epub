@@ -3,8 +3,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '@contexts/AppContext';
 import {
   buildUserFromProfile,
-  clearSession,
   fetchCurrentUserProfile,
+  logoutCurrentSession,
 } from '@utils/authApi';
 
 const Header: React.FC = () => {
@@ -29,8 +29,8 @@ const Header: React.FC = () => {
     void run();
   }, [dispatch, state.isAuthenticated]);
 
-  const handleLogout = () => {
-    clearSession();
+  const handleLogout = async () => {
+    await logoutCurrentSession();
     dispatch({ type: 'SET_USER', payload: null });
     dispatch({ type: 'SET_AUTHENTICATED', payload: false });
     setIsPrivileged(false);

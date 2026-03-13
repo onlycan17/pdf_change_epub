@@ -212,9 +212,7 @@ class EpubGenerator:
             parser = etree.XMLParser(recover=True)
             root = etree.fromstring(
                 (
-                    '<div xmlns="http://www.w3.org/1999/xhtml">'
-                    f"{body_html}"
-                    "</div>"
+                    '<div xmlns="http://www.w3.org/1999/xhtml">' f"{body_html}" "</div>"
                 ).encode("utf-8"),
                 parser=parser,
             )

@@ -27,6 +27,7 @@ class TestConversionTasks:
         mock_job.filename = "test.pdf"
         mock_job.file_size = len(sample_pdf_content)
         mock_job.ocr_enabled = True
+        mock_job.owner_user_id = None
         mock_job.translate_to_korean = False
         mock_job.state = JobState.PENDING
         mock_job.progress = 0
@@ -70,6 +71,7 @@ class TestConversionTasks:
                 "filename": mock_job.filename,
                 "file_size": mock_job.file_size,
                 "ocr_enabled": mock_job.ocr_enabled,
+                "owner_user_id": None,
                 "translate_to_korean": mock_job.translate_to_korean,
                 "state": "pending",
                 "progress": mock_job.progress,

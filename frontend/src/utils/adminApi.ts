@@ -1,22 +1,9 @@
 const API_KEY = import.meta.env.VITE_API_KEY || 'your-api-key-here';
 
-const getAuthToken = (): string | null => {
-  return (
-    localStorage.getItem('auth_token') ||
-    localStorage.getItem('access_token') ||
-    localStorage.getItem('token')
-  );
-};
-
 const createHeaders = (): HeadersInit => {
-  const headers: Record<string, string> = {
+  return {
     'X-API-Key': API_KEY,
   };
-  const token = getAuthToken();
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
 };
 
 const parseErrorMessage = async (response: Response): Promise<string> => {
@@ -91,6 +78,7 @@ export interface AdminDashboardData {
 
 export const fetchAdminDashboard = async (): Promise<AdminDashboardData> => {
   const response = await fetch('/api/v1/admin/dashboard', {
+    credentials: 'same-origin',
     headers: createHeaders(),
   });
 

@@ -664,7 +664,9 @@ async def test_scanned_pdf_preserves_verse_blocks_in_rendered_epub(monkeypatch):
     monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
     orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content, chunk_chars=None: []
     orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: []
-    orch.pdf_extractor.extract_content_flow_with_images = lambda pdf_content: {"pages": []}
+    orch.pdf_extractor.extract_content_flow_with_images = lambda pdf_content: {
+        "pages": []
+    }
 
     class DummyProcessor:
         async def process_scanned_pdf(self, _pdf_bytes: bytes):
@@ -883,7 +885,9 @@ async def test_scanned_pdf_renders_equation_crops_as_epub_images(monkeypatch):
     monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
     orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content, chunk_chars=None: []
     orch.pdf_extractor.extract_images_from_pdf = lambda pdf_content: []
-    orch.pdf_extractor.extract_content_flow_with_images = lambda pdf_content: {"pages": []}
+    orch.pdf_extractor.extract_content_flow_with_images = lambda pdf_content: {
+        "pages": []
+    }
 
     class DummyProcessor:
         async def process_scanned_pdf(self, _pdf_bytes: bytes):

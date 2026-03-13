@@ -77,19 +77,22 @@ const RegisterPage: React.FC = () => {
       });
       const payload = (await response.json().catch(() => null)) as {
         detail?: string;
-        access_token?: string;
       } | null;
 
-      if (!response.ok || !payload?.access_token) {
+      if (!response.ok) {
         throw new Error(payload?.detail || 'Google 로그인에 실패했습니다.');
       }
 
-      localStorage.setItem('auth_token', payload.access_token);
       const profile = await fetchCurrentUserProfile();
+      if (!profile) {
+        throw new Error(
+          '로그인 상태를 확인하지 못했습니다. 다시 시도해주세요.'
+        );
+      }
       dispatch({ type: 'SET_AUTHENTICATED', payload: true });
       dispatch({
         type: 'SET_USER',
-        payload: profile ? buildUserFromProfile(profile) : null,
+        payload: buildUserFromProfile(profile),
       });
       navigate('/upload');
     } catch (error) {

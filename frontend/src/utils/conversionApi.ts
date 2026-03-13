@@ -1,22 +1,9 @@
 const API_KEY = import.meta.env.VITE_API_KEY || 'your-api-key-here';
 
-const getAuthToken = (): string | null => {
-  return (
-    localStorage.getItem('auth_token') ||
-    localStorage.getItem('access_token') ||
-    localStorage.getItem('token')
-  );
-};
-
 const createDefaultHeaders = (): Record<string, string> => {
-  const headers: Record<string, string> = {
+  return {
     'X-API-Key': API_KEY,
   };
-  const authToken = getAuthToken();
-  if (authToken) {
-    headers.Authorization = `Bearer ${authToken}`;
-  }
-  return headers;
 };
 
 interface ApiEnvelope<T> {
@@ -87,6 +74,7 @@ export const startConversion = async (
 
   const response = await fetch('/api/v1/conversion/start', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: createDefaultHeaders(),
     body: formData,
   });
@@ -105,6 +93,7 @@ export const getConversionStatus = async (
   const response = await fetch(
     `/api/v1/conversion/status/${encodeURIComponent(conversionId)}`,
     {
+      credentials: 'same-origin',
       headers: createDefaultHeaders(),
     }
   );
@@ -129,6 +118,7 @@ export const createLargeFileRequest = async (
 
   const response = await fetch('/api/v1/conversion/large-file-requests', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: createDefaultHeaders(),
     body: formData,
   });
@@ -159,7 +149,8 @@ export const listLargeFileRequests = async (
   const response = await fetch(
     `/api/v1/conversion/large-file-requests${suffix ? `?${suffix}` : ''}`,
     {
-    headers: createDefaultHeaders(),
+      credentials: 'same-origin',
+      headers: createDefaultHeaders(),
     }
   );
 
@@ -180,6 +171,7 @@ export const downloadLargeFileRequestAttachment = async (
   const response = await fetch(
     `/api/v1/conversion/large-file-requests/${encodeURIComponent(requestId)}/attachment`,
     {
+      credentials: 'same-origin',
       headers: createDefaultHeaders(),
     }
   );
@@ -215,6 +207,7 @@ export const startLargeFileRequestConversion = async (
     `/api/v1/conversion/large-file-requests/${encodeURIComponent(requestId)}/start-conversion`,
     {
       method: 'POST',
+      credentials: 'same-origin',
       headers: createDefaultHeaders(),
       body: formData,
     }

@@ -352,12 +352,8 @@ class TestMetadataAPI:
 
         self.client = TestClient(app)
 
-    @patch("app.api.v1.conversion.api_key_header")
-    def test_extract_pdf_metadata_endpoint_exists(self, mock_api_key_header):
+    def test_extract_pdf_metadata_endpoint_exists(self):
         """메타데이터 추출 엔드포인트 존재 여부 테스트"""
-        # API 키 검증 Mock 설정
-        mock_api_key_header.return_value = "your-api-key-here"
-
         # 먼저 헬스체크 엔드포인트로 기본 기능 확인
         health_response = self.client.get("/health")
         assert health_response.status_code == 200
@@ -374,14 +370,8 @@ class TestMetadataAPI:
         assert response.status_code in [404, 415, 422]
 
     @patch("app.api.v1.conversion.create_pdf_metadata_extractor")
-    @patch("app.api.v1.conversion.api_key_header")
-    def test_extract_pdf_metadata_success(
-        self, mock_api_key_header, mock_extractor_class
-    ):
+    def test_extract_pdf_metadata_success(self, mock_extractor_class):
         """메타데이터 추출 성공 테스트"""
-        # API 키 검증 Mock 설정
-        mock_api_key_header.return_value = "your-api-key-here"
-
         # Mock 설정
         mock_extractor = Mock()
         mock_extractor.extract_metadata.return_value = {
@@ -423,12 +413,8 @@ class TestMetadataAPI:
         mock_extractor.extract_metadata.assert_called_once()
         mock_extractor.get_metadata_summary.assert_called_once()
 
-    @patch("app.api.v1.conversion.api_key_header")
-    def test_extract_pdf_metadata_invalid_file_type(self, mock_api_key_header):
+    def test_extract_pdf_metadata_invalid_file_type(self):
         """잘못된 파일 형식으로 메타데이터 추출 테스트"""
-        # API 키 검증 Mock 설정
-        mock_api_key_header.return_value = "your-api-key-here"
-
         # 텍스트 파일로 테스트
         test_content = b"This is not a PDF file"
 
@@ -443,14 +429,8 @@ class TestMetadataAPI:
         assert "지원하지 않는 파일 형식" in data["detail"]
 
     @patch("app.api.v1.conversion.create_pdf_metadata_extractor")
-    @patch("app.api.v1.conversion.api_key_header")
-    def test_extract_pdf_metadata_with_content_analysis(
-        self, mock_api_key_header, mock_extractor_class
-    ):
+    def test_extract_pdf_metadata_with_content_analysis(self, mock_extractor_class):
         """내용 분석 포함 메타데이터 추출 테스트"""
-        # API 키 검증 Mock 설정
-        mock_api_key_header.return_value = "your-api-key-here"
-
         # Mock 설정
         mock_extractor = Mock()
         mock_extractor.extract_metadata.return_value = {

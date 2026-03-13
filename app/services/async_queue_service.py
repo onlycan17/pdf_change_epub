@@ -135,6 +135,11 @@ class AsyncQueueService:
                 filename=str(payload.get("filename", "")),
                 file_size=int(payload.get("file_size", 0)),
                 ocr_enabled=bool(payload.get("ocr_enabled", False)),
+                owner_user_id=(
+                    str(payload.get("owner_user_id"))
+                    if payload.get("owner_user_id") is not None
+                    else None
+                ),
                 translate_to_korean=bool(payload.get("translate_to_korean", False)),
             )
             await self.store.create(job)
@@ -145,6 +150,7 @@ class AsyncQueueService:
             filename=job.filename,
             file_size=job.file_size,
             ocr_enabled=job.ocr_enabled,
+            owner_user_id=job.owner_user_id,
             translate_to_korean=job.translate_to_korean,
             state=job.state,
             progress=job.progress,
@@ -170,6 +176,7 @@ class AsyncQueueService:
         filename: str,
         file_size: int,
         ocr_enabled: bool,
+        owner_user_id: Optional[str] = None,
         translate_to_korean: bool = False,
         pdf_bytes: bytes,
     ) -> ConversionJob:
@@ -193,6 +200,7 @@ class AsyncQueueService:
                 filename=filename,
                 file_size=file_size,
                 ocr_enabled=ocr_enabled,
+                owner_user_id=owner_user_id,
                 translate_to_korean=translate_to_korean,
                 pdf_bytes=pdf_bytes,
             )
@@ -203,6 +211,7 @@ class AsyncQueueService:
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
+            owner_user_id=owner_user_id,
             translate_to_korean=translate_to_korean,
             source_pdf_bytes=None,
             state=JobState.PENDING,
@@ -509,6 +518,7 @@ class AsyncQueueService:
                 filename=job.filename,
                 file_size=job.file_size,
                 ocr_enabled=job.ocr_enabled,
+                owner_user_id=job.owner_user_id,
                 translate_to_korean=job.translate_to_korean,
                 pdf_bytes=job.source_pdf_bytes,
             )

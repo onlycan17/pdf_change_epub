@@ -71,7 +71,10 @@ const PremiumPage: React.FC = () => {
     }
 
     try {
-      await openCheckoutSession(planCode as 'monthly' | 'yearly', 'subscription');
+      await openCheckoutSession(
+        planCode as 'monthly' | 'yearly',
+        'subscription'
+      );
     } catch {
       setBillingState((prev) => ({
         ...prev,
@@ -80,7 +83,9 @@ const PremiumPage: React.FC = () => {
     }
   };
 
-  const premiumPlans = billingState.plans.filter((plan) => plan.code !== 'free');
+  const premiumPlans = billingState.plans.filter(
+    (plan) => plan.code !== 'free'
+  );
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -101,7 +106,9 @@ const PremiumPage: React.FC = () => {
           </p>
         )}
         {billingState.loading ? (
-          <p className="text-center text-gray-600">요금제를 불러오는 중입니다...</p>
+          <p className="text-center text-gray-600">
+            요금제를 불러오는 중입니다...
+          </p>
         ) : (
           <div className="grid md:grid-cols-3 gap-8">
             {premiumPlans.map((plan) => (
@@ -122,14 +129,20 @@ const PremiumPage: React.FC = () => {
                 )}
 
                 <div className="text-center mb-6">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">{plan.label}</h3>
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                    {plan.label}
+                  </h3>
                   <div className="flex items-baseline justify-center mb-2">
                     <span className="text-4xl font-bold text-gray-900">
                       {getPlanPrice(plan)}
                     </span>
-                    <span className="text-gray-600 ml-2">/{getPlanPeriod(plan)}</span>
+                    <span className="text-gray-600 ml-2">
+                      /{getPlanPeriod(plan)}
+                    </span>
                   </div>
-                  <p className="text-gray-600">업로드 최대 {plan.uploadLimitMb}MB</p>
+                  <p className="text-gray-600">
+                    업로드 최대 {plan.uploadLimitMb}MB
+                  </p>
                   <p className="text-gray-500 text-sm">
                     {plan.code === SUBSCRIPTION_PLAN_YEARLY
                       ? '월간 대비 10% 할인 혜택 적용'
@@ -180,7 +193,9 @@ const PremiumPage: React.FC = () => {
 
       <section className="py-16 bg-gray-50 rounded-2xl">
         <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold text-gray-900 mb-4">현재 이용 플랜</h2>
+          <h2 className="text-3xl font-bold text-gray-900 mb-4">
+            현재 이용 플랜
+          </h2>
           <p className="text-gray-600">현재 플랜: {currentPlan.label}</p>
         </div>
 
@@ -188,14 +203,20 @@ const PremiumPage: React.FC = () => {
           <table className="w-full bg-white rounded-lg shadow-sm">
             <thead>
               <tr className="border-b border-gray-200">
-                <th className="text-left p-4 font-semibold text-gray-900">항목</th>
-                <th className="text-center p-4 font-semibold text-gray-900">내용</th>
+                <th className="text-left p-4 font-semibold text-gray-900">
+                  항목
+                </th>
+                <th className="text-center p-4 font-semibold text-gray-900">
+                  내용
+                </th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-b border-gray-100">
                 <td className="p-4 text-gray-700">업로드 용량 한도</td>
-                <td className="p-4 text-center">{currentPlan.uploadLimitMb}MB</td>
+                <td className="p-4 text-center">
+                  {currentPlan.uploadLimitMb}MB
+                </td>
               </tr>
               <tr className="border-b border-gray-100">
                 <td className="p-4 text-gray-700">연간 결제 할인</td>
@@ -208,7 +229,9 @@ const PremiumPage: React.FC = () => {
               <tr>
                 <td className="p-4 text-gray-700">권장 사용 대상</td>
                 <td className="p-4 text-center">
-                  {currentPlan.code === 'free' ? '문서 1~2개' : '연속 변환 작업이 많은 사용자'}
+                  {currentPlan.code === 'free'
+                    ? '문서 1~2개'
+                    : '연속 변환 작업이 많은 사용자'}
                 </td>
               </tr>
             </tbody>

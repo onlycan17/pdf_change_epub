@@ -109,8 +109,7 @@ class TestLLMSettings:
         assert settings.model_name == "deepseek/deepseek-chat"
         assert settings.multimodal_primary_model == "qwen/qwen3.5-flash-02-23"
         assert (
-            settings.multimodal_fallback_model
-            == "google/gemini-3.1-flash-lite-preview"
+            settings.multimodal_fallback_model == "google/gemini-3.1-flash-lite-preview"
         )
         assert settings.max_tokens == 4000
         assert settings.temperature == 0.1
@@ -299,6 +298,16 @@ class TestSettingsEdgeCases:
         assert settings.database.pool_size == 20
         assert settings.redis.host == "localhost"
         assert settings.ocr.language == "ko"
+
+    def test_production_requires_non_default_secrets(self, monkeypatch):
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.delenv("APP_SECRET_KEY", raising=False)
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        monkeypatch.delenv("SECURITY_API_KEY", raising=False)
+        monkeypatch.delenv("APP_SECURITY_API_KEY", raising=False)
+
+        with pytest.raises(ValueError):
+            Settings()
 
 
 if __name__ == "__main__":

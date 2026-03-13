@@ -188,7 +188,9 @@ class MultimodalLLMAgent(BaseAgent):
 
             tried_models.append(model_name)
             try:
-                self.logger.info("이미지 분석 모델 호출 시도", extra={"model": model_name})
+                self.logger.info(
+                    "이미지 분석 모델 호출 시도", extra={"model": model_name}
+                )
                 result = await self._request_analysis_with_model(
                     model_name=model_name,
                     image_base64=image_base64,
@@ -454,7 +456,12 @@ class OCRAgent(BaseAgent):
                     top = int(float(data.get("top", [0] * n)[i]))
                     width = int(float(data.get("width", [0] * n)[i]))
                     height = int(float(data.get("height", [0] * n)[i]))
-                    bbox = [[left, top], [left + width, top], [left + width, top + height], [left, top + height]]
+                    bbox = [
+                        [left, top],
+                        [left + width, top],
+                        [left + width, top + height],
+                        [left, top + height],
+                    ]
 
                     if conf >= 0:
                         confidences.append(conf)
@@ -467,7 +474,11 @@ class OCRAgent(BaseAgent):
                         }
                     )
 
-                avg_conf = (sum(confidences) / len(confidences)) / 100.0 if confidences else 0.0
+                avg_conf = (
+                    (sum(confidences) / len(confidences)) / 100.0
+                    if confidences
+                    else 0.0
+                )
                 document = self._build_ocr_document(data, n)
                 equation_images = self._extract_equation_images(
                     image,
@@ -534,7 +545,9 @@ class OCRAgent(BaseAgent):
         *,
         marker_by_line: Optional[Dict[tuple[int, int, int], str]] = None,
     ) -> str:
-        ordered_paragraphs = self._order_paragraph_records(paragraph_records, page_width)
+        ordered_paragraphs = self._order_paragraph_records(
+            paragraph_records, page_width
+        )
         rendered_paragraphs = [
             self._render_ocr_paragraph(
                 paragraph,
@@ -547,7 +560,9 @@ class OCRAgent(BaseAgent):
             paragraph for paragraph in rendered_paragraphs if paragraph.strip()
         )
 
-    def _build_ocr_tokens(self, data: Dict[str, Any], count: int) -> List[Dict[str, Any]]:
+    def _build_ocr_tokens(
+        self, data: Dict[str, Any], count: int
+    ) -> List[Dict[str, Any]]:
         tokens: List[Dict[str, Any]] = []
 
         def parse_index(field: str, index: int) -> int:
@@ -600,7 +615,9 @@ class OCRAgent(BaseAgent):
 
         lines: List[Dict[str, Any]] = []
         for key, members in grouped.items():
-            members.sort(key=lambda item: (int(item.get("left", 0)), int(item.get("top", 0))))
+            members.sort(
+                key=lambda item: (int(item.get("left", 0)), int(item.get("top", 0)))
+            )
             left = min(int(item.get("left", 0)) for item in members)
             top = min(int(item.get("top", 0)) for item in members)
             right = max(int(item.get("right", 0)) for item in members)
@@ -616,7 +633,9 @@ class OCRAgent(BaseAgent):
                     "width": max(right - left, 0),
                     "height": height,
                     "text": " ".join(
-                        str(item.get("text", "")).strip() for item in members if str(item.get("text", "")).strip()
+                        str(item.get("text", "")).strip()
+                        for item in members
+                        if str(item.get("text", "")).strip()
                     ).strip(),
                 }
             )
@@ -670,7 +689,9 @@ class OCRAgent(BaseAgent):
                 key=lambda item: (int(item.get("top", 0)), int(item.get("left", 0))),
             )
 
-        left_positions = sorted(int(paragraph.get("left", 0)) for paragraph in paragraphs)
+        left_positions = sorted(
+            int(paragraph.get("left", 0)) for paragraph in paragraphs
+        )
         gaps = [
             (left_positions[idx + 1] - left_positions[idx], idx)
             for idx in range(len(left_positions) - 1)
@@ -691,7 +712,9 @@ class OCRAgent(BaseAgent):
                 key=lambda item: (int(item.get("top", 0)), int(item.get("left", 0))),
             )
 
-        if len(paragraphs) < 4 and not self._columns_overlap_vertically(left_column, right_column):
+        if len(paragraphs) < 4 and not self._columns_overlap_vertically(
+            left_column, right_column
+        ):
             return sorted(
                 paragraphs,
                 key=lambda item: (int(item.get("top", 0)), int(item.get("left", 0))),
@@ -712,7 +735,9 @@ class OCRAgent(BaseAgent):
         left_top = min(int(paragraph.get("top", 0)) for paragraph in left_column)
         left_bottom = max(int(paragraph.get("bottom", 0)) for paragraph in left_column)
         right_top = min(int(paragraph.get("top", 0)) for paragraph in right_column)
-        right_bottom = max(int(paragraph.get("bottom", 0)) for paragraph in right_column)
+        right_bottom = max(
+            int(paragraph.get("bottom", 0)) for paragraph in right_column
+        )
         return min(left_bottom, right_bottom) > max(left_top, right_top)
 
     def _render_ocr_paragraph(
@@ -796,16 +821,25 @@ class OCRAgent(BaseAgent):
         left_positions = [int(line.get("left", 0)) for line in lines]
         indent_variation = max(left_positions) - min(left_positions)
         avg_line_height = max(
-            sum(max(int(line.get("height", 0)), 0) for line in lines) / max(len(lines), 1),
+            sum(max(int(line.get("height", 0)), 0) for line in lines)
+            / max(len(lines), 1),
             1.0,
         )
         narrow_block = max_width < max(page_width * 0.45, avg_line_height * 12)
 
-        if short_nonfinal_lines >= max(1, len(nonfinal_lines) // 2) and short_text_lines >= max(2, len(lines) // 2):
+        if short_nonfinal_lines >= max(
+            1, len(nonfinal_lines) // 2
+        ) and short_text_lines >= max(2, len(lines) // 2):
             return True
-        if narrow_block and punctuation_endings <= 1 and short_text_lines >= max(2, len(lines) - 1):
+        if (
+            narrow_block
+            and punctuation_endings <= 1
+            and short_text_lines >= max(2, len(lines) - 1)
+        ):
             return True
-        if indent_variation >= avg_line_height * 1.5 and short_text_lines >= max(2, len(lines) // 2):
+        if indent_variation >= avg_line_height * 1.5 and short_text_lines >= max(
+            2, len(lines) // 2
+        ):
             return True
 
         return False
@@ -817,7 +851,8 @@ class OCRAgent(BaseAgent):
     ) -> str:
         min_left = min(int(line.get("left", 0)) for line in lines)
         avg_line_height = max(
-            sum(max(int(line.get("height", 0)), 0) for line in lines) / max(len(lines), 1),
+            sum(max(int(line.get("height", 0)), 0) for line in lines)
+            / max(len(lines), 1),
             1.0,
         )
         indent_unit = max(avg_line_height * 1.25, 12.0)
@@ -862,18 +897,14 @@ class OCRAgent(BaseAgent):
         stripped = text.strip()
         if not stripped:
             return False
-        return bool(
-            re.match(r"^(?:\d+\.|[A-Za-z]\.|\(\d+\)|[-*•◦●])\s+", stripped)
-        )
+        return bool(re.match(r"^(?:\d+\.|[A-Za-z]\.|\(\d+\)|[-*•◦●])\s+", stripped))
 
     def _looks_like_equation_line(self, text: str) -> bool:
         stripped = text.strip()
         if not stripped or len(stripped) < 3 or self._looks_like_list_item(stripped):
             return False
 
-        math_symbol_count = len(
-            re.findall(r"[=+\-*/×÷±≈≠≤≥∑∫√^(){}\[\]]", stripped)
-        )
+        math_symbol_count = len(re.findall(r"[=+\-*/×÷±≈≠≤≥∑∫√^(){}\[\]]", stripped))
         alpha_digit_mix = bool(re.search(r"[A-Za-z]\s*\d|\d\s*[A-Za-z]", stripped))
         variable_pattern = bool(re.search(r"\b[a-zA-Z]\b", stripped))
 
@@ -1026,7 +1057,9 @@ class SynthesisAgent(BaseAgent):
                 normalized_content = self._normalize_content(result.get("content", ""))
                 page_groups[page_num]["ocr_texts"].append(normalized_content)
                 if isinstance(normalized_content, dict):
-                    raw_equation_images = normalized_content.get("equation_images") or []
+                    raw_equation_images = (
+                        normalized_content.get("equation_images") or []
+                    )
                     page_groups[page_num]["equation_images"].extend(
                         [
                             equation_image
@@ -1055,7 +1088,11 @@ class SynthesisAgent(BaseAgent):
                 for i, desc in enumerate(descriptions):
                     if not isinstance(desc, dict):
                         desc = self._normalize_content(desc)
-                    desc_data = desc.get("image_description", "") if isinstance(desc, dict) else ""
+                    desc_data = (
+                        desc.get("image_description", "")
+                        if isinstance(desc, dict)
+                        else ""
+                    )
                     if desc_data:
                         markdown_parts.append(f"### 이미지 {i+1}")
                         markdown_parts.append(desc_data)
@@ -1068,7 +1105,9 @@ class SynthesisAgent(BaseAgent):
                 for i, ocr_text in enumerate(ocr_texts):
                     if not isinstance(ocr_text, dict):
                         ocr_text = self._normalize_content(ocr_text)
-                    text = ocr_text.get("text", "") if isinstance(ocr_text, dict) else ""
+                    text = (
+                        ocr_text.get("text", "") if isinstance(ocr_text, dict) else ""
+                    )
                     if text.strip():
                         markdown_parts.append(f"### 텍스트 블록 {i+1}")
                         markdown_parts.append(text)
@@ -1210,7 +1249,9 @@ class ScanPDFProcessor:
             if isinstance(result, Exception):
                 required_errors.append(f"{agent.agent_type.value}: {result}")
             elif result is not True:
-                required_errors.append(f"{agent.agent_type.value}: validate returned {result!r}")
+                required_errors.append(
+                    f"{agent.agent_type.value}: validate returned {result!r}"
+                )
 
         if required_errors:
             raise ValueError("; ".join(required_errors))
@@ -1302,15 +1343,16 @@ class ScanPDFProcessor:
                 analysis_scheduled += 1
 
         total_tasks = len(tasks)
-        results = []
+        results: List[object] = []
         completed_tasks = 0
 
         for done in asyncio.as_completed(tasks):
+            task_result: object
             try:
-                result = await done
+                task_result = await done
             except Exception as exc:
-                result = exc
-            results.append(result)
+                task_result = exc
+            results.append(task_result)
             completed_tasks += 1
             if self.progress_callback is not None:
                 await self.progress_callback(completed_tasks, max(1, total_tasks))
@@ -1319,9 +1361,10 @@ class ScanPDFProcessor:
         processed_results: List[Dict[str, Any]] = []
         for result in results:
             if isinstance(result, Exception):
-                self.logger.warning("이미지 처리 실패: %s", _format_exception_message(result))
+                self.logger.warning(
+                    "이미지 처리 실패: %s", _format_exception_message(result)
+                )
                 continue
-            # mypy를 위한 타입 단언
             if isinstance(result, dict):
                 processed_results.append(result)
 

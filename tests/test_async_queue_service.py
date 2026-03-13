@@ -131,7 +131,9 @@ class TestAsyncQueueService:
         assert result.celery_task_id == "task-progress"
 
     @pytest.mark.asyncio
-    async def test_get_status_progress_payload_does_not_clear_existing_celery_task_id(self):
+    async def test_get_status_progress_payload_does_not_clear_existing_celery_task_id(
+        self,
+    ):
         service = AsyncQueueService()
         service._initialized = True
         job = ConversionJob(
@@ -248,6 +250,7 @@ class TestAsyncQueueService:
                 filename="retry.pdf",
                 file_size=len(source_pdf),
                 ocr_enabled=True,
+                owner_user_id=None,
                 translate_to_korean=False,
                 pdf_bytes=source_pdf,
             )
@@ -272,9 +275,11 @@ class TestAsyncQueueService:
         service.celery_app = MagicMock()
         service.celery_app.send_task.return_value.id = "new-task"
 
-        with patch("app.services.async_queue_service.Path.exists", return_value=True), patch(
-            "app.services.async_queue_service.Path.write_bytes"
-        ), patch("app.services.async_queue_service.Path.read_bytes", return_value=b"%PDF-1.4"):
+        with patch(
+            "app.services.async_queue_service.Path.exists", return_value=True
+        ), patch("app.services.async_queue_service.Path.write_bytes"), patch(
+            "app.services.async_queue_service.Path.read_bytes", return_value=b"%PDF-1.4"
+        ):
             result = await service.retry_conversion("cid-reset")
 
         refreshed = await service.get_status("cid-reset")
@@ -284,7 +289,9 @@ class TestAsyncQueueService:
         assert refreshed.progress == 0
         assert refreshed.current_step == "queued"
         assert refreshed.error_message is None
-        service.celery_app.control.revoke.assert_called_once_with("old-task", terminate=True)
+        service.celery_app.control.revoke.assert_called_once_with(
+            "old-task", terminate=True
+        )
 
     @pytest.mark.asyncio
     async def test_initialize_force_recovers_to_celery_after_transient_fallback(self):
@@ -302,7 +309,9 @@ class TestAsyncQueueService:
         assert service.store is not service.orchestrator.store
 
     @pytest.mark.asyncio
-    async def test_get_status_falls_back_to_orchestrator_store_for_direct_mode_job(self):
+    async def test_get_status_falls_back_to_orchestrator_store_for_direct_mode_job(
+        self,
+    ):
         service = AsyncQueueService()
         service._initialized = True
         service.use_celery = True

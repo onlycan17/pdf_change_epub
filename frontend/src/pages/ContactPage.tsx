@@ -45,14 +45,20 @@ const ContactPage: FC = () => {
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
               {method.title}
             </p>
-            <p className="mt-4 text-lg font-bold text-slate-900">{method.value}</p>
-            <p className="mt-3 text-sm leading-7 text-slate-600">{method.description}</p>
+            <p className="mt-4 text-lg font-bold text-slate-900">
+              {method.value}
+            </p>
+            <p className="mt-3 text-sm leading-7 text-slate-600">
+              {method.description}
+            </p>
           </article>
         ))}
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-2xl font-bold text-slate-900">이렇게 보내주시면 가장 빠릅니다</h2>
+        <h2 className="text-2xl font-bold text-slate-900">
+          이렇게 보내주시면 가장 빠릅니다
+        </h2>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
             <h3 className="text-lg font-semibold text-slate-900">제목 예시</h3>
@@ -63,7 +69,9 @@ const ContactPage: FC = () => {
           <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
             <h3 className="text-lg font-semibold text-slate-900">본문 예시</h3>
             <p className="mt-2 text-sm leading-7 text-slate-600">
-              언제, 어떤 파일로, 어떤 단계에서, 어떤 결과를 기대했는지 적어주세요. 가능하면 conversion id도 함께 보내주시면 확인이 훨씬 빨라집니다.
+              언제, 어떤 파일로, 어떤 단계에서, 어떤 결과를 기대했는지
+              적어주세요. 가능하면 conversion id도 함께 보내주시면 확인이 훨씬
+              빨라집니다.
             </p>
           </div>
         </div>

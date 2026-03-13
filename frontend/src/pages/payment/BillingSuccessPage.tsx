@@ -7,7 +7,10 @@ const BillingSuccessPage: React.FC = () => {
   const navigate = useNavigate();
   const [error, setError] = useState('');
 
-  const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const params = useMemo(
+    () => new URLSearchParams(location.search),
+    [location.search]
+  );
   const customerKey = params.get('customerKey') || '';
   const authKey = params.get('authKey') || '';
 
@@ -19,14 +22,15 @@ const BillingSuccessPage: React.FC = () => {
       }
 
       try {
-        const result = await completeTossBillingAuth({
+        await completeTossBillingAuth({
           customer_key: customerKey,
           auth_key: authKey,
         });
-        localStorage.setItem('access_token', result.access_token);
         navigate('/premium', { replace: true });
       } catch (e) {
-        setError(e instanceof Error ? e.message : '구독 처리 중 오류가 발생했습니다.');
+        setError(
+          e instanceof Error ? e.message : '구독 처리 중 오류가 발생했습니다.'
+        );
       }
     };
 
@@ -36,7 +40,9 @@ const BillingSuccessPage: React.FC = () => {
   if (error) {
     return (
       <div className="max-w-xl mx-auto py-16">
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">구독 처리 실패</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-4">
+          구독 처리 실패
+        </h1>
         <p className="text-gray-700 mb-6">{error}</p>
         <button
           type="button"
@@ -52,7 +58,9 @@ const BillingSuccessPage: React.FC = () => {
   return (
     <div className="max-w-xl mx-auto py-16">
       <h1 className="text-2xl font-bold text-gray-900 mb-4">구독 처리 중</h1>
-      <p className="text-gray-700">결제 확인 후 구독을 활성화하고 있습니다...</p>
+      <p className="text-gray-700">
+        결제 확인 후 구독을 활성화하고 있습니다...
+      </p>
     </div>
   );
 };

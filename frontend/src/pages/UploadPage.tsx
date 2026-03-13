@@ -1,10 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { startConversion } from '@utils/conversionApi';
-import {
-  getCurrentPlan,
-  formatBytesToMb,
-} from '@utils/subscription';
+import { getCurrentPlan, formatBytesToMb } from '@utils/subscription';
 import { fetchCurrentUserProfile } from '@utils/authApi';
 
 const PRIVILEGED_LIMIT_BYTES = 500 * 1024 * 1024;
@@ -106,7 +103,9 @@ const UploadPage: React.FC = () => {
 
   const handleStartConversion = async () => {
     if (!userEmail) {
-      setErrorMessage('무료 변환은 로그인한 사용자만 이용할 수 있습니다. 로그인 후 다시 시도해주세요.');
+      setErrorMessage(
+        '무료 변환은 로그인한 사용자만 이용할 수 있습니다. 로그인 후 다시 시도해주세요.'
+      );
       navigate('/login', { state: { from: location } });
       return;
     }
@@ -169,8 +168,8 @@ const UploadPage: React.FC = () => {
       {!loadingUser && !userEmail && (
         <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4">
           <p className="text-sm text-red-900">
-            변환 기능은 로그인한 사용자만 이용할 수 있습니다. 무료 사용자는
-            하루 2회까지 변환 가능합니다.
+            변환 기능은 로그인한 사용자만 이용할 수 있습니다. 무료 사용자는 하루
+            2회까지 변환 가능합니다.
           </p>
           <Link
             to="/login"
