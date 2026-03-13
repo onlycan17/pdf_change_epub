@@ -20,6 +20,8 @@ from app.models.auth import (
     GoogleLoginRequest,
     GoogleLoginResponse,
     LogoutResponse,
+    RegisterRequest,
+    RegisterResponse,
     TokenResponse,
     UserInfo,
 )
@@ -31,10 +33,37 @@ router = APIRouter(
     tags=["Authentication"],
 )
 
+DEMO_USERS: dict[str, dict[str, object]] = {
+    "testuser": {
+        "password": "testpass",
+        "sub": "testuser",
+        "email": "testuser@example.com",
+        "plan": "free",
+        "is_subscribed": False,
+        "subscription_active": False,
+    },
+    "premiumuser": {
+        "password": "testpass",
+        "sub": "premiumuser",
+        "email": "premiumuser@example.com",
+        "plan": "premium",
+        "is_subscribed": True,
+        "subscription_active": True,
+    },
+    "onlycan17@gmail.com": {
+        "password": "testpass",
+        "sub": "onlycan17@gmail.com",
+        "email": "onlycan17@gmail.com",
+        "plan": "yearly",
+        "is_subscribed": True,
+        "subscription_active": True,
+    },
+}
+
 
 # OAuth2 스킬 설정
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -88,6 +117,23 @@ def create_access_token(
     )
 
     return encoded_jwt
+
+
+def build_token_payload(
+    *,
+    user_id: str,
+    email: str,
+    plan: str = "free",
+    is_subscribed: bool = False,
+    subscription_active: bool = False,
+) -> dict[str, object]:
+    return {
+        "sub": user_id,
+        "email": email,
+        "is_subscribed": is_subscribed,
+        "subscription_active": subscription_active,
+        "plan": plan,
+    }
 
 
 def verify_token(token: str) -> Optional[dict[str, object]]:
@@ -174,43 +220,36 @@ async def login_for_access_token(
     Returns:
         dict: 토큰 정보
     """
-    # TODO: 실제 사용자 인증 로직 구현
-    if form_data.password != "testpass" or form_data.username not in {
-        "testuser",
-        "premiumuser",
-        "onlycan17@gmail.com",
-    }:
+    token_payload: Optional[dict[str, object]] = None
+    demo_user = DEMO_USERS.get(form_data.username)
+    if demo_user and form_data.password == demo_user["password"]:
+        token_payload = build_token_payload(
+            user_id=str(demo_user["sub"]),
+            email=str(demo_user["email"]),
+            plan=str(demo_user["plan"]),
+            is_subscribed=bool(demo_user["is_subscribed"]),
+            subscription_active=bool(demo_user["subscription_active"]),
+        )
+    else:
+        repo = get_user_repository(settings)
+        record = repo.get_by_email(form_data.username.strip().lower())
+        if (
+            record is not None
+            and record.provider == "local"
+            and record.password_hash
+            and verify_password(form_data.password, record.password_hash)
+        ):
+            token_payload = build_token_payload(
+                user_id=record.user_id,
+                email=record.email,
+            )
+
+    if token_payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    token_payload: dict[str, object]
-    if form_data.username == "premiumuser":
-        token_payload = {
-            "sub": form_data.username,
-            "email": "premiumuser@example.com",
-            "is_subscribed": True,
-            "subscription_active": True,
-            "plan": "premium",
-        }
-    elif form_data.username == "onlycan17@gmail.com":
-        token_payload = {
-            "sub": form_data.username,
-            "email": "onlycan17@gmail.com",
-            "is_subscribed": True,
-            "subscription_active": True,
-            "plan": "yearly",
-        }
-    else:
-        token_payload = {
-            "sub": form_data.username,
-            "email": "testuser@example.com",
-            "is_subscribed": False,
-            "subscription_active": False,
-            "plan": "free",
-        }
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
@@ -221,6 +260,39 @@ async def login_for_access_token(
         access_token=access_token,
         token_type="bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+
+@router.post(
+    "/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED
+)
+async def register_user(
+    payload: RegisterRequest,
+    settings: Settings = Depends(get_settings),
+):
+    normalized_name = payload.name.strip()
+    normalized_email = payload.email.strip().lower()
+    if len(normalized_name) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이름은 2자 이상 입력해주세요.",
+        )
+    if len(payload.password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="비밀번호는 8자 이상이어야 합니다.",
+        )
+
+    repo = get_user_repository(settings)
+    record = repo.create_local_user(
+        email=normalized_email,
+        name=normalized_name,
+        password_hash=get_password_hash(payload.password),
+    )
+    return RegisterResponse(
+        user_id=record.user_id,
+        email=record.email,
+        provider=record.provider,
     )
 
 
@@ -299,13 +371,10 @@ async def login_with_google(
         picture=picture,
     )
 
-    token_payload = {
-        "sub": user_record.user_id,
-        "email": email,
-        "is_subscribed": False,
-        "subscription_active": False,
-        "plan": "free",
-    }
+    token_payload = build_token_payload(
+        user_id=user_record.user_id,
+        email=email,
+    )
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data=token_payload, expires_delta=access_token_expires

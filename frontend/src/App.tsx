@@ -16,6 +16,7 @@ import HelpCenterPage from '@pages/HelpCenterPage';
 import ContactPage from '@pages/ContactPage';
 import TermsPage from '@pages/TermsPage';
 import PrivacyPage from '@pages/PrivacyPage';
+import ServiceGuidePage from '@pages/ServiceGuidePage';
 import ProfilePage from '@pages/ProfilePage';
 import LoginPage from '@pages/LoginPage';
 import RegisterPage from '@pages/RegisterPage';
@@ -93,11 +94,17 @@ const router = createBrowserRouter(
     {
       path: '/support',
       element: (
-        <RequireAuth>
-          <MainLayout>
-            <SupportPage />
-          </MainLayout>
-        </RequireAuth>
+        <MainLayout>
+          <SupportPage />
+        </MainLayout>
+      ),
+    },
+    {
+      path: '/service-guide',
+      element: (
+        <MainLayout>
+          <ServiceGuidePage />
+        </MainLayout>
       ),
     },
     {
@@ -145,11 +152,9 @@ const router = createBrowserRouter(
     {
       path: '/large-file-request',
       element: (
-        <RequireAuth>
-          <MainLayout>
-            <LargeFileRequestPage />
-          </MainLayout>
-        </RequireAuth>
+        <MainLayout>
+          <LargeFileRequestPage />
+        </MainLayout>
       ),
     },
     {

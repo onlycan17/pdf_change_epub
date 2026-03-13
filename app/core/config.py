@@ -595,7 +595,7 @@ class TestingSettings(Settings):
         self.log_level = "DEBUG"
 
         # 중첩된 설정 재정의
-        self.database = DatabaseSettings(url="sqlite:///./test.db")
+        self.database = DatabaseSettings(url=os.getenv("DB_URL", "sqlite:///./test.db"))
         self.redis = RedisSettings(db=3)
         self.conversion = ConversionSettings(
             max_file_size=10 * 1024 * 1024

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta
@@ -9,12 +9,16 @@
     <meta name="google-adsense-account" content="ca-pub-2304781060968997" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="PDF 문서를 EPUB 전자책 형식으로 변환하는 서비스입니다. 사용 방법, 대용량 요청 안내, 도움말 센터, 개인정보처리방침을 공개적으로 제공합니다."
+    />
     <script
       async
       src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2304781060968997"
       crossorigin="anonymous"
     ></script>
-    <title>PDF to EPUB Converter</title>
+    <title>PDF to EPUB Converter | PDF를 EPUB으로 변환</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -23,7 +27,54 @@
     />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main
+        style="
+          max-width: 960px;
+          margin: 0 auto;
+          padding: 40px 20px 64px;
+          font-family: 'Inter', sans-serif;
+          color: #0f172a;
+          line-height: 1.7;
+        "
+      >
+        <p
+          style="
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.24em;
+            color: #2563eb;
+            text-transform: uppercase;
+          "
+        >
+          PDF to EPUB Service
+        </p>
+        <h1 style="margin-top: 12px; font-size: 42px; line-height: 1.15">
+          PDF를 EPUB으로 읽기 쉬운 전자책 형태로 변환
+        </h1>
+        <p style="margin-top: 20px; font-size: 18px; color: #475569">
+          PDF to EPUB은 PDF 문서를 전자책 형식으로 다시 정리하는 웹
+          서비스입니다. 일반 변환, 스캔 PDF용 OCR 옵션, 대용량 요청 안내, 도움말
+          센터, 개인정보처리방침을 공개적으로 제공합니다.
+        </p>
+        <p style="margin-top: 12px; color: #475569">
+          긴 PDF를 작은 화면에서 읽기 쉽게 바꾸는 것이 목표이며, 단순 확장자
+          변경이 아니라 문단 흐름과 텍스트 구조를 전자책 읽기에 맞게 다듬는 데
+          초점을 맞춥니다.
+        </p>
+        <section style="margin-top: 32px">
+          <h2 style="font-size: 24px">주요 공개 페이지</h2>
+          <ul style="margin-top: 12px; padding-left: 20px">
+            <li><a href="/service-guide">서비스 안내</a></li>
+            <li><a href="/help-center">도움말 센터</a></li>
+            <li><a href="/large-file-request">대용량 요청 안내</a></li>
+            <li><a href="/contact">문의하기</a></li>
+            <li><a href="/terms">이용약관</a></li>
+            <li><a href="/privacy">개인정보처리방침</a></li>
+          </ul>
+        </section>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

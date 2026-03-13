@@ -59,3 +59,15 @@ class GoogleLoginResponse(BaseModel):
     expires_in: int
     user_id: str
     email: EmailStr
+
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+
+
+class RegisterResponse(BaseModel):
+    user_id: str
+    email: EmailStr
+    provider: str

@@ -15,6 +15,12 @@ const formatSize = (bytes: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 };
 
+const requestSteps = [
+  '로그인 후 PDF와 요청사항을 함께 접수합니다.',
+  '입금 정보와 희망 일정, OCR 필요 여부를 확인합니다.',
+  '검토 후 순차적으로 변환을 진행하고 결과를 안내합니다.',
+];
+
 const LargeFileRequestPage: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [email, setEmail] = useState('');
@@ -25,9 +31,8 @@ const LargeFileRequestPage: React.FC = () => {
   const [bankTransferNote, setBankTransferNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [createdRequest, setCreatedRequest] = useState<LargeFileRequestItem | null>(
-    null
-  );
+  const [createdRequest, setCreatedRequest] =
+    useState<LargeFileRequestItem | null>(null);
 
   useEffect(() => {
     const run = async () => {
@@ -48,7 +53,8 @@ const LargeFileRequestPage: React.FC = () => {
     }
 
     const isPdf =
-      file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      file.type === 'application/pdf' ||
+      file.name.toLowerCase().endsWith('.pdf');
     if (!isPdf) {
       setSelectedFile(null);
       setErrorMessage('PDF 파일만 첨부 가능합니다.');
@@ -90,7 +96,9 @@ const LargeFileRequestPage: React.FC = () => {
       }
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : '요청 접수 중 오류가 발생했습니다.'
+        error instanceof Error
+          ? error.message
+          : '요청 접수 중 오류가 발생했습니다.'
       );
     } finally {
       setIsSubmitting(false);
@@ -103,17 +111,60 @@ const LargeFileRequestPage: React.FC = () => {
 
   if (!email) {
     return (
-      <div className="max-w-3xl mx-auto bg-white rounded-lg border border-gray-200 p-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-3">대용량 변환 요청</h1>
-        <p className="text-gray-700 mb-4">
-          대용량 변환 요청은 로그인한 사용자만 접수할 수 있습니다.
-        </p>
-        <Link
-          to="/login"
-          className="inline-flex bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors"
-        >
-          로그인하러 가기
-        </Link>
+      <div className="max-w-5xl mx-auto space-y-6">
+        <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-600">
+            Large File Request
+          </p>
+          <h1 className="mt-4 text-3xl font-bold text-gray-900">
+            대용량 PDF는 별도 요청 절차로 접수합니다
+          </h1>
+          <p className="mt-4 max-w-3xl text-sm leading-7 text-gray-700">
+            일반 업로드 한도를 넘는 문서는 별도 요청으로 접수합니다. 일반
+            접수창이 작은 택배 창구라면, 이 페이지는 큰 짐 전용 접수대와
+            같습니다. 로그인 후 파일과 요청사항을 남기면 순차 검토를 통해 변환을
+            진행합니다.
+          </p>
+          <div className="mt-6 flex flex-col gap-4 sm:flex-row">
+            <Link
+              to="/login"
+              className="inline-flex rounded-lg bg-blue-600 px-5 py-3 font-medium text-white transition-colors hover:bg-blue-700"
+            >
+              로그인 후 요청 접수
+            </Link>
+            <Link
+              to="/contact"
+              className="inline-flex rounded-lg border border-blue-600 px-5 py-3 font-medium text-blue-600 transition-colors hover:bg-blue-50"
+            >
+              먼저 문의하기
+            </Link>
+          </div>
+        </section>
+
+        <section className="grid gap-6 md:grid-cols-3">
+          {requestSteps.map((step) => (
+            <article
+              key={step}
+              className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+            >
+              <p className="text-sm leading-7 text-slate-700">{step}</p>
+            </article>
+          ))}
+        </section>
+
+        <section className="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+          <h2 className="text-xl font-semibold text-amber-950">
+            요청 전에 확인할 점
+          </h2>
+          <ul className="mt-4 list-disc space-y-2 pl-5 text-sm leading-7 text-amber-950">
+            <li>지원 최대 용량은 500MB입니다.</li>
+            <li>OCR이 필요한 스캔 PDF는 처리 시간이 더 길 수 있습니다.</li>
+            <li>
+              희망 납기, 원하는 결과 형태, 문제 페이지를 적어주면 검토가
+              빨라집니다.
+            </li>
+          </ul>
+        </section>
       </div>
     );
   }
@@ -121,7 +172,9 @@ const LargeFileRequestPage: React.FC = () => {
   if (isPrivileged) {
     return (
       <div className="max-w-3xl mx-auto bg-white rounded-lg border border-gray-200 p-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-3">대용량 변환 요청</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-3">
+          대용량 변환 요청
+        </h1>
         <p className="text-gray-700 mb-4">
           운영자 계정은 요청 접수 대신 요청 처리 페이지를 사용합니다.
         </p>
@@ -138,14 +191,19 @@ const LargeFileRequestPage: React.FC = () => {
   return (
     <div className="max-w-3xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">대용량 변환 요청</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          대용량 변환 요청
+        </h1>
         <p className="text-gray-600">
           일반 변환 한도(25MB)를 초과하는 파일은 아래 요청 폼으로 접수해주세요.
+          파일이 클수록 처리 조건을 더 자세히 남겨주시면 검토가 빨라집니다.
         </p>
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
-        <h2 className="text-lg font-semibold text-amber-900 mb-2">계좌이체 안내</h2>
+        <h2 className="text-lg font-semibold text-amber-900 mb-2">
+          계좌이체 안내
+        </h2>
         <p className="text-sm text-amber-900 leading-relaxed">
           입금 계좌: 신한은행 110-123-456789 (예금주: PDF to EPUB). 입금자명,
           희망 처리 일정, 요청사항을 함께 남겨주세요.
@@ -193,7 +251,7 @@ const LargeFileRequestPage: React.FC = () => {
             onChange={(event) => setRequestNote(event.target.value)}
             rows={4}
             className="w-full border border-gray-300 rounded-md px-3 py-2"
-            placeholder="원하는 변환 방향, OCR 필요 여부, 납기 희망일 등을 적어주세요."
+            placeholder="원하는 변환 방향, OCR 필요 여부, 문제가 예상되는 페이지, 납기 희망일 등을 적어주세요."
           />
         </div>
 

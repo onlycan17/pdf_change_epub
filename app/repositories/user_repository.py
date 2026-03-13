@@ -19,6 +19,7 @@ class UserRecord:
     email: str
     name: str
     picture: str
+    password_hash: str
     created_at: datetime
     updated_at: datetime
 
@@ -65,6 +66,7 @@ class UserRepository:
               email TEXT NOT NULL,
               name TEXT NOT NULL,
               picture TEXT NOT NULL,
+              password_hash TEXT NOT NULL DEFAULT '',
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
             )
@@ -76,6 +78,13 @@ class UserRepository:
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)"
         )
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()
+        }
+        if "password_hash" not in columns:
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''"
+            )
 
     def _ensure_schema(self) -> None:
         with self._connect() as conn:
@@ -159,30 +168,118 @@ class UserRepository:
                 conn.execute(
                     """
                     INSERT INTO users(
-                      user_id, provider, provider_sub, email, name, picture, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                      user_id, provider, provider_sub, email, name, picture, password_hash, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(user_id) DO UPDATE SET
                       email=excluded.email,
                       name=excluded.name,
                       picture=excluded.picture,
+                      password_hash='',
                       updated_at=excluded.updated_at
                     """,
-                    (user_id, provider, provider_sub, email, name, picture, now, now),
+                    (
+                        user_id,
+                        provider,
+                        provider_sub,
+                        email,
+                        name,
+                        picture,
+                        "",
+                        now,
+                        now,
+                    ),
                 )
             except sqlite3.OperationalError:
                 self._ensure_schema_with_conn(conn)
                 conn.execute(
                     """
                     INSERT INTO users(
-                      user_id, provider, provider_sub, email, name, picture, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                      user_id, provider, provider_sub, email, name, picture, password_hash, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(user_id) DO UPDATE SET
                       email=excluded.email,
                       name=excluded.name,
                       picture=excluded.picture,
+                      password_hash='',
                       updated_at=excluded.updated_at
                     """,
-                    (user_id, provider, provider_sub, email, name, picture, now, now),
+                    (
+                        user_id,
+                        provider,
+                        provider_sub,
+                        email,
+                        name,
+                        picture,
+                        "",
+                        now,
+                        now,
+                    ),
+                )
+
+        record = self.get_by_user_id(user_id)
+        if not record:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="사용자 저장에 실패했습니다.",
+            )
+        return record
+
+    def create_local_user(
+        self,
+        *,
+        email: str,
+        name: str,
+        password_hash: str,
+    ) -> UserRecord:
+        existing = self.get_by_email(email)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="이미 가입된 이메일입니다.",
+            )
+
+        user_id = f"local:{email.strip().lower()}"
+        now = _utcnow().isoformat()
+
+        with self._connect() as conn:
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO users(
+                      user_id, provider, provider_sub, email, name, picture, password_hash, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_id,
+                        "local",
+                        email.strip().lower(),
+                        email.strip().lower(),
+                        name.strip(),
+                        "",
+                        password_hash,
+                        now,
+                        now,
+                    ),
+                )
+            except sqlite3.OperationalError:
+                self._ensure_schema_with_conn(conn)
+                conn.execute(
+                    """
+                    INSERT INTO users(
+                      user_id, provider, provider_sub, email, name, picture, password_hash, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_id,
+                        "local",
+                        email.strip().lower(),
+                        email.strip().lower(),
+                        name.strip(),
+                        "",
+                        password_hash,
+                        now,
+                        now,
+                    ),
                 )
 
         record = self.get_by_user_id(user_id)
@@ -202,6 +299,7 @@ class UserRepository:
             email=str(row["email"]),
             name=str(row["name"]),
             picture=str(row["picture"]),
+            password_hash=str(row["password_hash"]),
             created_at=datetime.fromisoformat(str(row["created_at"])),
             updated_at=datetime.fromisoformat(str(row["updated_at"])),
         )
@@ -212,6 +310,7 @@ _user_repository: Optional[UserRepository] = None
 
 def get_user_repository(settings: Settings) -> UserRepository:
     global _user_repository
-    if _user_repository is None:
+    db_path = _sqlite_path_from_db_url(settings.database.url)
+    if _user_repository is None or _user_repository._db_path != db_path:
         _user_repository = UserRepository(settings)
     return _user_repository

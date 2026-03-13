@@ -76,14 +76,18 @@ const LoginPage: React.FC = () => {
         body: body.toString(),
       });
 
-      const payload = await parseJsonSafely<{ access_token?: string }>(response);
+      const payload = await parseJsonSafely<{ access_token?: string }>(
+        response
+      );
 
       if (!response.ok) {
         throw new Error('로그인에 실패했습니다. 계정 정보를 확인해주세요.');
       }
 
       if (!payload?.access_token) {
-        throw new Error('로그인 응답이 올바르지 않습니다. 잠시 후 다시 시도해주세요.');
+        throw new Error(
+          '로그인 응답이 올바르지 않습니다. 잠시 후 다시 시도해주세요.'
+        );
       }
 
       localStorage.setItem('auth_token', payload.access_token);
@@ -167,6 +171,10 @@ const LoginPage: React.FC = () => {
           </p>
           <p className="mt-2 text-center text-sm text-gray-600">
             무료 변환은 로그인 후 이용할 수 있습니다.
+          </p>
+          <p className="mt-2 text-center text-xs text-gray-500">
+            데모 계정: 무료 `testuser / testpass`, 구독 `premiumuser /
+            testpass`, 운영 `onlycan17@gmail.com / testpass`
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
@@ -271,26 +279,11 @@ const LoginPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="mt-6 grid grid-cols-2 gap-3">
+            <div className="mt-6">
               <GoogleSignInButton
                 onCredential={handleGoogleCredential}
                 disabled={isSubmitting}
               />
-
-              <button
-                type="button"
-                className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <title>GitHub 로그인</title>
-                  <path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.174-.105-.949-.199-2.403.042-3.441.219-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.653 2.567-.992 3.992-.285 1.193.6 2.165 1.775 2.165 2.128 0 3.768-2.245 3.768-5.487 0-2.861-2.063-4.869-5.008-4.869-3.41 0-5.409 2.562-5.409 5.199 0 1.033.394 2.143.889 2.741.094.113.108.212.08.326-.09.375-.293 1.199-.334 1.363-.053.225-.172.271-.402.165-1.495-.69-2.433-2.878-2.433-4.646 0-3.776 2.748-7.252 7.92-7.252 4.158 0 7.392 2.967 7.392 6.923 0 4.135-2.607 7.462-6.233 7.462-1.214 0-2.357-.629-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24.009 12.017 24.009c6.624 0 11.99-5.367 11.99-11.988C24.007 5.367 18.641.001.012.001z" />
-                </svg>
-                <span className="ml-2">GitHub</span>
-              </button>
             </div>
           </div>
         </form>
