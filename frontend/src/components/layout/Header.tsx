@@ -1,11 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '@contexts/AppContext';
-import { fetchCurrentUserProfile } from '@utils/authApi';
+import {
+  buildUserFromProfile,
+  clearSession,
+  fetchCurrentUserProfile,
+} from '@utils/authApi';
 
 const Header: React.FC = () => {
-  const { state } = useApp();
+  const { state, dispatch } = useApp();
   const location = useLocation();
+  const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isPrivileged, setIsPrivileged] = useState(false);
 
@@ -13,9 +18,25 @@ const Header: React.FC = () => {
     const run = async () => {
       const profile = await fetchCurrentUserProfile();
       setIsPrivileged(Boolean(profile?.is_privileged));
+      dispatch({
+        type: 'SET_USER',
+        payload: profile ? buildUserFromProfile(profile) : null,
+      });
+      if (!profile) {
+        dispatch({ type: 'SET_AUTHENTICATED', payload: false });
+      }
     };
     void run();
-  }, [state.isAuthenticated]);
+  }, [dispatch, state.isAuthenticated]);
+
+  const handleLogout = () => {
+    clearSession();
+    dispatch({ type: 'SET_USER', payload: null });
+    dispatch({ type: 'SET_AUTHENTICATED', payload: false });
+    setIsPrivileged(false);
+    setIsMenuOpen(false);
+    navigate('/login', { replace: true });
+  };
 
   const navigation = [
     { name: '홈', href: '/' },
@@ -73,6 +94,7 @@ const Header: React.FC = () => {
                 </Link>
                 <button
                   type="button"
+                  onClick={handleLogout}
                   className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
                 >
                   로그아웃
@@ -149,6 +171,7 @@ const Header: React.FC = () => {
                   </Link>
                   <button
                     type="button"
+                    onClick={handleLogout}
                     className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50"
                   >
                     로그아웃

@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { useApp } from '@contexts/AppContext';
 import GoogleSignInButton from '@components/auth/GoogleSignInButton';
+import { buildUserFromProfile, fetchCurrentUserProfile } from '@utils/authApi';
 
 type LoginLocationState = {
   from?:
@@ -91,7 +92,12 @@ const LoginPage: React.FC = () => {
       }
 
       localStorage.setItem('auth_token', payload.access_token);
+      const profile = await fetchCurrentUserProfile();
       dispatch({ type: 'SET_AUTHENTICATED', payload: true });
+      dispatch({
+        type: 'SET_USER',
+        payload: profile ? buildUserFromProfile(profile) : null,
+      });
       navigate(redirectPath, { replace: true });
     } catch (error) {
       setErrorMessage(
@@ -135,7 +141,12 @@ const LoginPage: React.FC = () => {
       }
 
       localStorage.setItem('auth_token', payload.access_token);
+      const profile = await fetchCurrentUserProfile();
       dispatch({ type: 'SET_AUTHENTICATED', payload: true });
+      dispatch({
+        type: 'SET_USER',
+        payload: profile ? buildUserFromProfile(profile) : null,
+      });
       navigate(redirectPath, { replace: true });
     } catch (error) {
       setErrorMessage(

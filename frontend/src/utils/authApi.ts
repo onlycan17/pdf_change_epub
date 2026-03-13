@@ -1,4 +1,9 @@
-import { getAuthToken } from '@utils/subscription';
+import type { User } from '@/types';
+import {
+  clearAuthTokens,
+  getAuthToken,
+  getCurrentPlan,
+} from '@utils/subscription';
 
 const API_KEY = import.meta.env.VITE_API_KEY || 'your-api-key-here';
 
@@ -13,6 +18,15 @@ export interface RegisterUserInput {
   email: string;
   password: string;
 }
+
+const buildDisplayName = (email: string): string => {
+  const localPart = email.split('@')[0]?.trim() || '사용자';
+  const normalized = localPart.replace(/[._-]+/g, ' ').trim();
+  if (!normalized) {
+    return '사용자';
+  }
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+};
 
 export const fetchCurrentUserProfile =
   async (): Promise<CurrentUserProfile | null> => {
@@ -29,6 +43,7 @@ export const fetchCurrentUserProfile =
     });
 
     if (!response.ok) {
+      clearAuthTokens();
       return null;
     }
 
@@ -39,6 +54,20 @@ export const fetchCurrentUserProfile =
 
     return payload;
   };
+
+export const buildUserFromProfile = (profile: CurrentUserProfile): User => {
+  const currentPlan = getCurrentPlan();
+  return {
+    id: profile.id,
+    email: profile.email,
+    name: buildDisplayName(profile.email),
+    isPremium: currentPlan.isSubscribed,
+  };
+};
+
+export const clearSession = (): void => {
+  clearAuthTokens();
+};
 
 export const isPrivilegedEmail = (
   email: string | null | undefined

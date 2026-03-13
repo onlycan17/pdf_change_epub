@@ -1,18 +1,55 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useApp } from '@contexts/AppContext';
+import {
+  buildUserFromProfile,
+  fetchCurrentUserProfile,
+  type CurrentUserProfile,
+} from '@utils/authApi';
 import { getCurrentPlan } from '@utils/subscription';
 
 const ProfilePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('profile');
+  const [profile, setProfile] = useState<CurrentUserProfile | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+  const { state, dispatch } = useApp();
   const currentPlan = getCurrentPlan();
 
-  // Mock user data - will be replaced with actual data from context
+  useEffect(() => {
+    const run = async () => {
+      setIsLoadingProfile(true);
+      setErrorMessage('');
+      try {
+        const nextProfile = await fetchCurrentUserProfile();
+        if (!nextProfile) {
+          setErrorMessage(
+            '로그인 정보를 확인할 수 없습니다. 다시 로그인해주세요.'
+          );
+          dispatch({ type: 'SET_USER', payload: null });
+          dispatch({ type: 'SET_AUTHENTICATED', payload: false });
+          return;
+        }
+        setProfile(nextProfile);
+        dispatch({
+          type: 'SET_USER',
+          payload: buildUserFromProfile(nextProfile),
+        });
+      } finally {
+        setIsLoadingProfile(false);
+      }
+    };
+    void run();
+  }, [dispatch]);
+
+  const derivedUser = profile ? buildUserFromProfile(profile) : state.user;
   const userData = {
-    name: '홍길동',
-    email: 'hong@example.com',
-    joinDate: '2024년 1월 15일',
+    name: derivedUser?.name || '사용자',
+    email: profile?.email || derivedUser?.email || '',
+    joinDate: '가입일 정보 준비 중',
     subscription: `${currentPlan.label} (${currentPlan.code})`,
-    conversionsThisMonth: 3,
-    maxConversions: 5,
+    conversionsThisMonth: currentPlan.isSubscribed ? 0 : 0,
+    maxConversions: currentPlan.isSubscribed ? 999 : 2,
   };
 
   const conversionHistory = [
@@ -38,6 +75,25 @@ const ProfilePage: React.FC = () => {
       size: '5.2MB',
     },
   ];
+
+  if (isLoadingProfile) {
+    return <p className="text-gray-600">프로필 정보를 불러오는 중...</p>;
+  }
+
+  if (errorMessage) {
+    return (
+      <div className="max-w-3xl mx-auto rounded-lg border border-red-200 bg-red-50 p-6">
+        <h1 className="text-2xl font-bold text-red-900">프로필</h1>
+        <p className="mt-3 text-red-700">{errorMessage}</p>
+        <Link
+          to="/login"
+          className="mt-4 inline-flex rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+        >
+          로그인 페이지로 이동
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -129,6 +185,12 @@ const ProfilePage: React.FC = () => {
                   {userData.joinDate}
                 </span>
               </div>
+              {profile?.is_privileged && (
+                <div className="text-sm text-gray-600">
+                  권한:{' '}
+                  <span className="font-medium text-blue-700">운영자 계정</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -152,7 +214,8 @@ const ProfilePage: React.FC = () => {
                     <input
                       id="profile-name"
                       type="text"
-                      defaultValue={userData.name}
+                      value={userData.name}
+                      readOnly
                       className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -166,7 +229,8 @@ const ProfilePage: React.FC = () => {
                     <input
                       id="profile-email"
                       type="email"
-                      defaultValue={userData.email}
+                      value={userData.email}
+                      readOnly
                       className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -190,7 +254,7 @@ const ProfilePage: React.FC = () => {
                     type="button"
                     className="bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors"
                   >
-                    저장하기
+                    저장 기능 준비 중
                   </button>
                 </div>
               </form>

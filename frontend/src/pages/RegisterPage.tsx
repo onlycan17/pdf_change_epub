@@ -3,7 +3,11 @@ import { Link } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@contexts/AppContext';
 import GoogleSignInButton from '@components/auth/GoogleSignInButton';
-import { registerUser } from '@utils/authApi';
+import {
+  buildUserFromProfile,
+  fetchCurrentUserProfile,
+  registerUser,
+} from '@utils/authApi';
 
 const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -81,7 +85,12 @@ const RegisterPage: React.FC = () => {
       }
 
       localStorage.setItem('auth_token', payload.access_token);
+      const profile = await fetchCurrentUserProfile();
       dispatch({ type: 'SET_AUTHENTICATED', payload: true });
+      dispatch({
+        type: 'SET_USER',
+        payload: profile ? buildUserFromProfile(profile) : null,
+      });
       navigate('/upload');
     } catch (error) {
       setErrorMessage(
