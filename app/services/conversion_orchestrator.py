@@ -19,6 +19,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from app.core.config import Settings, get_settings
+from app.services.conversion_metrics_service import get_conversion_metrics_service
 from app.services.mathml_service import render_block_with_math, render_text_with_math
 from app.services.pdf_service import (
     PDFAnalyzer,
@@ -128,7 +129,9 @@ def serialize_job_status(job: ConversionJob) -> Dict[str, Any]:
     return payload
 
 
-def apply_serialized_job_status(job: ConversionJob, payload: Dict[str, Any]) -> ConversionJob:
+def apply_serialized_job_status(
+    job: ConversionJob, payload: Dict[str, Any]
+) -> ConversionJob:
     """Apply a serialized status payload onto an existing job instance."""
 
     state_value = payload.get("state")
@@ -185,10 +188,13 @@ class ConversionJobStore:
     def __init__(self) -> None:
         self._jobs: Dict[str, ConversionJob] = {}
         self._lock = asyncio.Lock()
+        settings = get_settings()
+        self._metrics_service = get_conversion_metrics_service(settings.database.url)
 
     async def create(self, job: ConversionJob) -> None:
         async with self._lock:
             self._jobs[job.conversion_id] = job
+            self._metrics_service.upsert_job(job)
 
     async def get(self, conversion_id: str) -> ConversionJob:
         async with self._lock:
@@ -205,7 +211,16 @@ class ConversionJobStore:
             for k, v in kwargs.items():
                 setattr(job, k, v)
             job.updated_at = datetime.now(timezone.utc).isoformat()
+            self._metrics_service.upsert_job(job)
             return job
+
+    async def list_jobs(self) -> list[ConversionJob]:
+        async with self._lock:
+            return sorted(
+                self._jobs.values(),
+                key=lambda job: job.created_at,
+                reverse=True,
+            )
 
     async def set_result(self, conversion_id: str, data: bytes) -> None:
         await self.update(conversion_id, result_bytes=data)
@@ -463,7 +478,9 @@ class ConversionOrchestrator:
                     create_scan_pdf_processor,
                 )
 
-                async def on_scan_progress(processed_tasks: int, total_tasks: int) -> None:
+                async def on_scan_progress(
+                    processed_tasks: int, total_tasks: int
+                ) -> None:
                     if total_tasks <= 0:
                         return
                     progress_delta = int((processed_tasks / total_tasks) * 24)
@@ -931,7 +948,9 @@ class ConversionOrchestrator:
             if in_verse_block:
                 verse_match = re.match(r"^\[\[LINE:(\d+)\]\](.*)$", line)
                 if verse_match:
-                    verse_lines.append((int(verse_match.group(1)), verse_match.group(2).strip()))
+                    verse_lines.append(
+                        (int(verse_match.group(1)), verse_match.group(2).strip())
+                    )
                 elif stripped:
                     verse_lines.append((0, stripped))
                 continue
@@ -965,7 +984,9 @@ class ConversionOrchestrator:
                 flush_verse()
                 level = len(heading.group(1))
                 title = heading.group(2).strip()
-                html_parts.append(f"<h{level}>{render_text_with_math(title)}</h{level}>")
+                html_parts.append(
+                    f"<h{level}>{render_text_with_math(title)}</h{level}>"
+                )
                 page_match = re.search(r"페이지\s*(\d+)", title)
                 if page_match:
                     page_num = int(page_match.group(1))
@@ -1022,7 +1043,7 @@ class ConversionOrchestrator:
 
     def _wrap_text_block(self, text: str) -> str:
         rendered = render_block_with_math(text)
-        if rendered.startswith("<div class=\"math-display\""):
+        if rendered.startswith('<div class="math-display"'):
             return rendered
         return f"<p>{rendered}</p>"
 
@@ -1048,9 +1069,7 @@ class ConversionOrchestrator:
         safe_name = escape(file_name)
         class_attr = f' class="{escape(css_class)}"' if css_class else ""
         figcaption = (
-            f"<figcaption>{escape(caption_text)}</figcaption>"
-            if caption_text
-            else ""
+            f"<figcaption>{escape(caption_text)}</figcaption>" if caption_text else ""
         )
         return (
             f"<figure{class_attr}>"

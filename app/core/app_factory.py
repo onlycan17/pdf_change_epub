@@ -9,7 +9,7 @@ from app.core.logging_config import (
     configure_debug_logging,
     setup_performance_logging,
 )
-from app.api.v1 import auth, billing, conversion
+from app.api.v1 import admin, auth, billing, conversion
 
 
 def create_app(*, lifespan=None) -> FastAPI:
@@ -50,5 +50,6 @@ def create_app(*, lifespan=None) -> FastAPI:
         conversion.router, prefix="/api/v1/conversion", tags=["Conversion"]
     )
     app.include_router(billing.router, prefix="/api/v1/billing", tags=["Billing"])
+    app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 
     return app

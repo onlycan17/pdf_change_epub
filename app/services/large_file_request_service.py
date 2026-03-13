@@ -124,7 +124,9 @@ class LargeFileRequestService:
             created_at=str(row["created_at"]),
             updated_at=str(row["updated_at"]),
             handled_by_email=(
-                str(row["handled_by_email"]) if row["handled_by_email"] is not None else None
+                str(row["handled_by_email"])
+                if row["handled_by_email"] is not None
+                else None
             ),
             conversion_id=(
                 str(row["conversion_id"]) if row["conversion_id"] is not None else None
@@ -269,6 +271,7 @@ class LargeFileRequestService:
         requester_email: str | None = None,
         status: str | None = None,
         keyword: str | None = None,
+        limit: int | None = None,
     ) -> list[LargeFileRequestRecord]:
         with self._lock:
             conditions: list[str] = []
@@ -293,12 +296,35 @@ class LargeFileRequestService:
                 params.extend([keyword_value, keyword_value, keyword_value])
 
             where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            limit_clause = ""
+            if limit is not None and limit > 0:
+                limit_clause = " LIMIT ?"
+                params.append(limit)
             with self._connect() as conn:
                 rows = conn.execute(
-                    f"SELECT * FROM large_file_requests {where_clause} ORDER BY created_at DESC",
+                    f"SELECT * FROM large_file_requests {where_clause} ORDER BY created_at DESC{limit_clause}",
                     tuple(params),
                 ).fetchall()
             return [self._row_to_record(row) for row in rows]
+
+    def get_status_counts(self) -> dict[str, int]:
+        with self._lock:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT status, COUNT(*) AS total
+                    FROM large_file_requests
+                    GROUP BY status
+                    """
+                ).fetchall()
+
+        counts = {"total": 0, "requested": 0, "processing": 0}
+        for row in rows:
+            status = str(row["status"])
+            total = int(row["total"])
+            counts["total"] += total
+            counts[status] = total
+        return counts
 
     def get_request(self, request_id: str) -> LargeFileRequestRecord | None:
         with self._lock:

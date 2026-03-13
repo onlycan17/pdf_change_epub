@@ -141,6 +141,25 @@ class UserRepository:
                 return None
             return self._row_to_record(row)
 
+    def get_provider_counts(self) -> dict[str, int]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT provider, COUNT(*) AS total
+                FROM users
+                GROUP BY provider
+                """
+            ).fetchall()
+
+        counts = {"total": 0, "local": 0, "google": 0}
+        for row in rows:
+            provider = str(row["provider"])
+            total = int(row["total"])
+            counts["total"] += total
+            if provider in counts:
+                counts[provider] = total
+        return counts
+
     def upsert_google_user(
         self,
         *,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 
@@ -94,6 +94,40 @@ class FreeUsageLimitService:
                     )
 
                 return True
+
+    def get_recent_daily_usage(self, *, days: int = 7) -> list[dict[str, int | str]]:
+        normalized_days = max(1, days)
+        start_date = (
+            datetime.now(timezone.utc).date() - timedelta(days=normalized_days - 1)
+        ).isoformat()
+
+        with self._lock:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT usage_date, SUM(usage_count) AS total_usage
+                    FROM free_usage_daily_limits
+                    WHERE usage_date >= ?
+                    GROUP BY usage_date
+                    ORDER BY usage_date ASC
+                    """,
+                    (start_date,),
+                ).fetchall()
+
+        usage_by_date = {
+            str(row["usage_date"]): int(row["total_usage"] or 0) for row in rows
+        }
+        today = datetime.now(timezone.utc).date()
+        return [
+            {
+                "date": (today - timedelta(days=offset)).isoformat(),
+                "count": usage_by_date.get(
+                    (today - timedelta(days=offset)).isoformat(),
+                    0,
+                ),
+            }
+            for offset in range(normalized_days - 1, -1, -1)
+        ]
 
 
 _service_instance: FreeUsageLimitService | None = None

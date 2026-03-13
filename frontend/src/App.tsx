@@ -22,6 +22,7 @@ import LoginPage from '@pages/LoginPage';
 import RegisterPage from '@pages/RegisterPage';
 import LargeFileRequestPage from '@pages/LargeFileRequestPage';
 import LargeFileRequestsAdminPage from '@pages/LargeFileRequestsAdminPage';
+import AdminDashboardPage from '@pages/AdminDashboardPage';
 import { hasUsableAuthToken } from '@utils/subscription';
 
 type RequireAuthProps = {
@@ -163,6 +164,16 @@ const router = createBrowserRouter(
         <RequireAuth>
           <MainLayout>
             <LargeFileRequestsAdminPage />
+          </MainLayout>
+        </RequireAuth>
+      ),
+    },
+    {
+      path: '/admin/dashboard',
+      element: (
+        <RequireAuth>
+          <MainLayout>
+            <AdminDashboardPage />
           </MainLayout>
         </RequireAuth>
       ),

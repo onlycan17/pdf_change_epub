@@ -20,6 +20,9 @@ const Header: React.FC = () => {
   const navigation = [
     { name: '홈', href: '/' },
     { name: '변환하기', href: '/upload' },
+    ...(isPrivileged
+      ? [{ name: '운영대시보드', href: '/admin/dashboard' }]
+      : []),
     {
       name: isPrivileged ? '요청관리' : '대용량 요청',
       href: isPrivileged ? '/large-file-requests' : '/large-file-request',

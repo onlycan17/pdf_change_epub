@@ -31,7 +31,9 @@ class AsyncQueueService:
         self.settings = get_settings()
         self.celery_app = celery_app
         self.orchestrator = get_orchestrator(self.settings)
-        self._celery_requested = os.getenv("APP_USE_CELERY", "true").strip().lower() not in (
+        self._celery_requested = os.getenv(
+            "APP_USE_CELERY", "true"
+        ).strip().lower() not in (
             "0",
             "false",
         )
@@ -308,7 +310,10 @@ class AsyncQueueService:
                                 current_step=job.current_step or "started",
                                 message=job.message or "변환 처리 시작",
                             )
-                        job = await self._get_job_from_available_stores(conversion_id) or job
+                        job = (
+                            await self._get_job_from_available_stores(conversion_id)
+                            or job
+                        )
                 elif result.state == "RETRY":
                     await self.store.update(
                         conversion_id,
@@ -316,7 +321,9 @@ class AsyncQueueService:
                         current_step=job.current_step or "retrying",
                         message=job.message or "작업 재시도 대기중",
                     )
-                    job = await self._get_job_from_available_stores(conversion_id) or job
+                    job = (
+                        await self._get_job_from_available_stores(conversion_id) or job
+                    )
                 elif result.state == "SUCCESS":
                     # 작업 완료
                     payload = result.result
@@ -347,7 +354,9 @@ class AsyncQueueService:
                         result_bytes=result_bytes,
                         result_path=result_path or job.result_path,
                     )
-                    job = await self._get_job_from_available_stores(conversion_id) or job
+                    job = (
+                        await self._get_job_from_available_stores(conversion_id) or job
+                    )
                 elif result.state == "FAILURE":
                     # 작업 실패
                     await self.store.update(
@@ -357,7 +366,9 @@ class AsyncQueueService:
                         message=job.message or f"작업 실패: {str(result.result)}",
                         error_message=job.error_message or str(result.result),
                     )
-                    job = await self._get_job_from_available_stores(conversion_id) or job
+                    job = (
+                        await self._get_job_from_available_stores(conversion_id) or job
+                    )
                 elif result.state == "REVOKED":
                     # 작업 취소
                     await self.store.update(
@@ -366,7 +377,9 @@ class AsyncQueueService:
                         current_step="cancelled",
                         message="작업이 취소되었습니다",
                     )
-                    job = await self._get_job_from_available_stores(conversion_id) or job
+                    job = (
+                        await self._get_job_from_available_stores(conversion_id) or job
+                    )
             except Exception as e:
                 logger.error(
                     "Celery 작업 상태 확인 실패",
@@ -426,6 +439,29 @@ class AsyncQueueService:
         except Exception:
             logger.error("작업 취소 실패", exc_info=True)
             return False
+
+    async def list_recent_jobs(self, limit: int = 10) -> list[ConversionJob]:
+        await self._ensure_runtime_mode()
+
+        stores = [self.store]
+        if self.store is not self.orchestrator.store:
+            stores.append(self.orchestrator.store)
+
+        jobs_by_id: dict[str, ConversionJob] = {}
+        for store in stores:
+            try:
+                jobs = await store.list_jobs()
+            except AttributeError:
+                continue
+            for job in jobs:
+                jobs_by_id[job.conversion_id] = job
+
+        sorted_jobs = sorted(
+            jobs_by_id.values(),
+            key=lambda job: job.created_at,
+            reverse=True,
+        )
+        return sorted_jobs[: max(1, limit)]
 
     async def retry_conversion(self, conversion_id: str) -> ConversionJob:
         """실패한 작업 재시도
