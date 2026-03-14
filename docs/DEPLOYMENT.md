@@ -112,22 +112,25 @@ docker-compose restart celery_worker
 ### 1. Docker Compose 프로덕션 배포
 
 ```bash
-# 1. 프로덕션용 docker-compose.yml 생성
-cp docker-compose.yml docker-compose.prod.yml
-
-# 2. 프로덕션 설정 수정
+# 1. 프로덕션 설정 수정
 # - 환경 변수 설정
 # - 볼륨 마운트 설정
 # - 보안 설정 추가
 
+# 2. Compose 명령 확인 (docker compose / docker-compose 자동 선택)
+scripts/compose.sh version
+
 # 3. 프로덕션 서비스 시작
-docker-compose -f docker-compose.prod.yml up -d
+scripts/compose.sh -f docker-compose.prod.yml up -d --build
 
 # 4. 상태 확인
-docker-compose -f docker-compose.prod.yml ps
+scripts/compose.sh -f docker-compose.prod.yml ps
 
 # 5. 로그 확인
-docker-compose -f docker-compose.prod.yml logs -f
+scripts/compose.sh -f docker-compose.prod.yml logs -f
+
+# 6. 런북 스크립트로 재기동
+scripts/prod_restart.sh --mode restart
 ```
 
 ### 2. Kubernetes 배포
@@ -687,10 +690,10 @@ curl -s "$SUPABASE_URL/rest/v1/?apikey=$SUPABASE_ANON_KEY" | head -n 1
 
 ```bash
 # 이미지 업데이트
-docker-compose pull
+scripts/compose.sh -f docker-compose.prod.yml pull
 
 # 서비스 재시작
-docker-compose up -d --force-recreate
+scripts/compose.sh -f docker-compose.prod.yml up -d --build --force-recreate
 
 # Kubernetes 업데이트
 kubectl set image deployment/web web=your-registry/pdf-to-epub-backend:v2.0.0
@@ -701,8 +704,10 @@ kubectl rollout status deployment/web
 
 ```bash
 # Docker 롤백
-docker-compose down
-docker-compose up -d --force-recreate --rollback
+scripts/compose.sh -f docker-compose.prod.yml down
+
+# 직전 이미지 태그 기준으로 다시 기동
+scripts/compose.sh -f docker-compose.prod.yml up -d --build
 
 # Kubernetes 롤백
 kubectl rollout undo deployment/web
