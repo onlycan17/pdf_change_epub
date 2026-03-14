@@ -45,6 +45,12 @@ def make_tiny_png_bytes() -> bytes:
         )
 
 
+def make_test_orchestrator() -> ConversionOrchestrator:
+    orch = ConversionOrchestrator(None)
+    orch.text_context_corrector.enabled = False
+    return orch
+
+
 @pytest.mark.asyncio
 async def test_start_and_status_and_download(monkeypatch):
     settings = None
@@ -143,7 +149,7 @@ async def test_cancel_conversion(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_text_pdf_chunks_apply_context_correction(monkeypatch):
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
     pdf_analysis = PDFAnalysisResult(
@@ -216,8 +222,105 @@ async def test_text_pdf_chunks_apply_context_correction(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_text_pdf_applies_document_reflow_before_epub(monkeypatch):
+    orch = make_test_orchestrator()
+
+    monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
+    pdf_analysis = PDFAnalysisResult(
+        pdf_type=PDFType.TEXT_BASED,
+        total_pages=2,
+        pages_analysis=[
+            PageAnalysisResult(page_number=1, has_text=True, text_content="A"),
+            PageAnalysisResult(page_number=2, has_text=True, text_content="B"),
+        ],
+        overall_confidence=1.0,
+        mixed_ratio=0.0,
+    )
+    orch.pdf_analyzer.analyze_pdf = lambda pdf_content: pdf_analysis
+
+    monkeypatch.setattr(orch, "pdf_extractor", MagicMock())
+    orch.pdf_extractor.extract_text_in_chunks = lambda pdf_content, chunk_chars=None: [
+        {"start_page": 1, "end_page": 1, "total_text": "끊어진 첫 문장"},
+        {"start_page": 2, "end_page": 2, "total_text": "이어진 둘째 문장"},
+    ]
+    orch.pdf_extractor.extract_text_from_pdf = lambda pdf_content, page_numbers=None: {
+        "total_text": "fallback"
+    }
+
+    class DummyCorrector:
+        def __init__(self) -> None:
+            self.last_run_stats = {
+                "total_chunks": 0,
+                "total_attempts": 0,
+                "last_used_model": None,
+                "fallback_used": False,
+            }
+
+        async def correct_chunk_entries(self, chunks, on_chunk_progress=None):
+            self.last_run_stats = {
+                "total_chunks": len(chunks),
+                "total_attempts": 2,
+                "last_used_model": "deepseek/deepseek-v3.2",
+                "fallback_used": False,
+            }
+            return "청크 보정 결과"
+
+        async def reflow_document_text(
+            self,
+            text,
+            mode="plain",
+            on_segment_progress=None,
+        ):
+            assert text == "청크 보정 결과"
+            assert mode == "plain"
+            if on_segment_progress:
+                await on_segment_progress(1, 1)
+            self.last_run_stats = {
+                "total_chunks": 1,
+                "total_attempts": 3,
+                "last_used_model": "nvidia/nemotron-3-nano-30b-a3b",
+                "fallback_used": True,
+            }
+            return "문서 흐름까지 정리된 결과"
+
+    monkeypatch.setattr(orch, "text_context_corrector", DummyCorrector())
+
+    def fake_create_epub_bytes(
+        title: str,
+        author: str,
+        chapters,
+        images=None,
+        uid=None,
+        include_legacy_ncx=True,
+        auto_toc_from_headings=True,
+    ):
+        assert "문서 흐름까지 정리된 결과" in chapters[0].content
+        assert "청크 보정 결과" not in chapters[0].content
+        return b"EPUBBYTES"
+
+    orch.epub.create_epub_bytes = fake_create_epub_bytes
+
+    conversion_id = "document-reflow-test-id"
+    pdf_bytes = make_dummy_pdf_bytes()
+    await orch.start(
+        conversion_id=conversion_id,
+        filename="document-reflow.pdf",
+        file_size=len(pdf_bytes),
+        ocr_enabled=False,
+        pdf_bytes=pdf_bytes,
+    )
+
+    await asyncio.sleep(0.5)
+    status = await orch.status(conversion_id)
+    assert status.state == JobState.COMPLETED
+    assert status.llm_used_model == "nvidia/nemotron-3-nano-30b-a3b"
+    assert status.llm_attempt_count == 5
+    assert status.llm_fallback_used is True
+
+
+@pytest.mark.asyncio
 async def test_text_result_is_preferred_over_content_flow(monkeypatch):
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
     pdf_analysis = PDFAnalysisResult(
@@ -279,7 +382,7 @@ async def test_text_result_is_preferred_over_content_flow(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_epub_includes_extracted_images(monkeypatch):
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
     pdf_analysis = PDFAnalysisResult(
@@ -336,7 +439,7 @@ async def test_epub_includes_extracted_images(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_unknown_image_format_is_normalized_to_png(monkeypatch):
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
     pdf_analysis = PDFAnalysisResult(
@@ -399,7 +502,7 @@ async def test_unknown_image_format_is_normalized_to_png(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_scanned_pdf_skips_full_page_scan_images_in_epub(monkeypatch):
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
     pdf_analysis = PDFAnalysisResult(
@@ -489,7 +592,7 @@ async def test_scanned_pdf_skips_full_page_scan_images_in_epub(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_scanned_pdf_without_ocr_keeps_full_page_images(monkeypatch):
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
     pdf_analysis = PDFAnalysisResult(
@@ -564,7 +667,7 @@ async def test_scanned_pdf_without_ocr_keeps_full_page_images(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_mixed_pdf_with_ocr_skips_scanned_page_images(monkeypatch):
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
     pdf_analysis = PDFAnalysisResult(
@@ -647,7 +750,7 @@ async def test_mixed_pdf_with_ocr_skips_scanned_page_images(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_scanned_pdf_preserves_verse_blocks_in_rendered_epub(monkeypatch):
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
     pdf_analysis = PDFAnalysisResult(
@@ -721,7 +824,7 @@ async def test_scanned_pdf_preserves_verse_blocks_in_rendered_epub(monkeypatch):
 
 
 def test_render_markdown_to_xhtml_body_removes_raw_markdown():
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     markdown_text = """# 제목
 
@@ -744,7 +847,7 @@ def test_render_markdown_to_xhtml_body_removes_raw_markdown():
 
 
 def test_render_markdown_to_xhtml_body_converts_latex_math_to_mathml():
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     markdown_text = """# 수식
 
@@ -765,7 +868,7 @@ $$\\frac{a}{b}$$
 
 
 def test_render_text_with_page_images_auto_converts_formula_lines_to_mathml():
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     html_body = orch._render_text_with_page_images(  # type: ignore[attr-defined]
         "=== 페이지 1 ===\nx² + y² = z²\n설명 문장",
@@ -798,7 +901,7 @@ def test_combine_page_content_appends_detected_equations_as_latex_blocks():
 
 
 def test_render_content_flow_places_image_in_order():
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     content_flow = [
         {
@@ -828,7 +931,7 @@ def test_render_content_flow_places_image_in_order():
 
 
 def test_render_markdown_to_xhtml_body_preserves_verse_line_breaks():
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     markdown_text = """# 페이지 1
 [[VERSE]]
@@ -848,7 +951,7 @@ def test_render_markdown_to_xhtml_body_preserves_verse_line_breaks():
 
 
 def test_render_markdown_to_xhtml_body_renders_scanned_math_image_markers():
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     html_body = orch._render_markdown_to_xhtml_body(  # type: ignore[attr-defined]
         "# 페이지 1\n문장\n\n[[MATHIMG:page-1-eq-1]]\n",
@@ -868,7 +971,7 @@ def test_render_markdown_to_xhtml_body_renders_scanned_math_image_markers():
 
 @pytest.mark.asyncio
 async def test_scanned_pdf_renders_equation_crops_as_epub_images(monkeypatch):
-    orch = ConversionOrchestrator(None)
+    orch = make_test_orchestrator()
 
     monkeypatch.setattr(orch, "pdf_analyzer", MagicMock())
     pdf_analysis = PDFAnalysisResult(

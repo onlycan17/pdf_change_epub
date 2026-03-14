@@ -9,9 +9,6 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from html import escape
-from io import BytesIO
-import re
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,8 +16,26 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from app.core.config import Settings, get_settings
+from app.services.conversion_epub_renderer import (
+    build_epub_image_assets,
+    build_scan_math_image_assets,
+    extract_content_flow_pages,
+    extract_math_image_marker,
+    filter_epub_images_by_usage,
+    is_page_sized_scan_image,
+    normalize_image_for_epub,
+    render_content_flow_to_xhtml,
+    render_image_figure,
+    render_image_figure_group,
+    render_markdown_to_xhtml_body,
+    render_preserved_lines_block,
+    render_text_with_page_images,
+    resolve_image_format,
+    resolve_page_image_refs,
+    split_text_to_paragraphs,
+    wrap_text_block,
+)
 from app.services.conversion_metrics_service import get_conversion_metrics_service
-from app.services.mathml_service import render_block_with_math, render_text_with_math
 from app.services.pdf_service import (
     PDFAnalyzer,
     PDFExtractor,
@@ -91,6 +106,21 @@ class ConversionJob:
 
 
 JobStatusCallback = Callable[["ConversionJob"], Awaitable[None]]
+PublishStatusCallback = Callable[[], Awaitable[None]]
+StepUpdateCallback = Callable[[str, int, str], Awaitable[None]]
+
+
+@dataclass
+class EpubBuildArtifacts:
+    chapters: List[Chapter]
+    images: List[EpubImage]
+
+
+@dataclass
+class ScanProcessingArtifacts:
+    synthesis_markdown: Optional[str] = None
+    scan_math_image_refs: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    scan_math_images: List[EpubImage] = field(default_factory=list)
 
 
 def serialize_job_status(job: ConversionJob) -> Dict[str, Any]:
@@ -248,6 +278,30 @@ class ConversionOrchestrator:
         self.text_context_corrector = create_text_context_corrector(self.settings)
         self.epub = EpubGenerator(language="ko")
 
+    def _create_job(
+        self,
+        *,
+        conversion_id: str,
+        filename: str,
+        file_size: int,
+        ocr_enabled: bool,
+        owner_user_id: Optional[str] = None,
+        translate_to_korean: bool = False,
+        pdf_bytes: bytes,
+    ) -> ConversionJob:
+        return ConversionJob(
+            conversion_id=conversion_id,
+            filename=filename,
+            file_size=file_size,
+            ocr_enabled=ocr_enabled,
+            owner_user_id=owner_user_id,
+            translate_to_korean=translate_to_korean,
+            source_pdf_bytes=pdf_bytes,
+            state=JobState.PENDING,
+            progress=0,
+            current_step="queued",
+        )
+
     async def start(
         self,
         *,
@@ -259,17 +313,14 @@ class ConversionOrchestrator:
         translate_to_korean: bool = False,
         pdf_bytes: bytes,
     ) -> ConversionJob:
-        job = ConversionJob(
+        job = self._create_job(
             conversion_id=conversion_id,
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
             owner_user_id=owner_user_id,
             translate_to_korean=translate_to_korean,
-            source_pdf_bytes=pdf_bytes,
-            state=JobState.PENDING,
-            progress=0,
-            current_step="queued",
+            pdf_bytes=pdf_bytes,
         )
         await self.store.create(job)
 
@@ -288,16 +339,13 @@ class ConversionOrchestrator:
         pdf_bytes: bytes,
         status_callback: Optional[JobStatusCallback] = None,
     ) -> ConversionJob:
-        job = ConversionJob(
+        job = self._create_job(
             conversion_id=conversion_id,
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
             translate_to_korean=translate_to_korean,
-            source_pdf_bytes=pdf_bytes,
-            state=JobState.PENDING,
-            progress=0,
-            current_step="queued",
+            pdf_bytes=pdf_bytes,
         )
         await self.store.create(job)
         await self._run_pipeline(
@@ -341,6 +389,355 @@ class ConversionOrchestrator:
     async def cancel(self, conversion_id: str) -> None:
         await self.store.cancel(conversion_id)
 
+    def _build_epub_artifacts(
+        self,
+        *,
+        pdf_bytes: bytes,
+        analysis: Any,
+        ocr_enabled: bool,
+        text_result: Optional[Dict[str, Any]],
+        synthesis_markdown: Optional[str],
+        scan_math_image_refs: Dict[str, Dict[str, str]],
+        scan_math_images: List[EpubImage],
+    ) -> EpubBuildArtifacts:
+        content_flow = self._extract_content_flow_pages(pdf_bytes)
+        scanned_pages_for_images = (
+            set(analysis.get_scanned_pages()) if ocr_enabled else None
+        )
+        (
+            base_epub_images,
+            image_file_by_xref,
+            image_file_by_page,
+        ) = self._build_epub_image_assets(pdf_bytes)
+        page_image_refs = self._resolve_page_image_refs(
+            content_flow,
+            image_file_by_xref,
+            image_file_by_page,
+            scanned_pages=scanned_pages_for_images,
+        )
+        epub_images = [
+            *self._filter_epub_images_by_usage(base_epub_images, page_image_refs),
+            *scan_math_images,
+        ]
+
+        chapters: List[Chapter] = []
+        if synthesis_markdown:
+            html_body = self._render_markdown_to_xhtml_body(
+                synthesis_markdown,
+                page_image_refs,
+                math_image_refs=scan_math_image_refs,
+            )
+            chapters.append(
+                Chapter(
+                    title="Converted",
+                    file_name="chapter1.xhtml",
+                    content=html_body,
+                )
+            )
+        elif text_result and text_result.get("total_text"):
+            total_text: str = clean_text_for_epub_body(
+                str(text_result.get("total_text"))
+            )
+            html_body = self._render_text_with_page_images(total_text, page_image_refs)
+            chapters.append(
+                Chapter(
+                    title="Converted",
+                    file_name="chapter1.xhtml",
+                    content=html_body,
+                )
+            )
+        elif content_flow:
+            html_body = self._render_content_flow_to_xhtml(
+                content_flow,
+                image_file_by_xref,
+            )
+            chapters.append(
+                Chapter(
+                    title="Converted",
+                    file_name="chapter1.xhtml",
+                    content=html_body,
+                )
+            )
+        else:
+            chapters.append(
+                Chapter(
+                    title="Converted",
+                    file_name="chapter1.xhtml",
+                    content="<p>내용을 추출하지 못했습니다.</p>",
+                )
+            )
+            for page in sorted(page_image_refs.keys()):
+                chapters[0].content += self._render_image_figure_group(
+                    page_image_refs[page]
+                )
+
+        return EpubBuildArtifacts(chapters=chapters, images=epub_images)
+
+    async def _complete_job_successfully(
+        self,
+        *,
+        conversion_id: str,
+        epub_bytes: bytes,
+        publish_status: Callable[[], Awaitable[None]],
+    ) -> None:
+        await self.store.set_result(conversion_id, epub_bytes)
+        out_dir = "./results"
+
+        if out_dir:
+            try:
+                path = Path(out_dir)
+                path.mkdir(parents=True, exist_ok=True)
+                out_path = path / f"{conversion_id}.epub"
+                out_path.write_bytes(epub_bytes)
+                await self.store.update(conversion_id, result_path=str(out_path))
+            except Exception:
+                logger.exception("결과 파일을 디스크에 저장하는 중 오류 발생")
+
+        await self.store.update(
+            conversion_id,
+            state=JobState.COMPLETED,
+            progress=100,
+            message="변환 완료",
+            current_step="completed",
+        )
+        await publish_status()
+
+    async def _handle_pipeline_failure(
+        self,
+        *,
+        conversion_id: str,
+        pdf_bytes: bytes,
+        error: Exception,
+        publish_status: Callable[[], Awaitable[None]],
+    ) -> None:
+        logger.error("변환 파이프라인 실패", exc_info=True)
+        max_retries = 1
+
+        job = await self.store.get(conversion_id)
+        job.error_message = str(error)
+        job.updated_at = datetime.now(timezone.utc).isoformat()
+
+        if job.attempts < max_retries:
+            backoff = min(5 * job.attempts, 30)
+            await self.store.update(
+                conversion_id,
+                state=JobState.PENDING,
+                message=f"에러 발생, 자동 재시도 대기중 (backoff {backoff}s)",
+            )
+            await publish_status()
+            await asyncio.sleep(backoff)
+            asyncio.create_task(self._run_pipeline(conversion_id, pdf_bytes))
+            return
+
+        await self.store.update(
+            conversion_id,
+            state=JobState.FAILED,
+            message=str(error),
+            error_message=str(error),
+            current_step="failed",
+        )
+        await publish_status()
+
+    async def _is_job_cancelled(self, conversion_id: str) -> bool:
+        return (await self.store.get(conversion_id)).is_cancelled()
+
+    async def _mark_pipeline_started(
+        self,
+        conversion_id: str,
+        publish_status: PublishStatusCallback,
+    ) -> None:
+        job = await self.store.get(conversion_id)
+        job.attempts += 1
+        await self.store.update(
+            conversion_id,
+            state=JobState.PROCESSING,
+            current_step="started",
+            message=f"시도 #{job.attempts}",
+        )
+        await publish_status()
+
+    async def _extract_text_result(
+        self,
+        *,
+        conversion_id: str,
+        pdf_bytes: bytes,
+        pdf_type: PDFType,
+        set_step: StepUpdateCallback,
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            chunks = self.pdf_extractor.extract_text_in_chunks(pdf_bytes)
+            if chunks and len(chunks) > 1:
+                return await self._extract_text_from_chunks(
+                    conversion_id=conversion_id,
+                    pdf_type=pdf_type,
+                    chunks=chunks,
+                    set_step=set_step,
+                )
+            if pdf_type in (PDFType.TEXT_BASED, PDFType.MIXED):
+                return self.pdf_extractor.extract_text_from_pdf(pdf_bytes)
+            return None
+        except Exception:
+            if pdf_type in (PDFType.TEXT_BASED, PDFType.MIXED):
+                self.pdf_extractor.extract_text_from_pdf(pdf_bytes)
+            return self.pdf_extractor.extract_text_from_pdf(pdf_bytes)
+
+    async def _extract_text_from_chunks(
+        self,
+        *,
+        conversion_id: str,
+        pdf_type: PDFType,
+        chunks: List[Dict[str, Any]],
+        set_step: StepUpdateCallback,
+    ) -> Dict[str, Any]:
+        assembled_text_parts: List[str] = []
+        total_chunks = len(chunks)
+
+        for idx, chunk in enumerate(chunks, start=1):
+            if await self._is_job_cancelled(conversion_id):
+                return {"total_text": "\n\n".join(assembled_text_parts)}
+            chunk_progress = 20 + int(30 * idx / max(1, total_chunks))
+            await set_step(
+                f"extract_chunk_{idx}",
+                chunk_progress,
+                f"Extracting pages {chunk['start_page']} - {chunk['end_page']}",
+            )
+            assembled_text_parts.append(str(chunk.get("total_text", "")))
+
+        if pdf_type not in (PDFType.TEXT_BASED, PDFType.MIXED):
+            return {"total_text": "\n\n".join(assembled_text_parts)}
+
+        return await self._apply_context_correction(
+            conversion_id=conversion_id,
+            chunks=chunks,
+            set_step=set_step,
+        )
+
+    async def _apply_context_correction(
+        self,
+        *,
+        conversion_id: str,
+        chunks: List[Dict[str, Any]],
+        set_step: StepUpdateCallback,
+    ) -> Dict[str, Any]:
+        await set_step("context_correction", 60, "문맥 보정 중")
+
+        async def on_context_progress(processed_chunks: int, total_chunks: int) -> None:
+            if total_chunks <= 0:
+                return
+            progress_delta = int((processed_chunks / total_chunks) * 15)
+            context_progress = min(75, 60 + progress_delta)
+            await set_step(
+                "context_correction",
+                context_progress,
+                f"문맥 보정 중 ({processed_chunks}/{total_chunks})",
+            )
+
+        corrected_text = await self.text_context_corrector.correct_chunk_entries(
+            chunks,
+            on_chunk_progress=on_context_progress,
+        )
+        await self._merge_llm_stats(conversion_id)
+        return {"total_text": corrected_text}
+
+    async def _apply_document_reflow(
+        self,
+        *,
+        conversion_id: str,
+        text: str,
+        mode: str,
+        set_step: StepUpdateCallback,
+    ) -> str:
+        if not text.strip() or not hasattr(
+            self.text_context_corrector, "reflow_document_text"
+        ):
+            return text
+
+        await set_step("document_reflow", 76, "문서 구조 정리 중")
+
+        async def on_reflow_progress(
+            processed_segments: int, total_segments: int
+        ) -> None:
+            if total_segments <= 0:
+                return
+            progress_delta = int((processed_segments / total_segments) * 3)
+            reflow_progress = min(79, 76 + progress_delta)
+            await set_step(
+                "document_reflow",
+                reflow_progress,
+                f"문서 구조 정리 중 ({processed_segments}/{total_segments})",
+            )
+
+        reflowed_text = await self.text_context_corrector.reflow_document_text(
+            text,
+            mode=mode,
+            on_segment_progress=on_reflow_progress,
+        )
+        await self._merge_llm_stats(conversion_id)
+        return reflowed_text
+
+    async def _merge_llm_stats(self, conversion_id: str) -> None:
+        llm_stats = getattr(self.text_context_corrector, "last_run_stats", {})
+        job = await self.store.get(conversion_id)
+        await self.store.update(
+            conversion_id,
+            llm_used_model=llm_stats.get("last_used_model") or job.llm_used_model,
+            llm_attempt_count=job.llm_attempt_count
+            + int(llm_stats.get("total_attempts", 0)),
+            llm_fallback_used=job.llm_fallback_used
+            or bool(llm_stats.get("fallback_used", False)),
+        )
+
+    async def _process_scanned_pdf(
+        self,
+        *,
+        conversion_id: str,
+        pdf_bytes: bytes,
+        pdf_type: PDFType,
+        ocr_enabled: bool,
+        set_step: StepUpdateCallback,
+    ) -> ScanProcessingArtifacts:
+        if pdf_type != PDFType.SCANNED or not ocr_enabled:
+            return ScanProcessingArtifacts()
+
+        await set_step("ocr_llm", 55, "OCR/LLM 처리 중")
+
+        # 지연 임포트: 무거운 의존성(PaddleOCR) 로딩을 테스트 단계에서 피하기 위함
+        from app.services.agent_service import create_scan_pdf_processor
+
+        async def on_scan_progress(processed_tasks: int, total_tasks: int) -> None:
+            if total_tasks <= 0:
+                return
+            progress_delta = int((processed_tasks / total_tasks) * 24)
+            scan_progress = min(79, 55 + progress_delta)
+            await set_step(
+                "ocr_llm",
+                scan_progress,
+                f"OCR/LLM 처리 중 ({processed_tasks}/{total_tasks})",
+            )
+
+        processor = await create_scan_pdf_processor(
+            self.settings,
+            progress_callback=on_scan_progress,
+        )
+        synthesis = await processor.process_scanned_pdf(pdf_bytes)
+        synthesis_metadata = getattr(synthesis, "metadata", {})
+        if not isinstance(synthesis_metadata, dict):
+            synthesis_metadata = {}
+
+        artifacts = ScanProcessingArtifacts()
+        artifacts.scan_math_image_refs = self._build_scan_math_image_assets(
+            synthesis_metadata.get("equation_images", []),
+            artifacts.scan_math_images,
+        )
+        reflowed_markdown = await self._apply_document_reflow(
+            conversion_id=conversion_id,
+            text=synthesis.markdown_content,
+            mode="markdown",
+            set_step=set_step,
+        )
+        artifacts.synthesis_markdown = clean_text_for_epub_body(reflowed_markdown)
+        return artifacts
+
     async def _run_pipeline(
         self,
         conversion_id: str,
@@ -369,234 +766,64 @@ class ConversionOrchestrator:
             await publish_status()
 
         try:
-            # increment attempt counter for monitoring
-            job = await self.store.get(conversion_id)
-            job.attempts += 1
-            await self.store.update(
-                conversion_id,
-                state=JobState.PROCESSING,
-                current_step="started",
-                message=f"시도 #{job.attempts}",
-            )
-            await publish_status()
-            # 1) 분석
+            await self._mark_pipeline_started(conversion_id, publish_status)
             await set_step("analyze", 5, "PDF 유형 분석 중")
             analysis = self.pdf_analyzer.analyze_pdf(pdf_bytes)
             pdf_type = analysis.pdf_type
 
-            # 취소 확인
-            if (await self.store.get(conversion_id)).is_cancelled():
+            if await self._is_job_cancelled(conversion_id):
                 return
 
-            # 대용량 문서일 경우 청크 단위로 텍스트를 추출하여 처리
-            try:
-                # 추출 시 청크 분할 사용
-                chunks = self.pdf_extractor.extract_text_in_chunks(pdf_bytes)
-                if chunks and len(chunks) > 1:
-                    # 청크별로 진행을 보고하면서 텍스트를 합성하지 않고
-                    # 각 청크를 LLM/EPUB 변환 파이프에 독립적으로 전달할 수 있음
-                    assembled_text_parts: List[str] = []
-                    for idx, ch in enumerate(chunks, start=1):
-                        if (await self.store.get(conversion_id)).is_cancelled():
-                            return
-                        # 청크 처리 중인 상태 업데이트
-                        chunk_progress = 20 + int(30 * idx / max(1, len(chunks)))
-                        await set_step(
-                            f"extract_chunk_{idx}",
-                            chunk_progress,
-                            f"Extracting pages {ch['start_page']} - {ch['end_page']}",
-                        )
-                        # 여기서는 간단히 합쳐서 후속 처리에 사용
-                        assembled_text_parts.append(ch.get("total_text", ""))
-                    # 문맥 경계 보정 단계:
-                    # 이전/다음 청크 일부를 참고해 현재 청크의 문장 연결을 자연스럽게 보정
-                    if pdf_type in (PDFType.TEXT_BASED, PDFType.MIXED):
-                        await set_step("context_correction", 60, "문맥 보정 중")
+            text_result = (
+                await self._extract_text_result(
+                    conversion_id=conversion_id,
+                    pdf_bytes=pdf_bytes,
+                    pdf_type=pdf_type,
+                    set_step=set_step,
+                )
+                or {}
+            )
+            total_text = str(text_result.get("total_text", "")).strip()
+            if total_text:
+                text_result["total_text"] = await self._apply_document_reflow(
+                    conversion_id=conversion_id,
+                    text=total_text,
+                    mode="plain",
+                    set_step=set_step,
+                )
 
-                        async def on_context_progress(
-                            processed_chunks: int, total_chunks: int
-                        ) -> None:
-                            if total_chunks <= 0:
-                                return
-                            progress_delta = int((processed_chunks / total_chunks) * 15)
-                            context_progress = min(75, 60 + progress_delta)
-                            await set_step(
-                                "context_correction",
-                                context_progress,
-                                f"문맥 보정 중 ({processed_chunks}/{total_chunks})",
-                            )
-
-                        corrected_text = (
-                            await self.text_context_corrector.correct_chunk_entries(
-                                chunks,
-                                on_chunk_progress=on_context_progress,
-                            )
-                        )
-                        llm_stats = getattr(
-                            self.text_context_corrector, "last_run_stats", {}
-                        )
-                        await self.store.update(
-                            conversion_id,
-                            llm_used_model=llm_stats.get("last_used_model"),
-                            llm_attempt_count=int(llm_stats.get("total_attempts", 0)),
-                            llm_fallback_used=bool(
-                                llm_stats.get("fallback_used", False)
-                            ),
-                        )
-                        text_result = {"total_text": corrected_text}
-                    else:
-                        text_result = {"total_text": "\n\n".join(assembled_text_parts)}
-                else:
-                    # 단일 청크 혹은 작은 문서: 기존 방식 유지
-                    if pdf_type == PDFType.TEXT_BASED or pdf_type == PDFType.MIXED:
-                        text_result = self.pdf_extractor.extract_text_from_pdf(
-                            pdf_bytes
-                        )
-                    else:
-                        text_result = None
-            except Exception:
-                # 추출 실패 시 기존 동작 유지
-                if pdf_type == PDFType.TEXT_BASED or pdf_type == PDFType.MIXED:
-                    text_result = self.pdf_extractor.extract_text_from_pdf(pdf_bytes)
-                else:
-                    text_result = None
-                text_result = self.pdf_extractor.extract_text_from_pdf(pdf_bytes)
-            else:
-                # SCANNED: 이미지는 이후 에이전트 경로에서 처리
-                pass
-
-            # 취소 확인
-            if (await self.store.get(conversion_id)).is_cancelled():
+            if await self._is_job_cancelled(conversion_id):
                 return
 
-            # 3) OCR/LLM (스캔 + 옵션)
-            synthesis_markdown: Optional[str] = None
-            scan_math_image_refs: Dict[str, Dict[str, str]] = {}
-            scan_math_images: List[EpubImage] = []
-            if (
-                pdf_type == PDFType.SCANNED
-                and (await self.store.get(conversion_id)).ocr_enabled
-            ):
-                await set_step("ocr_llm", 55, "OCR/LLM 처리 중")
-                # 지연 임포트: 무거운 의존성(PaddleOCR) 로딩을 테스트 단계에서 피하기 위함
-                from app.services.agent_service import (
-                    create_scan_pdf_processor,
-                )
+            current_job = await self.store.get(conversion_id)
+            scan_processing = await self._process_scanned_pdf(
+                conversion_id=conversion_id,
+                pdf_bytes=pdf_bytes,
+                pdf_type=pdf_type,
+                ocr_enabled=current_job.ocr_enabled,
+                set_step=set_step,
+            )
 
-                async def on_scan_progress(
-                    processed_tasks: int, total_tasks: int
-                ) -> None:
-                    if total_tasks <= 0:
-                        return
-                    progress_delta = int((processed_tasks / total_tasks) * 24)
-                    scan_progress = min(79, 55 + progress_delta)
-                    await set_step(
-                        "ocr_llm",
-                        scan_progress,
-                        f"OCR/LLM 처리 중 ({processed_tasks}/{total_tasks})",
-                    )
-
-                processor = await create_scan_pdf_processor(
-                    self.settings,
-                    progress_callback=on_scan_progress,
-                )
-                synthesis = await processor.process_scanned_pdf(pdf_bytes)
-                synthesis_metadata = getattr(synthesis, "metadata", {})
-                if not isinstance(synthesis_metadata, dict):
-                    synthesis_metadata = {}
-                scan_math_image_refs = self._build_scan_math_image_assets(
-                    synthesis_metadata.get("equation_images", []),
-                    scan_math_images,
-                )
-                synthesis_markdown = clean_text_for_epub_body(
-                    synthesis.markdown_content
-                )
-
-            # 취소 확인
-            if (await self.store.get(conversion_id)).is_cancelled():
+            if await self._is_job_cancelled(conversion_id):
                 return
 
-            # 4) EPUB 생성
             await set_step("epub", 80, "EPUB 생성 중")
-            content_flow = self._extract_content_flow_pages(pdf_bytes)
-            scanned_pages_for_images = (
-                set(analysis.get_scanned_pages())
-                if (await self.store.get(conversion_id)).ocr_enabled
-                else None
+            current_job = await self.store.get(conversion_id)
+            artifacts = self._build_epub_artifacts(
+                pdf_bytes=pdf_bytes,
+                analysis=analysis,
+                ocr_enabled=current_job.ocr_enabled,
+                text_result=text_result,
+                synthesis_markdown=scan_processing.synthesis_markdown,
+                scan_math_image_refs=scan_processing.scan_math_image_refs,
+                scan_math_images=scan_processing.scan_math_images,
             )
-            (
-                base_epub_images,
-                image_file_by_xref,
-                image_file_by_page,
-            ) = self._build_epub_image_assets(
-                pdf_bytes,
-            )
-            page_image_refs = self._resolve_page_image_refs(
-                content_flow,
-                image_file_by_xref,
-                image_file_by_page,
-                scanned_pages=scanned_pages_for_images,
-            )
-            epub_images = [
-                *self._filter_epub_images_by_usage(base_epub_images, page_image_refs),
-                *scan_math_images,
-            ]
-
-            chapters: List[Chapter] = []
-            if synthesis_markdown:
-                html_body = self._render_markdown_to_xhtml_body(
-                    synthesis_markdown,
-                    page_image_refs,
-                    math_image_refs=scan_math_image_refs,
-                )
-                chapters.append(
-                    Chapter(
-                        title="Converted", file_name="chapter1.xhtml", content=html_body
-                    )
-                )
-            elif text_result and text_result.get("total_text"):
-                # 텍스트를 단순 문단화
-                total_text: str = clean_text_for_epub_body(
-                    str(text_result.get("total_text"))
-                )
-                html_body = self._render_text_with_page_images(
-                    total_text,
-                    page_image_refs,
-                )
-                chapters.append(
-                    Chapter(
-                        title="Converted", file_name="chapter1.xhtml", content=html_body
-                    )
-                )
-            elif content_flow:
-                html_body = self._render_content_flow_to_xhtml(
-                    content_flow,
-                    image_file_by_xref,
-                )
-                chapters.append(
-                    Chapter(
-                        title="Converted", file_name="chapter1.xhtml", content=html_body
-                    )
-                )
-            else:
-                # 비어있는 경우라도 최소 챕터 제공
-                chapters.append(
-                    Chapter(
-                        title="Converted",
-                        file_name="chapter1.xhtml",
-                        content="<p>내용을 추출하지 못했습니다.</p>",
-                    )
-                )
-                for page in sorted(page_image_refs.keys()):
-                    chapters[0].content += self._render_image_figure_group(
-                        page_image_refs[page]
-                    )
 
             epub_bytes = self.epub.create_epub_bytes(
                 title="변환된 문서",
                 author="",
-                chapters=chapters,
-                images=epub_images,
+                chapters=artifacts.chapters,
+                images=artifacts.images,
                 uid=conversion_id,
             )
 
@@ -605,140 +832,31 @@ class ConversionOrchestrator:
             _validation = validate_epub_bytes(epub_bytes)
 
             # 결과 저장/완료
-            await self.store.set_result(conversion_id, epub_bytes)
-            # 디스크에도 저장해야 하는 경우 설정에 따라 저장
-            try:
-                out_dir = "./results"  # 기본값
-            except Exception:
-                out_dir = None
-
-            if out_dir:
-                try:
-                    p = Path(out_dir)
-                    p.mkdir(parents=True, exist_ok=True)
-                    file_name = f"{conversion_id}.epub"
-                    out_path = p / file_name
-                    out_path.write_bytes(epub_bytes)
-                    await self.store.update(conversion_id, result_path=str(out_path))
-                except Exception:
-                    logger.exception("결과 파일을 디스크에 저장하는 중 오류 발생")
-            await self.store.update(
-                conversion_id,
-                state=JobState.COMPLETED,
-                progress=100,
-                message="변환 완료",
-                current_step="completed",
+            await self._complete_job_successfully(
+                conversion_id=conversion_id,
+                epub_bytes=epub_bytes,
+                publish_status=publish_status,
             )
-            await publish_status()
 
         except Exception as e:
-            logger.error("변환 파이프라인 실패", exc_info=True)
-            # 기록 후 재시도 여부 판단(설정 기반)
-            try:
-                max_retries = 1  # 기본값
-            except Exception:
-                max_retries = 1
-
-            job = await self.store.get(conversion_id)
-            job.error_message = str(e)
-            job.updated_at = datetime.now(timezone.utc).isoformat()
-
-            if job.attempts < max_retries:
-                # 자동 재시도: 간단한 백오프
-                backoff = min(5 * job.attempts, 30)
-                await self.store.update(
-                    conversion_id,
-                    state=JobState.PENDING,
-                    message=f"에러 발생, 자동 재시도 대기중 (backoff {backoff}s)",
-                )
-                await publish_status()
-                await asyncio.sleep(backoff)
-                asyncio.create_task(self._run_pipeline(conversion_id, pdf_bytes))
-                return
-
-            # 재시도 초과 또는 비허용 -> 실패로 마감
-            await self.store.update(
-                conversion_id,
-                state=JobState.FAILED,
-                message=str(e),
-                error_message=str(e),
-                current_step="failed",
+            await self._handle_pipeline_failure(
+                conversion_id=conversion_id,
+                pdf_bytes=pdf_bytes,
+                error=e,
+                publish_status=publish_status,
             )
-            await publish_status()
 
     def _build_epub_image_assets(
         self,
         pdf_bytes: bytes,
     ) -> tuple[List[EpubImage], Dict[int, str], Dict[int, List[str]]]:
-        """PDF에서 추출한 이미지를 EPUB 리소스로 변환합니다."""
-        try:
-            raw_images = self.pdf_extractor.extract_images_from_pdf(pdf_bytes)
-        except Exception:
-            logger.exception("PDF 이미지 추출 실패. 텍스트만으로 EPUB을 생성합니다.")
-            return [], {}, {}
-
-        if not isinstance(raw_images, list):
-            return [], {}, {}
-
-        assets: List[EpubImage] = []
-        image_file_by_xref: Dict[int, str] = {}
-        image_file_by_page: Dict[int, List[str]] = {}
-        for index, image_info in enumerate(raw_images, start=1):
-            if not isinstance(image_info, dict):
-                continue
-            page_value = image_info.get("page")
-            image_bytes = image_info.get("image_bytes")
-            image_format = str(image_info.get("format", "png")).lower()
-            if not isinstance(image_bytes, bytes) or not image_bytes:
-                continue
-
-            normalized = self._normalize_image_for_epub(image_bytes, image_format)
-            if normalized is None:
-                logger.warning(
-                    "이미지 정규화 실패로 해당 이미지를 건너뜁니다",
-                    extra={"index": index, "format": image_format},
-                )
-                continue
-            ext, media_type, normalized_bytes = normalized
-            file_name = f"images/image-{index}.{ext}"
-            assets.append(
-                EpubImage(
-                    file_name=file_name,
-                    media_type=media_type,
-                    data=normalized_bytes,
-                )
-            )
-            xref_value = image_info.get("xref")
-            if isinstance(xref_value, int):
-                image_file_by_xref[xref_value] = file_name
-            if isinstance(page_value, int):
-                image_file_by_page.setdefault(page_value, []).append(file_name)
-
-        return assets, image_file_by_xref, image_file_by_page
+        return build_epub_image_assets(self.pdf_extractor, pdf_bytes)
 
     def _is_page_sized_scan_image(self, image_info: Dict[str, Any]) -> bool:
-        full_page_flag = image_info.get("is_full_page_scan")
-        if isinstance(full_page_flag, str):
-            return full_page_flag.strip().lower() == "true"
-        if isinstance(full_page_flag, bool):
-            return full_page_flag
-
-        coverage_ratio = image_info.get("coverage_ratio")
-        if isinstance(coverage_ratio, (int, float)):
-            return float(coverage_ratio) >= 0.95
-
-        return False
+        return is_page_sized_scan_image(image_info)
 
     def _extract_content_flow_pages(self, pdf_bytes: bytes) -> List[Dict[str, Any]]:
-        try:
-            flow = self.pdf_extractor.extract_content_flow_with_images(pdf_bytes)
-        except Exception:
-            logger.exception("콘텐츠 흐름 추출 실패. 기본 렌더링으로 진행합니다.")
-            return []
-        pages = flow.get("pages") if isinstance(flow, dict) else None
-        if not isinstance(pages, list):
-            return []
-        return [page for page in pages if isinstance(page, dict)]
+        return extract_content_flow_pages(self.pdf_extractor, pdf_bytes)
 
     def _resolve_page_image_refs(
         self,
@@ -748,125 +866,29 @@ class ConversionOrchestrator:
         *,
         scanned_pages: Optional[set[int]] = None,
     ) -> Dict[int, List[str]]:
-        page_refs: Dict[int, List[str]] = {}
-        if not scanned_pages:
-            page_refs = {page: list(refs) for page, refs in image_file_by_page.items()}
-
-        for page_entry in content_flow:
-            page_num = page_entry.get("page")
-            elements = page_entry.get("elements")
-            if not isinstance(page_num, int) or not isinstance(elements, list):
-                continue
-            refs: List[str] = []
-            for element in elements:
-                if not isinstance(element, dict) or element.get("type") != "image":
-                    continue
-                if (
-                    scanned_pages
-                    and page_num in scanned_pages
-                    and self._is_page_sized_scan_image(element)
-                ):
-                    continue
-                xref = element.get("xref")
-                if isinstance(xref, int):
-                    file_name = image_file_by_xref.get(xref)
-                    if file_name:
-                        refs.append(file_name)
-            if refs:
-                page_refs[page_num] = refs
-        return page_refs
+        return resolve_page_image_refs(
+            content_flow,
+            image_file_by_xref,
+            image_file_by_page,
+            scanned_pages=scanned_pages,
+        )
 
     def _filter_epub_images_by_usage(
         self, epub_images: List[EpubImage], page_image_refs: Dict[int, List[str]]
     ) -> List[EpubImage]:
-        used_file_names = {
-            file_name for refs in page_image_refs.values() for file_name in refs
-        }
-        if not used_file_names:
-            return []
-        return [image for image in epub_images if image.file_name in used_file_names]
+        return filter_epub_images_by_usage(epub_images, page_image_refs)
 
     def _render_content_flow_to_xhtml(
         self,
         content_flow: List[Dict[str, Any]],
         image_file_by_xref: Dict[int, str],
     ) -> str:
-        html_parts: List[str] = []
-        for page_entry in content_flow:
-            page_num = page_entry.get("page")
-            elements = page_entry.get("elements")
-            if not isinstance(page_num, int) or not isinstance(elements, list):
-                continue
-
-            html_parts.append("<section>")
-            for element in elements:
-                if not isinstance(element, dict):
-                    continue
-                element_type = element.get("type")
-                if element_type == "text":
-                    text = clean_text_for_epub_body(
-                        str(element.get("text", ""))
-                    ).strip()
-                    if not text:
-                        continue
-                    for paragraph in self._split_text_to_paragraphs(text):
-                        html_parts.append(self._wrap_text_block(paragraph))
-                    continue
-
-                if element_type == "image":
-                    xref = element.get("xref")
-                    if isinstance(xref, int):
-                        file_name = image_file_by_xref.get(xref)
-                        if file_name:
-                            html_parts.append(self._render_image_figure(file_name))
-            html_parts.append("</section>")
-        return "".join(html_parts)
+        return render_content_flow_to_xhtml(content_flow, image_file_by_xref)
 
     def _render_text_with_page_images(
         self, total_text: str, page_image_refs: Dict[int, List[str]]
     ) -> str:
-        """문맥 보정 텍스트를 우선 사용하고, 페이지 경계에 이미지를 배치합니다."""
-        page_sections = re.split(r"===\s*페이지\s*(\d+)\s*===", total_text)
-        html_parts: List[str] = []
-        inserted_pages: set[int] = set()
-
-        if len(page_sections) <= 1:
-            for line in total_text.split("\n"):
-                if line.strip():
-                    html_parts.append(self._wrap_text_block(line))
-            for page in sorted(page_image_refs.keys()):
-                html_parts.append(
-                    self._render_image_figure_group(page_image_refs[page])
-                )
-            return "".join(html_parts)
-
-        leading = page_sections[0].strip()
-        if leading:
-            for line in leading.split("\n"):
-                if line.strip():
-                    html_parts.append(self._wrap_text_block(line))
-
-        for idx in range(1, len(page_sections), 2):
-            page_str = page_sections[idx].strip()
-            body = page_sections[idx + 1] if idx + 1 < len(page_sections) else ""
-            if not page_str.isdigit():
-                continue
-            page_num = int(page_str)
-            for line in body.split("\n"):
-                if line.strip():
-                    html_parts.append(self._wrap_text_block(line))
-            if page_num in page_image_refs:
-                html_parts.append(
-                    self._render_image_figure_group(page_image_refs[page_num])
-                )
-                inserted_pages.add(page_num)
-
-        for page in sorted(page_image_refs.keys()):
-            if page in inserted_pages:
-                continue
-            html_parts.append(self._render_image_figure_group(page_image_refs[page]))
-
-        return "".join(html_parts)
+        return render_text_with_page_images(total_text, page_image_refs)
 
     def _render_markdown_to_xhtml_body(
         self,
@@ -875,193 +897,23 @@ class ConversionOrchestrator:
         *,
         math_image_refs: Optional[Dict[str, Dict[str, str]]] = None,
     ) -> str:
-        lines = markdown_text.splitlines()
-        html_parts: List[str] = []
-        paragraph_buf: List[str] = []
-        list_items: List[str] = []
-        list_type: Optional[str] = None
-        in_code_block = False
-        code_lines: List[str] = []
-        in_verse_block = False
-        verse_lines: List[tuple[int, str]] = []
-        inserted_pages: set[int] = set()
-
-        def flush_paragraph() -> None:
-            if paragraph_buf:
-                html_parts.append(self._wrap_text_block(" ".join(paragraph_buf)))
-                paragraph_buf.clear()
-
-        def flush_list() -> None:
-            nonlocal list_items, list_type
-            if not list_items or not list_type:
-                return
-            html_parts.append(f"<{list_type}>")
-            for item in list_items:
-                html_parts.append(f"<li>{render_text_with_math(item)}</li>")
-            html_parts.append(f"</{list_type}>")
-            list_items = []
-            list_type = None
-
-        def flush_code() -> None:
-            nonlocal code_lines
-            if code_lines:
-                html_parts.append("<pre><code>")
-                html_parts.append(escape("\n".join(code_lines)))
-                html_parts.append("</code></pre>")
-                code_lines = []
-
-        def flush_verse() -> None:
-            nonlocal verse_lines
-            if verse_lines:
-                html_parts.append(self._render_preserved_lines_block(verse_lines))
-                verse_lines = []
-
-        for raw_line in lines:
-            line = raw_line.rstrip()
-            stripped = line.strip()
-
-            if stripped.startswith("<!--") and stripped.endswith("-->"):
-                continue
-
-            if stripped.startswith("```"):
-                flush_paragraph()
-                flush_list()
-                flush_verse()
-                if in_code_block:
-                    flush_code()
-                    in_code_block = False
-                else:
-                    in_code_block = True
-                continue
-
-            if in_code_block:
-                code_lines.append(line)
-                continue
-
-            if stripped == "[[VERSE]]":
-                flush_paragraph()
-                flush_list()
-                flush_verse()
-                in_verse_block = True
-                continue
-
-            if stripped == "[[/VERSE]]":
-                flush_verse()
-                in_verse_block = False
-                continue
-
-            if in_verse_block:
-                verse_match = re.match(r"^\[\[LINE:(\d+)\]\](.*)$", line)
-                if verse_match:
-                    verse_lines.append(
-                        (int(verse_match.group(1)), verse_match.group(2).strip())
-                    )
-                elif stripped:
-                    verse_lines.append((0, stripped))
-                continue
-
-            if not stripped:
-                flush_paragraph()
-                flush_list()
-                flush_verse()
-                continue
-
-            math_marker = self._extract_math_image_marker(stripped)
-            if math_marker and math_image_refs and math_marker in math_image_refs:
-                math_image = math_image_refs[math_marker]
-                flush_paragraph()
-                flush_list()
-                flush_verse()
-                html_parts.append(
-                    self._render_image_figure(
-                        str(math_image.get("file_name", "")),
-                        alt_text=str(math_image.get("alt_text", "수식 이미지")),
-                        caption_text=str(math_image.get("alt_text", "")).strip(),
-                        css_class="math-figure",
-                    )
-                )
-                continue
-
-            heading = re.match(r"^(#{1,6})\s+(.+)$", stripped)
-            if heading:
-                flush_paragraph()
-                flush_list()
-                flush_verse()
-                level = len(heading.group(1))
-                title = heading.group(2).strip()
-                html_parts.append(
-                    f"<h{level}>{render_text_with_math(title)}</h{level}>"
-                )
-                page_match = re.search(r"페이지\s*(\d+)", title)
-                if page_match:
-                    page_num = int(page_match.group(1))
-                    if page_num in page_image_refs and page_num not in inserted_pages:
-                        html_parts.append(
-                            self._render_image_figure_group(page_image_refs[page_num])
-                        )
-                        inserted_pages.add(page_num)
-                continue
-
-            ordered = re.match(r"^\d+\.\s+(.+)$", stripped)
-            unordered = re.match(r"^[-*]\s+(.+)$", stripped)
-            if ordered or unordered:
-                flush_paragraph()
-                flush_verse()
-                desired_type = "ol" if ordered else "ul"
-                match = ordered or unordered
-                if not match:
-                    continue
-                item_text = match.group(1).strip()
-                if list_type and list_type != desired_type:
-                    flush_list()
-                list_type = desired_type
-                list_items.append(item_text)
-                continue
-
-            if stripped.startswith(">"):
-                flush_paragraph()
-                flush_list()
-                flush_verse()
-                html_parts.append(
-                    f"<blockquote>{render_text_with_math(stripped[1:].strip())}</blockquote>"
-                )
-                continue
-
-            paragraph_buf.append(stripped)
-
-        flush_paragraph()
-        flush_list()
-        flush_verse()
-        if in_code_block:
-            flush_code()
-
-        for page_num, refs in sorted(page_image_refs.items()):
-            if page_num in inserted_pages:
-                continue
-            html_parts.append(self._render_image_figure_group(refs))
-
-        return "".join(html_parts)
+        return render_markdown_to_xhtml_body(
+            markdown_text,
+            page_image_refs,
+            math_image_refs=math_image_refs,
+        )
 
     def _split_text_to_paragraphs(self, text: str) -> List[str]:
-        parts = [segment.strip() for segment in text.split("\n") if segment.strip()]
-        return parts if parts else [text]
+        return split_text_to_paragraphs(text)
 
     def _wrap_text_block(self, text: str) -> str:
-        rendered = render_block_with_math(text)
-        if rendered.startswith('<div class="math-display"'):
-            return rendered
-        return f"<p>{rendered}</p>"
+        return wrap_text_block(text)
 
     def _render_preserved_lines_block(self, lines: List[tuple[int, str]]) -> str:
-        rendered_lines: List[str] = []
-        for indent_level, text in lines:
-            safe_text = render_text_with_math(text)
-            indent_prefix = "&nbsp;" * max(indent_level, 0) * 2
-            rendered_lines.append(f"{indent_prefix}{safe_text}")
-        return f'<p class="verse">{"<br/>".join(rendered_lines)}</p>'
+        return render_preserved_lines_block(lines)
 
     def _render_image_figure_group(self, image_refs: List[str]) -> str:
-        return "".join(self._render_image_figure(file_name) for file_name in image_refs)
+        return render_image_figure_group(image_refs)
 
     def _render_image_figure(
         self,
@@ -1071,90 +923,30 @@ class ConversionOrchestrator:
         caption_text: Optional[str] = None,
         css_class: Optional[str] = None,
     ) -> str:
-        safe_name = escape(file_name)
-        class_attr = f' class="{escape(css_class)}"' if css_class else ""
-        figcaption = (
-            f"<figcaption>{escape(caption_text)}</figcaption>" if caption_text else ""
-        )
-        return (
-            f"<figure{class_attr}>"
-            f'<img src="{safe_name}" alt="{escape(alt_text)}" />'
-            f"{figcaption}"
-            "</figure>"
+        return render_image_figure(
+            file_name,
+            alt_text=alt_text,
+            caption_text=caption_text,
+            css_class=css_class,
         )
 
     def _extract_math_image_marker(self, line: str) -> Optional[str]:
-        match = re.fullmatch(r"(\[\[MATHIMG:[^\]]+\]\])", line.strip())
-        return match.group(1) if match else None
+        return extract_math_image_marker(line)
 
     def _build_scan_math_image_assets(
         self,
         raw_images: Any,
         assets: List[EpubImage],
     ) -> Dict[str, Dict[str, str]]:
-        marker_to_file: Dict[str, Dict[str, str]] = {}
-        if not isinstance(raw_images, list):
-            return marker_to_file
-
-        start_index = len(assets) + 1
-        for offset, image_info in enumerate(raw_images, start=start_index):
-            if not isinstance(image_info, dict):
-                continue
-            marker = image_info.get("marker")
-            image_bytes = image_info.get("image_bytes")
-            image_format = str(image_info.get("format", "png")).lower()
-            if not isinstance(marker, str) or not isinstance(image_bytes, bytes):
-                continue
-            normalized = self._normalize_image_for_epub(image_bytes, image_format)
-            if normalized is None:
-                continue
-            ext, media_type, normalized_bytes = normalized
-            file_name = f"images/scan-math-{offset}.{ext}"
-            assets.append(
-                EpubImage(
-                    file_name=file_name,
-                    media_type=media_type,
-                    data=normalized_bytes,
-                )
-            )
-            marker_to_file[marker] = {
-                "file_name": file_name,
-                "alt_text": str(image_info.get("alt_text", "수식 이미지")),
-            }
-        return marker_to_file
+        return build_scan_math_image_assets(raw_images, assets)
 
     def _resolve_image_format(self, image_format: str) -> tuple[str, str]:
-        mapping = {
-            "jpg": ("jpg", "image/jpeg"),
-            "jpeg": ("jpg", "image/jpeg"),
-            "png": ("png", "image/png"),
-            "webp": ("webp", "image/webp"),
-            "gif": ("gif", "image/gif"),
-            "bmp": ("bmp", "image/bmp"),
-        }
-        return mapping.get(image_format, ("png", "image/png"))
+        return resolve_image_format(image_format)
 
     def _normalize_image_for_epub(
         self, image_bytes: bytes, image_format: str
     ) -> Optional[tuple[str, str, bytes]]:
-        ext, media_type = self._resolve_image_format(image_format)
-        supported_input_formats = {"jpg", "jpeg", "png", "webp", "gif", "bmp"}
-        if image_format in supported_input_formats:
-            return ext, media_type, image_bytes
-
-        try:
-            from PIL import Image
-
-            with Image.open(BytesIO(image_bytes)) as image:
-                buffer = BytesIO()
-                image.convert("RGB").save(buffer, format="PNG")
-                return "png", "image/png", buffer.getvalue()
-        except Exception:
-            logger.exception(
-                "미지원 이미지 포맷 변환 실패",
-                extra={"format": image_format},
-            )
-            return None
+        return normalize_image_for_epub(image_bytes, image_format)
 
 
 # 전역 오케스트레이터 인스턴스 (간단 의존성)
