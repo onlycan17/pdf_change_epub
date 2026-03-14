@@ -113,6 +113,7 @@ class AsyncQueueService:
         filename: str,
         file_size: int,
         ocr_enabled: bool,
+        owner_user_id: Optional[str],
         translate_to_korean: bool,
         pdf_path: str,
     ) -> Dict[str, Any]:
@@ -121,6 +122,7 @@ class AsyncQueueService:
             "filename": filename,
             "file_size": file_size,
             "ocr_enabled": ocr_enabled,
+            "owner_user_id": owner_user_id,
             "translate_to_korean": translate_to_korean,
             "pdf_path": pdf_path,
         }
@@ -155,6 +157,7 @@ class AsyncQueueService:
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
+            owner_user_id=job.owner_user_id,
             translate_to_korean=translate_to_korean,
             pdf_path=str(pdf_path),
         )
@@ -486,6 +489,7 @@ class AsyncQueueService:
             filename=job.filename,
             file_size=job.file_size,
             ocr_enabled=job.ocr_enabled,
+            owner_user_id=job.owner_user_id,
             translate_to_korean=job.translate_to_korean,
             pdf_path=str(pdf_path),
         )

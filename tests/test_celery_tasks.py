@@ -55,6 +55,7 @@ class TestConversionTasks:
                 filename="test.pdf",
                 file_size=len(sample_pdf_content),
                 ocr_enabled=True,
+                owner_user_id="user-123",
                 pdf_bytes=sample_pdf_content.hex(),  # 실제 파일 대신 픽스처를 사용
             )
 
@@ -89,6 +90,15 @@ class TestConversionTasks:
             },
         }
         mock_orch.run_to_completion.assert_awaited_once()
+        kwargs = mock_orch.run_to_completion.await_args.kwargs
+        assert kwargs["conversion_id"] == "conv-1"
+        assert kwargs["filename"] == "test.pdf"
+        assert kwargs["file_size"] == len(sample_pdf_content)
+        assert kwargs["ocr_enabled"] is True
+        assert kwargs["owner_user_id"] == "user-123"
+        assert kwargs["translate_to_korean"] is False
+        assert kwargs["pdf_bytes"] == sample_pdf_content
+        assert callable(kwargs["status_callback"])
 
     def test_cleanup_old_jobs_success(self):
         """
