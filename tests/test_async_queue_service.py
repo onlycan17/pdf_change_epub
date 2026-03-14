@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 from unittest.mock import AsyncMock
 from datetime import datetime, timedelta, timezone
 
-from app.services.async_queue_service import AsyncQueueService
+from app.services.async_queue_service import AsyncQueueService, QueueUnavailableError
 from app.services.conversion_orchestrator import ConversionJob, JobState
 
 
@@ -39,6 +39,52 @@ class TestAsyncQueueService:
         service.store.create.assert_called_once()
         service.store.update.assert_called_once()
         assert job.celery_task_id == "celery-task-1"
+
+    @pytest.mark.asyncio
+    async def test_start_conversion_raises_when_queue_required_but_unavailable(self):
+        service = AsyncQueueService()
+        service._initialized = True
+        service.use_celery = False
+        service._allow_direct_fallback = False
+
+        with pytest.raises(QueueUnavailableError):
+            await service.start_conversion(
+                conversion_id="cid-required",
+                filename="doc.pdf",
+                file_size=123,
+                ocr_enabled=True,
+                pdf_bytes=b"%PDF-1.4",
+            )
+
+    @pytest.mark.asyncio
+    async def test_start_conversion_uses_direct_mode_when_fallback_allowed(self):
+        service = AsyncQueueService()
+        service._initialized = True
+        service.use_celery = False
+        service._allow_direct_fallback = True
+
+        expected_job = ConversionJob(
+            conversion_id="cid-direct",
+            filename="doc.pdf",
+            file_size=123,
+            ocr_enabled=True,
+            state=JobState.PENDING,
+            progress=0,
+        )
+
+        with patch.object(
+            service.orchestrator, "start", AsyncMock(return_value=expected_job)
+        ) as mock_start:
+            job = await service.start_conversion(
+                conversion_id="cid-direct",
+                filename="doc.pdf",
+                file_size=123,
+                ocr_enabled=True,
+                pdf_bytes=b"%PDF-1.4",
+            )
+
+        assert job is expected_job
+        mock_start.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_get_status_updates_from_celery(self):

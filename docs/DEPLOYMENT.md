@@ -646,6 +646,10 @@ celery -A app.celery_config:celery_app inspect reserved
 docker stats
 ```
 
+- `APP_ALLOW_DIRECT_CONVERSION_FALLBACK=false`가 기본값이면, Celery/Redis가 내려간 상태에서 새 변환 요청은 503으로 즉시 실패합니다.
+- 이는 "조용히 웹 서버가 직접 변환을 떠안는 상태"를 막기 위한 동작입니다. 식당에서 주방이 닫혔는데 주문만 계속 받지 않도록 입구에서 바로 안내하는 것과 같습니다.
+- 503이 반복되면 `web`, `redis`, `celery_worker` 컨테이너가 모두 떠 있는지 먼저 확인하세요.
+
 #### 메모리 사용량 과다
 
 ```bash

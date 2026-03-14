@@ -138,6 +138,7 @@ class Settings(BaseSettings):
     # Celery 설정
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
+    allow_direct_conversion_fallback: bool = False
 
     # 보안 설정
     secret_key: str = DEFAULT_SECRET_KEY
@@ -406,6 +407,10 @@ class Settings(BaseSettings):
     @property
     def CELERY_RESULT_BACKEND(self) -> str:
         return self.celery_result_backend
+
+    @property
+    def ALLOW_DIRECT_CONVERSION_FALLBACK(self) -> bool:
+        return self.allow_direct_conversion_fallback
 
     @property
     def SECRET_KEY(self) -> str:

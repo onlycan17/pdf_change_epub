@@ -24,6 +24,15 @@ from app.services.conversion_orchestrator import (
 logger = logging.getLogger(__name__)
 
 
+class QueueUnavailableError(RuntimeError):
+    """변환 큐가 준비되지 않았을 때 발생하는 예외"""
+
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(
+            message or "변환 작업 큐가 준비되지 않았습니다. 잠시 후 다시 시도해주세요."
+        )
+
+
 class AsyncQueueService:
     """비동기 작업 큐 서비스"""
 
@@ -37,6 +46,7 @@ class AsyncQueueService:
             "0",
             "false",
         )
+        self._allow_direct_fallback = self.settings.ALLOW_DIRECT_CONVERSION_FALLBACK
         self.use_celery = self._celery_requested
         self.store = (
             ConversionJobStore() if self.use_celery else self.orchestrator.store
@@ -57,6 +67,12 @@ class AsyncQueueService:
 
     def _record_celery_failure(self) -> None:
         self._last_celery_failure_at = datetime.now(timezone.utc)
+
+    def _raise_queue_unavailable(self, *, reason: str) -> None:
+        logger.warning("변환 큐 사용 불가", extra={"reason": reason})
+        raise QueueUnavailableError(
+            f"변환 작업 큐가 준비되지 않았습니다: {reason}. 잠시 후 다시 시도해주세요."
+        )
 
     def _is_celery_retry_cooldown_active(self) -> bool:
         if self._last_celery_failure_at is None:
@@ -175,6 +191,9 @@ class AsyncQueueService:
             message=f"작업 등록 실패: {str(error)}",
             error_message=str(error),
         )
+        if not self._allow_direct_fallback:
+            self._record_celery_failure()
+            self._raise_queue_unavailable(reason="Celery 작업 등록에 실패했습니다")
         self.use_celery = False
         self.store = self.orchestrator.store
         return await self.orchestrator.start(
@@ -499,6 +518,13 @@ class AsyncQueueService:
         await self._ensure_runtime_mode()
 
         if not self.use_celery:
+            if not self._allow_direct_fallback:
+                reason = (
+                    "Celery 사용이 비활성화되었습니다"
+                    if not self._celery_requested
+                    else "Celery 또는 Redis에 연결할 수 없습니다"
+                )
+                self._raise_queue_unavailable(reason=reason)
             return await self.orchestrator.start(
                 conversion_id=conversion_id,
                 filename=filename,

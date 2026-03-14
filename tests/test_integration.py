@@ -10,6 +10,11 @@ import app.core.config as config_module
 from app.main import app
 from app.services.conversion_orchestrator import ConversionJob, JobState
 from app.api.v1.auth import create_access_token
+from app.services.async_queue_service import QueueUnavailableError
+
+
+def _api_key() -> str:
+    return config_module.get_settings().SECURITY_API_KEY
 
 
 def _auth_headers(*, user_id: str = "testuser", email: str = "testuser@example.com"):
@@ -23,7 +28,7 @@ def _auth_headers(*, user_id: str = "testuser", email: str = "testuser@example.c
         }
     )
     return {
-        "X-API-Key": "your-api-key-here",
+        "X-API-Key": _api_key(),
         "Authorization": f"Bearer {token}",
     }
 
@@ -88,7 +93,7 @@ class TestConversionIntegration:
             files={"file": ("test.pdf", pdf_file, "application/pdf")},
             data={"ocr_enabled": "true", "translate_to_korean": "true"},
             headers={
-                "X-API-Key": "your-api-key-here",
+                "X-API-Key": _api_key(),
                 "Authorization": f"Bearer {free_token}",
             },
         )
@@ -109,6 +114,25 @@ class TestConversionIntegration:
             )
             is True
         )
+
+    def test_start_conversion_returns_503_when_queue_unavailable(
+        self, test_client, mock_async_queue_service, sample_pdf_content
+    ):
+        """변환 시작 - 큐 미가동 시 503 응답 테스트"""
+        mock_async_queue_service.start_conversion.side_effect = QueueUnavailableError()
+
+        pdf_file = BytesIO(sample_pdf_content)
+        pdf_file.name = "queue-required.pdf"
+
+        response = test_client.post(
+            "/api/v1/conversion/start",
+            files={"file": ("queue-required.pdf", pdf_file, "application/pdf")},
+            data={"ocr_enabled": "false"},
+            headers=_auth_headers(),
+        )
+
+        assert response.status_code == 503
+        assert "변환 작업 큐" in response.json()["detail"]
 
     def test_start_conversion_invalid_file(self, test_client, mock_async_queue_service):
         """변환 시작 - 유효하지 않은 파일 테스트"""
@@ -132,7 +156,7 @@ class TestConversionIntegration:
             files={"file": ("test.txt", invalid_file, "text/plain")},
             data={"ocr_enabled": "true"},
             headers={
-                "X-API-Key": "your-api-key-here",
+                "X-API-Key": _api_key(),
                 "Authorization": f"Bearer {free_token}",
             },
         )
@@ -160,7 +184,7 @@ class TestConversionIntegration:
             "/api/v1/conversion/start",
             files={"file": ("limit-test.pdf", pdf_file, "application/pdf")},
             data={"ocr_enabled": "false"},
-            headers={"X-API-Key": "your-api-key-here"},
+            headers={"X-API-Key": _api_key()},
         )
 
         assert response.status_code == 401
@@ -191,7 +215,7 @@ class TestConversionIntegration:
             files={"file": ("limit-auth-free.pdf", pdf_file, "application/pdf")},
             data={"ocr_enabled": "false"},
             headers={
-                "X-API-Key": "your-api-key-here",
+                "X-API-Key": _api_key(),
                 "Authorization": f"Bearer {free_token}",
             },
         )
@@ -229,7 +253,7 @@ class TestConversionIntegration:
             files={"file": ("limit-auth-premium.pdf", pdf_file, "application/pdf")},
             data={"ocr_enabled": "false"},
             headers={
-                "X-API-Key": "your-api-key-here",
+                "X-API-Key": _api_key(),
                 "Authorization": f"Bearer {premium_token}",
             },
         )
@@ -267,7 +291,7 @@ class TestConversionIntegration:
             files={"file": ("limit-auth-yearly.pdf", pdf_file, "application/pdf")},
             data={"ocr_enabled": "false"},
             headers={
-                "X-API-Key": "your-api-key-here",
+                "X-API-Key": _api_key(),
                 "Authorization": f"Bearer {yearly_token}",
             },
         )
@@ -306,7 +330,7 @@ class TestConversionIntegration:
             files={"file": ("limit-auth-privileged.pdf", pdf_file, "application/pdf")},
             data={"ocr_enabled": "false"},
             headers={
-                "X-API-Key": "your-api-key-here",
+                "X-API-Key": _api_key(),
                 "Authorization": f"Bearer {privileged_token}",
             },
         )
@@ -363,7 +387,7 @@ class TestConversionIntegration:
                 files={"file": ("daily-limit.pdf", pdf_file, "application/pdf")},
                 data={"ocr_enabled": "false"},
                 headers={
-                    "X-API-Key": "your-api-key-here",
+                    "X-API-Key": _api_key(),
                     "Authorization": f"Bearer {free_token}",
                 },
             )
@@ -794,7 +818,7 @@ class TestAsyncServiceIntegration:
 
     @pytest.mark.asyncio
     async def test_error_handling(self, mock_settings, mock_celery_app, mock_store):
-        """오류 처리 통합 테스트 (Celery 실패 시 직접 모드 폴백)"""
+        """오류 처리 통합 테스트 (Celery 실패 시 큐 필수 모드)"""
         from app.services.async_queue_service import AsyncQueueService
 
         # Create service
@@ -802,6 +826,7 @@ class TestAsyncServiceIntegration:
         service.settings = mock_settings
         service.celery_app = mock_celery_app
         service.store = mock_store
+        service._allow_direct_fallback = False
 
         # Initialize with error
         mock_celery_app.control.inspect.return_value.stats.side_effect = Exception(
@@ -811,28 +836,14 @@ class TestAsyncServiceIntegration:
         await service.initialize()
         assert service.use_celery is False
 
-        # Start conversion should fall back to orchestrator direct mode
-        expected_job = ConversionJob(
-            conversion_id="test-123",
-            filename="test.pdf",
-            file_size=1024,
-            ocr_enabled=True,
-            state=JobState.PENDING,
-            progress=0,
-        )
-        with patch.object(
-            service.orchestrator, "start", AsyncMock(return_value=expected_job)
-        ) as mock_start:
-            job = await service.start_conversion(
+        with pytest.raises(QueueUnavailableError):
+            await service.start_conversion(
                 conversion_id="test-123",
                 filename="test.pdf",
                 file_size=1024,
                 ocr_enabled=True,
                 pdf_bytes=b"test content",
             )
-
-            assert job.conversion_id == "test-123"
-            mock_start.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_queue_statistics(self, mock_settings, mock_celery_app, mock_store):

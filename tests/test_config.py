@@ -171,6 +171,7 @@ class TestSettings:
         assert settings.app_name == "PDF to EPUB Converter"
         assert settings.version == "1.0.0"
         assert settings.debug is False
+        assert settings.allow_direct_conversion_fallback is False
         assert isinstance(settings.database, DatabaseSettings)
         assert isinstance(settings.redis, RedisSettings)
         assert isinstance(settings.ocr, OCRSettings)

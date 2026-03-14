@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 
+from app.core.config import get_settings
 from app.services.pdf_service import (
     PDFAnalyzer,
     PDFExtractor,
@@ -351,6 +352,7 @@ class TestMetadataAPI:
         from app.main import app
 
         self.client = TestClient(app)
+        self.api_key = get_settings().SECURITY_API_KEY
 
     def test_extract_pdf_metadata_endpoint_exists(self):
         """메타데이터 추출 엔드포인트 존재 여부 테스트"""
@@ -362,12 +364,12 @@ class TestMetadataAPI:
         response = self.client.post(
             "/api/v1/conversion/metadata",
             headers={
-                "X-API-Key": "your-api-key-here",
+                "X-API-Key": self.api_key,
                 "Content-Type": "application/json",
             },
         )
         # 404가 발생하면 라우터 등록 문제, 415가 발생하면 Content-Type 문제
-        assert response.status_code in [404, 415, 422]
+        assert response.status_code in [415, 422]
 
     @patch("app.api.v1.conversion.create_pdf_metadata_extractor")
     def test_extract_pdf_metadata_success(self, mock_extractor_class):
@@ -395,7 +397,7 @@ class TestMetadataAPI:
             "/api/v1/conversion/metadata",
             files={"file": ("test.pdf", test_pdf_content, "application/pdf")},
             data={"include_content_analysis": "false"},
-            headers={"X-API-Key": "your-api-key-here"},
+            headers={"X-API-Key": self.api_key},
         )
 
         # 응답 검증
@@ -421,7 +423,7 @@ class TestMetadataAPI:
         response = self.client.post(
             "/api/v1/conversion/metadata",
             files={"file": ("test.txt", test_content, "text/plain")},
-            headers={"X-API-Key": "your-api-key-here"},
+            headers={"X-API-Key": self.api_key},
         )
 
         assert response.status_code == 422
@@ -451,7 +453,7 @@ class TestMetadataAPI:
             "/api/v1/conversion/metadata",
             files={"file": ("test.pdf", test_pdf_content, "application/pdf")},
             data={"include_content_analysis": "true"},
-            headers={"X-API-Key": "your-api-key-here"},
+            headers={"X-API-Key": self.api_key},
         )
 
         assert response.status_code == 200

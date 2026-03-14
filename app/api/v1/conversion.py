@@ -39,7 +39,10 @@ from app.services.pdf_service import (
 from app.services.large_file_request_service import get_large_file_request_service
 from app.services.free_usage_limit_service import get_free_usage_limit_service
 from app.services.epub_validator import validate_epub_bytes
-from app.services.async_queue_service import get_async_queue_service
+from app.services.async_queue_service import (
+    QueueUnavailableError,
+    get_async_queue_service,
+)
 from app.services.subscription_plans import (
     SUBSCRIPTION_PLAN_FREE,
     get_plan,
@@ -446,15 +449,18 @@ async def start_conversion(
 
     # 비동기 작업 큐 서비스 시작
     async_queue_service = get_async_queue_service()
-    job = await async_queue_service.start_conversion(
-        conversion_id=conversion_id,
-        filename=file.filename or "uploaded.pdf",
-        file_size=len(pdf_bytes),
-        ocr_enabled=ocr_enabled,
-        owner_user_id=str(auth["id"]),
-        translate_to_korean=translate_to_korean,
-        pdf_bytes=pdf_bytes,
-    )
+    try:
+        job = await async_queue_service.start_conversion(
+            conversion_id=conversion_id,
+            filename=file.filename or "uploaded.pdf",
+            file_size=len(pdf_bytes),
+            ocr_enabled=ocr_enabled,
+            owner_user_id=str(auth["id"]),
+            translate_to_korean=translate_to_korean,
+            pdf_bytes=pdf_bytes,
+        )
+    except QueueUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     summary = _job_to_summary(job)
 
@@ -615,15 +621,18 @@ async def start_large_file_request_conversion(
         await _ensure_ocr_runtime_ready(settings)
 
     async_queue_service = get_async_queue_service()
-    job = await async_queue_service.start_conversion(
-        conversion_id=conversion_id,
-        filename=source_filename,
-        file_size=len(pdf_bytes),
-        ocr_enabled=ocr_enabled,
-        owner_user_id=request_record.requester_user_id,
-        translate_to_korean=translate_to_korean,
-        pdf_bytes=pdf_bytes,
-    )
+    try:
+        job = await async_queue_service.start_conversion(
+            conversion_id=conversion_id,
+            filename=source_filename,
+            file_size=len(pdf_bytes),
+            ocr_enabled=ocr_enabled,
+            owner_user_id=request_record.requester_user_id,
+            translate_to_korean=translate_to_korean,
+            pdf_bytes=pdf_bytes,
+        )
+    except QueueUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     service.mark_conversion_started(
         request_id=request_id,
