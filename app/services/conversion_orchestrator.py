@@ -335,6 +335,7 @@ class ConversionOrchestrator:
         filename: str,
         file_size: int,
         ocr_enabled: bool,
+        owner_user_id: Optional[str] = None,
         translate_to_korean: bool = False,
         pdf_bytes: bytes,
         status_callback: Optional[JobStatusCallback] = None,
@@ -344,6 +345,7 @@ class ConversionOrchestrator:
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
+            owner_user_id=owner_user_id,
             translate_to_korean=translate_to_korean,
             pdf_bytes=pdf_bytes,
         )
