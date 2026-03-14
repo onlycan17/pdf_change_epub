@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from unittest.mock import AsyncMock
+from datetime import datetime, timedelta, timezone
 
 from app.services.async_queue_service import AsyncQueueService
 from app.services.conversion_orchestrator import ConversionJob, JobState
@@ -307,6 +308,38 @@ class TestAsyncQueueService:
 
         assert service.use_celery is True
         assert service.store is not service.orchestrator.store
+
+    @pytest.mark.asyncio
+    async def test_ensure_runtime_mode_skips_forced_reinitialize_during_cooldown(self):
+        service = AsyncQueueService()
+        service._initialized = True
+        service.use_celery = False
+        service.store = service.orchestrator.store
+        service._celery_requested = True
+        service._celery_retry_cooldown_seconds = 30
+        service._last_celery_failure_at = datetime.now(timezone.utc)
+
+        with patch.object(service, "initialize", new_callable=AsyncMock) as initialize:
+            await service._ensure_runtime_mode()
+
+        initialize.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_ensure_runtime_mode_retries_after_cooldown_expires(self):
+        service = AsyncQueueService()
+        service._initialized = True
+        service.use_celery = False
+        service.store = service.orchestrator.store
+        service._celery_requested = True
+        service._celery_retry_cooldown_seconds = 30
+        service._last_celery_failure_at = datetime.now(timezone.utc) - timedelta(
+            seconds=31
+        )
+
+        with patch.object(service, "initialize", new_callable=AsyncMock) as initialize:
+            await service._ensure_runtime_mode()
+
+        initialize.assert_awaited_once_with(force=True)
 
     @pytest.mark.asyncio
     async def test_get_status_falls_back_to_orchestrator_store_for_direct_mode_job(
