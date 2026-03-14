@@ -1,5 +1,9 @@
 export type SubscriptionPlanCode = 'free' | 'monthly' | 'yearly';
 
+const AUTH_SESSION_COOKIE = 'pdf_to_epub_session';
+const AUTH_PLAN_COOKIE = 'pdf_to_epub_plan';
+const LEGACY_AUTH_TOKEN_KEYS = ['auth_token', 'access_token', 'token'] as const;
+
 export interface SubscriptionPlan {
   code: SubscriptionPlanCode;
   label: string;
@@ -13,7 +17,30 @@ export interface SubscriptionPlan {
   features: string[];
 }
 
-const AUTH_TOKEN_KEYS = ['auth_token', 'access_token', 'token'] as const;
+const readCookieValue = (cookieName: string): string | null => {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  const cookiePrefix = `${cookieName}=`;
+  const foundCookie = document.cookie
+    .split(';')
+    .map((chunk) => chunk.trim())
+    .find((chunk) => chunk.startsWith(cookiePrefix));
+
+  if (!foundCookie) {
+    return null;
+  }
+
+  return decodeURIComponent(foundCookie.slice(cookiePrefix.length));
+};
+
+const expireCookie = (cookieName: string): void => {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  document.cookie = `${cookieName}=; Max-Age=0; path=/; SameSite=Lax`;
+};
 
 export const SUBSCRIPTION_PLAN_FREE: SubscriptionPlanCode = 'free';
 export const SUBSCRIPTION_PLAN_MONTHLY: SubscriptionPlanCode = 'monthly';
@@ -61,7 +88,12 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     isSubscribed: true,
     recommended: true,
     annualDiscountRate: 0.1,
-    features: ['연간 10% 할인', '가장 높은 업로드 용량', '고급 OCR', '우선 처리'],
+    features: [
+      '연간 10% 할인',
+      '가장 높은 업로드 용량',
+      '고급 OCR',
+      '우선 처리',
+    ],
   },
 ];
 
@@ -69,83 +101,37 @@ const PLAN_BY_CODE = Object.fromEntries(
   SUBSCRIPTION_PLANS.map((plan) => [plan.code, plan])
 ) as Record<SubscriptionPlanCode, SubscriptionPlan>;
 
-const findToken = (): string | null => {
-  for (const key of AUTH_TOKEN_KEYS) {
-    const token = localStorage.getItem(key);
-    if (token) {
-      return token;
-    }
+const clearLegacyAuthTokens = (): void => {
+  if (typeof localStorage === 'undefined') {
+    return;
   }
-  return null;
-};
 
-export const clearAuthTokens = (): void => {
-  for (const key of AUTH_TOKEN_KEYS) {
+  for (const key of LEGACY_AUTH_TOKEN_KEYS) {
     localStorage.removeItem(key);
   }
 };
 
-const decodeBase64Payload = (base64Input: string): string => {
-  const normalized = base64Input.replace(/-/g, '+').replace(/_/g, '/');
-  const paddingNeeded = (4 - (normalized.length % 4)) % 4;
-  const padded = normalized + '='.repeat(paddingNeeded);
-  return atob(padded);
-};
-
-export const getTokenPayload = (): Record<string, unknown> | null => {
-  const token = findToken();
-  if (!token) {
-    return null;
-  }
-
-  const parts = token.split('.');
-  if (parts.length < 2) {
-    return null;
-  }
-
-  try {
-    const decoded = decodeBase64Payload(parts[1]);
-    return JSON.parse(decoded) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-};
-
-export const resolvePlanFromPayload = (
-  payload: Record<string, unknown> | null
-): SubscriptionPlanCode => {
-  if (!payload) {
-    return SUBSCRIPTION_PLAN_FREE;
-  }
-
-  const rawPlan = typeof payload.plan === 'string'
-    ? payload.plan
-    : typeof payload.subscription_plan === 'string'
-      ? payload.subscription_plan
-      : '';
-  if (rawPlan) {
-    const normalized = rawPlan.trim().toLowerCase();
-    return PLAN_ALIASES[normalized as keyof typeof PLAN_ALIASES] ?? SUBSCRIPTION_PLAN_FREE;
-  }
-
-  const directFlag = payload.is_subscribed ?? payload.subscription_active;
-  if (typeof directFlag === 'boolean' && directFlag) {
-    return SUBSCRIPTION_PLAN_MONTHLY;
-  }
-  if (typeof directFlag === 'string' && /^(1|true|yes|y)$/i.test(directFlag)) {
-    return SUBSCRIPTION_PLAN_MONTHLY;
-  }
-
-  return SUBSCRIPTION_PLAN_FREE;
+export const clearAuthTokens = (): void => {
+  clearLegacyAuthTokens();
+  expireCookie(AUTH_SESSION_COOKIE);
+  expireCookie(AUTH_PLAN_COOKIE);
 };
 
 export const getPlanFromToken = (): SubscriptionPlanCode => {
-  return resolvePlanFromPayload(getTokenPayload());
+  const planFromCookie = readCookieValue(AUTH_PLAN_COOKIE);
+  if (planFromCookie) {
+    const normalized = planFromCookie.trim().toLowerCase();
+    return (
+      PLAN_ALIASES[normalized as keyof typeof PLAN_ALIASES] ??
+      SUBSCRIPTION_PLAN_FREE
+    );
+  }
+  clearLegacyAuthTokens();
+  return SUBSCRIPTION_PLAN_FREE;
 };
 
-export const getPlanByCode = (
-  code: SubscriptionPlanCode
-): SubscriptionPlan => PLAN_BY_CODE[code];
+export const getPlanByCode = (code: SubscriptionPlanCode): SubscriptionPlan =>
+  PLAN_BY_CODE[code];
 
 export const getCurrentPlan = (): SubscriptionPlan => {
   return getPlanByCode(getPlanFromToken());
@@ -155,31 +141,12 @@ export const formatBytesToMb = (bytes: number): string => {
   return `${Math.round(bytes / (1024 * 1024))}MB`;
 };
 
-export const getAuthToken = (): string | null => findToken();
-
 export const hasUsableAuthToken = (): boolean => {
-  const token = findToken();
-  if (!token) {
-    return false;
+  const sessionCookie = readCookieValue(AUTH_SESSION_COOKIE);
+  if (sessionCookie === '1') {
+    return true;
   }
 
-  const payload = getTokenPayload();
-  if (!payload) {
-    clearAuthTokens();
-    return false;
-  }
-
-  const exp = payload.exp;
-  if (typeof exp !== 'number') {
-    clearAuthTokens();
-    return false;
-  }
-
-  const nowInSeconds = Math.floor(Date.now() / 1000);
-  if (exp <= nowInSeconds) {
-    clearAuthTokens();
-    return false;
-  }
-
-  return true;
+  clearLegacyAuthTokens();
+  return false;
 };

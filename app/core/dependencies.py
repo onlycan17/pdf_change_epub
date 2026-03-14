@@ -13,23 +13,19 @@ from fastapi.security import APIKeyHeader  # type: ignore
 from jose import JWTError, jwt
 
 from app.core.config import Settings, get_settings
+from app.core.auth_session import PRIVILEGED_EMAIL, extract_access_token
 from app.repositories.user_repository import get_user_repository
 
 
 # 로거 설정
 logger = logging.getLogger(__name__)
 
-PRIVILEGED_EMAIL = "onlycan17@gmail.com"
 DEFAULT_MAX_REQUEST_SIZE = 50 * 1024 * 1024
 LARGE_REQUEST_SIZE = 500 * 1024 * 1024
 
 
 def _extract_bearer_token(request: Request) -> Optional[str]:
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return None
-    token = auth_header[7:].strip()
-    return token or None
+    return extract_access_token(request)
 
 
 def _resolve_email_from_bearer_token(request: Request, settings: Settings) -> str:
@@ -38,7 +34,9 @@ def _resolve_email_from_bearer_token(request: Request, settings: Settings) -> st
         return ""
 
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
     except JWTError:
         return ""
 
@@ -129,7 +127,7 @@ async def get_api_key(
         HTTPException: API 키가 유효하지 않은 경우
     """
     expected = settings.SECURITY_API_KEY
-    if not settings.DEBUG and (not api_key or api_key != expected):
+    if not settings.is_testing and (not api_key or api_key != expected):
         client_host = request.client.host if request.client else "unknown"
         logger.warning(f"Invalid API key attempt from IP: {client_host}")
         raise HTTPException(status_code=401, detail="Invalid or missing API key")

@@ -6,9 +6,26 @@ from fastapi.testclient import TestClient
 from io import BytesIO
 from typing import Any
 
+import app.core.config as config_module
 from app.main import app
 from app.services.conversion_orchestrator import ConversionJob, JobState
 from app.api.v1.auth import create_access_token
+
+
+def _auth_headers(*, user_id: str = "testuser", email: str = "testuser@example.com"):
+    token = create_access_token(
+        {
+            "sub": user_id,
+            "email": email,
+            "plan": "free",
+            "is_subscribed": False,
+            "subscription_active": False,
+        }
+    )
+    return {
+        "X-API-Key": "your-api-key-here",
+        "Authorization": f"Bearer {token}",
+    }
 
 
 class TestConversionIntegration:
@@ -368,6 +385,7 @@ class TestConversionIntegration:
             filename="test.pdf",
             file_size=1024,
             ocr_enabled=True,
+            owner_user_id="testuser",
             state=JobState.PROCESSING,
             progress=50,
             message="처리 중",
@@ -377,7 +395,7 @@ class TestConversionIntegration:
         # Execute
         response = test_client.get(
             "/api/v1/conversion/status/test-123",
-            headers={"X-API-Key": "your-api-key-here"},
+            headers=_auth_headers(),
         )
 
         # Assertions
@@ -399,7 +417,7 @@ class TestConversionIntegration:
         # Execute
         response = test_client.get(
             "/api/v1/conversion/status/nonexistent",
-            headers={"X-API-Key": "your-api-key-here"},
+            headers=_auth_headers(),
         )
 
         # Assertions
@@ -414,6 +432,7 @@ class TestConversionIntegration:
             filename="test.pdf",
             file_size=1024,
             ocr_enabled=True,
+            owner_user_id="testuser",
             state=JobState.COMPLETED,
             progress=100,
             message="변환 완료",
@@ -424,7 +443,7 @@ class TestConversionIntegration:
         # Execute
         response = test_client.get(
             "/api/v1/conversion/download/test-123",
-            headers={"X-API-Key": "your-api-key-here"},
+            headers=_auth_headers(),
         )
 
         # Assertions
@@ -443,6 +462,7 @@ class TestConversionIntegration:
             filename="test.pdf",
             file_size=1024,
             ocr_enabled=True,
+            owner_user_id="testuser",
             state=JobState.PROCESSING,
             progress=50,
             message="처리 중",
@@ -452,7 +472,7 @@ class TestConversionIntegration:
         # Execute
         response = test_client.get(
             "/api/v1/conversion/download/test-123",
-            headers={"X-API-Key": "your-api-key-here"},
+            headers=_auth_headers(),
         )
 
         # Assertions
@@ -462,12 +482,22 @@ class TestConversionIntegration:
     def test_cancel_endpoint(self, test_client, mock_async_queue_service):
         """취소 엔드포인트 테스트"""
         # Mock successful cancellation
+        mock_job = ConversionJob(
+            conversion_id="test-123",
+            filename="test.pdf",
+            file_size=1024,
+            ocr_enabled=True,
+            owner_user_id="testuser",
+            state=JobState.PROCESSING,
+            progress=10,
+        )
+        mock_async_queue_service.get_status.return_value = mock_job
         mock_async_queue_service.cancel_conversion.return_value = True
 
         # Execute
         response = test_client.delete(
             "/api/v1/conversion/cancel/test-123",
-            headers={"X-API-Key": "your-api-key-here"},
+            headers=_auth_headers(),
         )
 
         # Assertions
@@ -478,17 +508,28 @@ class TestConversionIntegration:
         assert data["data"]["conversion_id"] == "test-123"
 
         # Verify service call
+        mock_async_queue_service.get_status.assert_called_once_with("test-123")
         mock_async_queue_service.cancel_conversion.assert_called_once_with("test-123")
 
     def test_cancel_endpoint_not_found(self, test_client, mock_async_queue_service):
         """취소 엔드포인트 - 작업 없음 테스트"""
         # Mock failed cancellation
+        mock_job = ConversionJob(
+            conversion_id="nonexistent",
+            filename="test.pdf",
+            file_size=1024,
+            ocr_enabled=True,
+            owner_user_id="testuser",
+            state=JobState.PROCESSING,
+            progress=10,
+        )
+        mock_async_queue_service.get_status.return_value = mock_job
         mock_async_queue_service.cancel_conversion.return_value = False
 
         # Execute
         response = test_client.delete(
             "/api/v1/conversion/cancel/nonexistent",
-            headers={"X-API-Key": "your-api-key-here"},
+            headers=_auth_headers(),
         )
 
         # Assertions
@@ -503,17 +544,19 @@ class TestConversionIntegration:
             filename="test.pdf",
             file_size=1024,
             ocr_enabled=True,
+            owner_user_id="testuser",
             state=JobState.FAILED,
             progress=0,
             message="실패",
         )
+        mock_async_queue_service.get_status.return_value = mock_job
         mock_async_queue_service.retry_conversion.return_value = mock_job
 
         # Execute
         response = test_client.post(
             "/api/v1/conversion/retry/test-123",
             headers={
-                "X-API-Key": "your-api-key-here",
+                **_auth_headers(),
                 "Content-Type": "application/json",
             },
         )
@@ -526,11 +569,22 @@ class TestConversionIntegration:
         assert data["data"]["conversion_id"] == "test-123"
 
         # Verify service call
+        mock_async_queue_service.get_status.assert_called_once_with("test-123")
         mock_async_queue_service.retry_conversion.assert_called_once_with("test-123")
 
     def test_retry_endpoint_not_found(self, test_client, mock_async_queue_service):
         """재시도 엔드포인트 - 작업 없음 테스트"""
         # Mock job not found
+        mock_job = ConversionJob(
+            conversion_id="nonexistent",
+            filename="test.pdf",
+            file_size=1024,
+            ocr_enabled=True,
+            owner_user_id="testuser",
+            state=JobState.FAILED,
+            progress=0,
+        )
+        mock_async_queue_service.get_status.return_value = mock_job
         mock_async_queue_service.retry_conversion.side_effect = KeyError(
             "Job not found"
         )
@@ -539,7 +593,7 @@ class TestConversionIntegration:
         response = test_client.post(
             "/api/v1/conversion/retry/nonexistent",
             headers={
-                "X-API-Key": "your-api-key-here",
+                **_auth_headers(),
                 "Content-Type": "application/json",
             },
         )
@@ -558,22 +612,27 @@ class TestConversionIntegration:
         data = response.json()
         assert data["status"] == "healthy"
 
-    def test_api_key_required(self, test_client, mock_async_queue_service):
+    def test_api_key_required(self, test_client, mock_async_queue_service, monkeypatch):
         """API 키 필요 테스트"""
+        monkeypatch.delenv("DEBUG", raising=False)
+        config_module._settings_cache = None
         mock_job = ConversionJob(
             conversion_id="test-123",
             filename="test.pdf",
             file_size=1024,
             ocr_enabled=True,
+            owner_user_id="testuser",
             state=JobState.PENDING,
             progress=0,
         )
         mock_async_queue_service.get_status.return_value = mock_job
 
-        # Execute without API key
-        response = test_client.get("/api/v1/conversion/status/test-123")
+        response = test_client.get(
+            "/api/v1/conversion/status/test-123",
+            headers={"Authorization": _auth_headers()["Authorization"]},
+        )
 
-        assert response.status_code == 200
+        assert response.status_code == 401
 
     def test_api_key_valid(self, test_client, mock_async_queue_service):
         """유효한 API 키 테스트"""
@@ -582,6 +641,7 @@ class TestConversionIntegration:
             filename="test.pdf",
             file_size=1024,
             ocr_enabled=True,
+            owner_user_id="testuser",
             state=JobState.PENDING,
             progress=0,
         )
@@ -590,10 +650,29 @@ class TestConversionIntegration:
         # Execute with valid API key
         response = test_client.get(
             "/api/v1/conversion/status/test-123",
-            headers={"X-API-Key": "your-api-key-here"},
+            headers=_auth_headers(),
         )
 
         assert response.status_code == 200
+
+    def test_get_status_rejects_other_user(self, test_client, mock_async_queue_service):
+        mock_job = ConversionJob(
+            conversion_id="test-123",
+            filename="test.pdf",
+            file_size=1024,
+            ocr_enabled=True,
+            owner_user_id="owner-user",
+            state=JobState.PROCESSING,
+            progress=50,
+        )
+        mock_async_queue_service.get_status.return_value = mock_job
+
+        response = test_client.get(
+            "/api/v1/conversion/status/test-123",
+            headers=_auth_headers(user_id="other-user", email="other@example.com"),
+        )
+
+        assert response.status_code == 403
 
 
 class TestAsyncServiceIntegration:

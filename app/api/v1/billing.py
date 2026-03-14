@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 from collections.abc import Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from app.models.billing import (
     CheckoutSessionRequest,
@@ -29,6 +29,7 @@ from app.services.toss_subscription_service import (
     TossSubscriptionService,
     get_toss_subscription_service,
 )
+from app.core.auth_session import extract_access_token, set_auth_cookies
 from app.core.config import Settings, get_settings
 from app.api.v1.auth import verify_token, create_access_token
 
@@ -44,11 +45,7 @@ def _require_billing_enabled(settings: Settings) -> None:
 
 
 def _extract_bearer_token(request: Request) -> str | None:
-    auth_header = request.headers.get("Authorization", "").strip()
-    if not auth_header.lower().startswith("bearer "):
-        return None
-    token = auth_header[7:].strip()
-    return token or None
+    return extract_access_token(request)
 
 
 def _require_user_id(request: Request) -> str:
@@ -228,6 +225,7 @@ async def toss_billing_auth_start(
 )
 async def toss_billing_auth_complete(
     request: Request,
+    response: Response,
     body: TossBillingAuthCompleteRequest,
     toss_service_factory: Callable[[], TossSubscriptionService] = Depends(
         get_toss_subscription_service_factory
@@ -255,6 +253,13 @@ async def toss_billing_auth_complete(
     access_token = create_access_token(
         token_payload,
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    set_auth_cookies(
+        response,
+        token=access_token,
+        plan_code=plan_code,
+        expires_in_seconds=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        settings=settings,
     )
     return TossBillingAuthCompleteResponse(
         data=TossBillingAuthCompleteData(

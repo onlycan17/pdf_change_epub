@@ -12,6 +12,12 @@ export default defineConfig(({ mode }) => {
     rootEnv.APP_GOOGLE_CLIENT_ID ||
     process.env.APP_GOOGLE_CLIENT_ID ||
     '';
+  const googleAllowedOrigins =
+    rootEnv.VITE_GOOGLE_ALLOWED_ORIGINS ||
+    process.env.VITE_GOOGLE_ALLOWED_ORIGINS ||
+    rootEnv.APP_GOOGLE_ALLOWED_ORIGINS ||
+    process.env.APP_GOOGLE_ALLOWED_ORIGINS ||
+    '';
 
   if (mode === 'production' && !googleClientId) {
     throw new Error(
@@ -23,6 +29,8 @@ export default defineConfig(({ mode }) => {
     envDir,
     define: {
       'import.meta.env.VITE_GOOGLE_CLIENT_ID': JSON.stringify(googleClientId),
+      'import.meta.env.VITE_GOOGLE_ALLOWED_ORIGINS':
+        JSON.stringify(googleAllowedOrigins),
     },
     plugins: [react()],
     resolve: {

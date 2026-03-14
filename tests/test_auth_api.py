@@ -13,36 +13,53 @@ def test_login_token_uses_configured_expiry(monkeypatch):
     config_module._settings_cache = None
 
     try:
-        response = client.post(
-            "/api/v1/auth/token",
-            data={"username": "testuser", "password": "testpass"},
-        )
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["expires_in"] == 10080 * 60
+        with TestClient(app) as local_client:
+            response = local_client.post(
+                "/api/v1/auth/token",
+                data={"username": "testuser", "password": "testpass"},
+            )
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["expires_in"] == 10080 * 60
+            assert response.cookies.get("pdf_to_epub_session") == "1"
+            assert response.cookies.get("pdf_to_epub_plan") == "free"
     finally:
         config_module._settings_cache = None
 
 
 def test_me_includes_privileged_flag_for_test_accounts():
-    login_response = client.post(
-        "/api/v1/auth/token",
-        data={"username": "onlycan17@gmail.com", "password": "testpass"},
-    )
-    assert login_response.status_code == 200
+    with TestClient(app) as local_client:
+        login_response = local_client.post(
+            "/api/v1/auth/token",
+            data={"username": "onlycan17@gmail.com", "password": "testpass"},
+        )
+        assert login_response.status_code == 200
 
-    token = login_response.json()["access_token"]
-    profile_response = client.get(
-        "/api/v1/auth/me",
-        headers={"Authorization": f"Bearer {token}"},
-    )
+        profile_response = local_client.get("/api/v1/auth/me")
 
-    assert profile_response.status_code == 200
-    assert profile_response.json() == {
-        "id": "onlycan17@gmail.com",
-        "email": "onlycan17@gmail.com",
-        "is_privileged": True,
-    }
+        assert profile_response.status_code == 200
+        assert profile_response.json() == {
+            "id": "onlycan17@gmail.com",
+            "email": "onlycan17@gmail.com",
+            "is_privileged": True,
+        }
+
+
+def test_logout_clears_auth_cookies():
+    with TestClient(app) as local_client:
+        login_response = local_client.post(
+            "/api/v1/auth/token",
+            data={"username": "testuser", "password": "testpass"},
+        )
+        assert login_response.status_code == 200
+
+        logout_response = local_client.post("/api/v1/auth/logout")
+
+        assert logout_response.status_code == 200
+        set_cookie_header = ",".join(logout_response.headers.get_list("set-cookie"))
+        assert "pdf_to_epub_access_token=" in set_cookie_header
+        assert "pdf_to_epub_session=" in set_cookie_header
+        assert "Max-Age=0" in set_cookie_header
 
 
 def test_register_then_login_with_local_account(monkeypatch, tmp_path):

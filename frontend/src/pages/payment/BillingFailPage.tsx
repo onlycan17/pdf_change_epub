@@ -4,7 +4,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 const BillingFailPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const params = useMemo(
+    () => new URLSearchParams(location.search),
+    [location.search]
+  );
 
   const code = params.get('code') || '';
   const message = params.get('message') || '';
@@ -12,7 +15,9 @@ const BillingFailPage: React.FC = () => {
   return (
     <div className="max-w-xl mx-auto py-16">
       <h1 className="text-2xl font-bold text-gray-900 mb-4">카드 등록 실패</h1>
-      <p className="text-gray-700 mb-2">자동결제 카드 등록이 완료되지 않았습니다.</p>
+      <p className="text-gray-700 mb-2">
+        자동결제 카드 등록이 완료되지 않았습니다.
+      </p>
       {(code || message) && (
         <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
           {code && (

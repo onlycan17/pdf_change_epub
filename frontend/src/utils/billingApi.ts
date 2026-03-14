@@ -3,6 +3,7 @@ import {
   SUBSCRIPTION_PLAN_YEARLY,
   SubscriptionPlan,
   SubscriptionPlanCode,
+  hasUsableAuthToken,
   getPlanByCode,
 } from './subscription';
 
@@ -100,16 +101,9 @@ const mapPlanFromApi = (plan: BillingPlanApiData): SubscriptionPlan => ({
   features: plan.features,
 });
 
-const getAuthToken = (): string | null => {
-  return (
-    localStorage.getItem('auth_token') ||
-    localStorage.getItem('access_token') ||
-    localStorage.getItem('token')
-  );
-};
-
 export const fetchBillingPlans = async (): Promise<SubscriptionPlan[]> => {
   const response = await fetch('/api/v1/billing/plans', {
+    credentials: 'same-origin',
     headers: createDefaultHeaders(),
   });
 
@@ -117,17 +111,24 @@ export const fetchBillingPlans = async (): Promise<SubscriptionPlan[]> => {
     throw new Error(await parseErrorMessage(response));
   }
 
-  const payload = (await response.json()) as ApiEnvelope<BillingPlansResponseData>;
+  const payload =
+    (await response.json()) as ApiEnvelope<BillingPlansResponseData>;
   if (!payload.success) {
     throw new Error('요금제 조회 응답이 실패 처리되었습니다.');
   }
 
   const plans = payload.data.plans.map((plan) => mapPlanFromApi(plan));
   return plans.sort((a, b) => {
-    if (a.code === SUBSCRIPTION_PLAN_MONTHLY && b.code === SUBSCRIPTION_PLAN_YEARLY) {
+    if (
+      a.code === SUBSCRIPTION_PLAN_MONTHLY &&
+      b.code === SUBSCRIPTION_PLAN_YEARLY
+    ) {
       return -1;
     }
-    if (a.code === SUBSCRIPTION_PLAN_YEARLY && b.code === SUBSCRIPTION_PLAN_MONTHLY) {
+    if (
+      a.code === SUBSCRIPTION_PLAN_YEARLY &&
+      b.code === SUBSCRIPTION_PLAN_MONTHLY
+    ) {
       return 1;
     }
     return 0;
@@ -137,15 +138,10 @@ export const fetchBillingPlans = async (): Promise<SubscriptionPlan[]> => {
 export const createCheckoutSession = async (
   request: CheckoutSessionRequest
 ): Promise<string> => {
-  const token = getAuthToken();
-  const headers: Record<string, string> = createDefaultHeaders();
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
   const response = await fetch('/api/v1/billing/checkout/session', {
     method: 'POST',
-    headers,
+    credentials: 'same-origin',
+    headers: createDefaultHeaders(),
     body: JSON.stringify({
       plan_code: request.plan_code,
       mode: request.mode || 'subscription',
@@ -169,17 +165,14 @@ export const createCheckoutSession = async (
 const startTossBillingAuth = async (
   request: TossBillingAuthStartRequest
 ): Promise<TossBillingAuthStartData> => {
-  const token = getAuthToken();
-  if (!token) {
+  if (!hasUsableAuthToken()) {
     throw new Error('로그인이 필요합니다.');
   }
 
-  const headers: Record<string, string> = createDefaultHeaders();
-  headers.Authorization = `Bearer ${token}`;
-
   const response = await fetch('/api/v1/billing/toss/billing-auth/start', {
     method: 'POST',
-    headers,
+    credentials: 'same-origin',
+    headers: createDefaultHeaders(),
     body: JSON.stringify({
       plan_code: request.plan_code,
     }),
@@ -189,7 +182,8 @@ const startTossBillingAuth = async (
     throw new Error(await parseErrorMessage(response));
   }
 
-  const payload = (await response.json()) as ApiEnvelope<TossBillingAuthStartData>;
+  const payload =
+    (await response.json()) as ApiEnvelope<TossBillingAuthStartData>;
   if (!payload.success) {
     throw new Error('자동결제 카드 등록 시작에 실패했습니다.');
   }
@@ -199,17 +193,14 @@ const startTossBillingAuth = async (
 export const completeTossBillingAuth = async (
   request: TossBillingAuthCompleteRequest
 ): Promise<TossBillingAuthCompleteData> => {
-  const token = getAuthToken();
-  if (!token) {
+  if (!hasUsableAuthToken()) {
     throw new Error('로그인이 필요합니다.');
   }
 
-  const headers: Record<string, string> = createDefaultHeaders();
-  headers.Authorization = `Bearer ${token}`;
-
   const response = await fetch('/api/v1/billing/toss/billing-auth/complete', {
     method: 'POST',
-    headers,
+    credentials: 'same-origin',
+    headers: createDefaultHeaders(),
     body: JSON.stringify({
       customer_key: request.customer_key,
       auth_key: request.auth_key,
@@ -220,7 +211,8 @@ export const completeTossBillingAuth = async (
     throw new Error(await parseErrorMessage(response));
   }
 
-  const payload = (await response.json()) as ApiEnvelope<TossBillingAuthCompleteData>;
+  const payload =
+    (await response.json()) as ApiEnvelope<TossBillingAuthCompleteData>;
   if (!payload.success) {
     throw new Error('구독 결제 완료 처리에 실패했습니다.');
   }

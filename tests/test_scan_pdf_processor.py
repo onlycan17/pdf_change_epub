@@ -1,5 +1,6 @@
 import pytest
 import logging
+from types import MethodType
 
 from app.services.agent_service import (
     AgentMessage,
@@ -162,11 +163,20 @@ async def test_multimodal_agent_uses_qwen_primary_by_default() -> None:
         seen_models.append(model_name)
         assert image_mime_type == "image/png"
         return {
-            "choices": [{"message": {"content": '{"description": "ok", "text_content": "ok"}'}}],
+            "choices": [
+                {"message": {"content": '{"description": "ok", "text_content": "ok"}'}}
+            ],
             "usage": {"total_tokens": 10},
         }
 
-    agent._request_analysis_with_model = fake_request_with_model
+    setattr(
+        agent,
+        "_request_analysis_with_model",
+        MethodType(
+            lambda self, **kwargs: fake_request_with_model(**kwargs),
+            agent,
+        ),
+    )
 
     analysis, result, model_used, fallback_used = await agent._request_analysis(
         image_base64="ZmFrZQ==",
@@ -202,11 +212,24 @@ async def test_multimodal_agent_falls_back_to_gemini_when_primary_fails() -> Non
         if model_name == "qwen/qwen3.5-flash-02-23":
             raise RuntimeError("primary failed")
         return {
-            "choices": [{"message": {"content": '{"description": "fallback", "text_content": "fallback"}'}}],
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"description": "fallback", "text_content": "fallback"}'
+                    }
+                }
+            ],
             "usage": {"total_tokens": 12},
         }
 
-    agent._request_analysis_with_model = fake_request_with_model
+    setattr(
+        agent,
+        "_request_analysis_with_model",
+        MethodType(
+            lambda self, **kwargs: fake_request_with_model(**kwargs),
+            agent,
+        ),
+    )
 
     analysis, result, model_used, fallback_used = await agent._request_analysis(
         image_base64="ZmFrZQ==",
@@ -306,7 +329,16 @@ def test_ocr_agent_orders_two_column_paragraphs_left_to_right() -> None:
     agent = OCRAgent()
 
     tesseract_data = {
-        "text": ["왼쪽", "첫문단", "오른쪽", "첫문단", "왼쪽", "둘째문단", "오른쪽", "둘째문단"],
+        "text": [
+            "왼쪽",
+            "첫문단",
+            "오른쪽",
+            "첫문단",
+            "왼쪽",
+            "둘째문단",
+            "오른쪽",
+            "둘째문단",
+        ],
         "block_num": [1, 1, 2, 2, 3, 3, 4, 4],
         "par_num": [1, 1, 1, 1, 1, 1, 1, 1],
         "line_num": [1, 1, 1, 1, 1, 1, 1, 1],

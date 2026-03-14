@@ -145,5 +145,7 @@ def test_toss_billing_auth_complete_uses_configured_expiry(monkeypatch):
         payload = response.json()
         assert payload["data"]["plan_code"] == "monthly"
         assert payload["data"]["expires_in"] == 10080 * 60
+        assert response.cookies.get("pdf_to_epub_session") == "1"
+        assert response.cookies.get("pdf_to_epub_plan") == "monthly"
     finally:
         config_module._settings_cache = None

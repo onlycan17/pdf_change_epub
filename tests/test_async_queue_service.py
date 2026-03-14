@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from unittest.mock import AsyncMock
+from datetime import datetime, timedelta, timezone
 
 from app.services.async_queue_service import AsyncQueueService
 from app.services.conversion_orchestrator import ConversionJob, JobState
@@ -131,7 +132,9 @@ class TestAsyncQueueService:
         assert result.celery_task_id == "task-progress"
 
     @pytest.mark.asyncio
-    async def test_get_status_progress_payload_does_not_clear_existing_celery_task_id(self):
+    async def test_get_status_progress_payload_does_not_clear_existing_celery_task_id(
+        self,
+    ):
         service = AsyncQueueService()
         service._initialized = True
         job = ConversionJob(
@@ -248,6 +251,7 @@ class TestAsyncQueueService:
                 filename="retry.pdf",
                 file_size=len(source_pdf),
                 ocr_enabled=True,
+                owner_user_id=None,
                 translate_to_korean=False,
                 pdf_bytes=source_pdf,
             )
@@ -272,9 +276,11 @@ class TestAsyncQueueService:
         service.celery_app = MagicMock()
         service.celery_app.send_task.return_value.id = "new-task"
 
-        with patch("app.services.async_queue_service.Path.exists", return_value=True), patch(
-            "app.services.async_queue_service.Path.write_bytes"
-        ), patch("app.services.async_queue_service.Path.read_bytes", return_value=b"%PDF-1.4"):
+        with patch(
+            "app.services.async_queue_service.Path.exists", return_value=True
+        ), patch("app.services.async_queue_service.Path.write_bytes"), patch(
+            "app.services.async_queue_service.Path.read_bytes", return_value=b"%PDF-1.4"
+        ):
             result = await service.retry_conversion("cid-reset")
 
         refreshed = await service.get_status("cid-reset")
@@ -284,7 +290,9 @@ class TestAsyncQueueService:
         assert refreshed.progress == 0
         assert refreshed.current_step == "queued"
         assert refreshed.error_message is None
-        service.celery_app.control.revoke.assert_called_once_with("old-task", terminate=True)
+        service.celery_app.control.revoke.assert_called_once_with(
+            "old-task", terminate=True
+        )
 
     @pytest.mark.asyncio
     async def test_initialize_force_recovers_to_celery_after_transient_fallback(self):
@@ -302,7 +310,41 @@ class TestAsyncQueueService:
         assert service.store is not service.orchestrator.store
 
     @pytest.mark.asyncio
-    async def test_get_status_falls_back_to_orchestrator_store_for_direct_mode_job(self):
+    async def test_ensure_runtime_mode_skips_forced_reinitialize_during_cooldown(self):
+        service = AsyncQueueService()
+        service._initialized = True
+        service.use_celery = False
+        service.store = service.orchestrator.store
+        service._celery_requested = True
+        service._celery_retry_cooldown_seconds = 30
+        service._last_celery_failure_at = datetime.now(timezone.utc)
+
+        with patch.object(service, "initialize", new_callable=AsyncMock) as initialize:
+            await service._ensure_runtime_mode()
+
+        initialize.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_ensure_runtime_mode_retries_after_cooldown_expires(self):
+        service = AsyncQueueService()
+        service._initialized = True
+        service.use_celery = False
+        service.store = service.orchestrator.store
+        service._celery_requested = True
+        service._celery_retry_cooldown_seconds = 30
+        service._last_celery_failure_at = datetime.now(timezone.utc) - timedelta(
+            seconds=31
+        )
+
+        with patch.object(service, "initialize", new_callable=AsyncMock) as initialize:
+            await service._ensure_runtime_mode()
+
+        initialize.assert_awaited_once_with(force=True)
+
+    @pytest.mark.asyncio
+    async def test_get_status_falls_back_to_orchestrator_store_for_direct_mode_job(
+        self,
+    ):
         service = AsyncQueueService()
         service._initialized = True
         service.use_celery = True

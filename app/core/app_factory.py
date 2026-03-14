@@ -30,9 +30,9 @@ def create_app(*, lifespan=None) -> FastAPI:
         description="PDF 문서를 EPUB 전자책으로 변환하는 RESTful API 서비스",
         version="1.0.0",  # 기본값
         lifespan=lifespan,
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        docs_url=None if settings.is_production else "/docs",
+        redoc_url=None if settings.is_production else "/redoc",
+        openapi_url=None if settings.is_production else "/openapi.json",
     )
 
     # CORS

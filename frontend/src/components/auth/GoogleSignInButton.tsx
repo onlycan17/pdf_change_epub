@@ -9,9 +9,16 @@ type Props = {
   disabled?: boolean;
 };
 
+type GoogleIdentityClient = NonNullable<
+  NonNullable<NonNullable<typeof window.google>['accounts']>['id']
+>;
+
 const GOOGLE_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
 const BUTTON_SHELL_CLASS_NAME =
   'flex h-11 w-full items-center justify-center overflow-hidden rounded-md border border-gray-300 bg-white shadow-sm transition-opacity';
+const GOOGLE_READY_TIMEOUT_MS = 5_000;
+
+let initializedClientId: string | null = null;
 
 const loadGoogleScript = (): Promise<void> => {
   return new Promise((resolve, reject) => {
@@ -34,6 +41,32 @@ const loadGoogleScript = (): Promise<void> => {
   });
 };
 
+const waitForGoogleAccounts = async (): Promise<GoogleIdentityClient> => {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < GOOGLE_READY_TIMEOUT_MS) {
+    const googleIdentityClient = window.google?.accounts?.id;
+    if (googleIdentityClient) {
+      return googleIdentityClient;
+    }
+
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 50);
+    });
+  }
+
+  throw new Error('Google 로그인 모듈 준비가 지연되고 있습니다.');
+};
+
+const parseAllowedOrigins = (rawValue: string | undefined): Set<string> => {
+  return new Set(
+    (rawValue || '')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  );
+};
+
 const GoogleSignInButton: React.FC<Props> = ({
   onCredential,
   disabled = false,
@@ -45,18 +78,47 @@ const GoogleSignInButton: React.FC<Props> = ({
     () => (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) || '',
     []
   );
+  const allowedOrigins = useMemo(
+    () =>
+      parseAllowedOrigins(
+        import.meta.env.VITE_GOOGLE_ALLOWED_ORIGINS as string | undefined
+      ),
+    []
+  );
+  const blockedReason = useMemo(() => {
+    if (!clientId) {
+      return 'Google 로그인이 아직 설정되지 않았습니다.';
+    }
+
+    if (typeof window === 'undefined') {
+      return '';
+    }
+
+    if (allowedOrigins.size === 0) {
+      if (import.meta.env.DEV) {
+        return '개발 환경에서는 허용 원본 설정 후 Google 로그인을 사용할 수 있습니다.';
+      }
+      return '';
+    }
+
+    if (!allowedOrigins.has(window.location.origin)) {
+      return '현재 접속 주소에서는 Google 로그인을 사용할 수 없습니다.';
+    }
+
+    return '';
+  }, [allowedOrigins, clientId]);
 
   useEffect(() => {
     let isDisposed = false;
+    const container = buttonShellRef.current;
 
     const run = async () => {
-      if (!clientId) {
+      if (blockedReason) {
         if (!isDisposed) {
-          setError('Google 클라이언트 ID가 설정되지 않았습니다.');
+          setError(blockedReason);
         }
         return;
       }
-      const container = buttonShellRef.current;
       if (!container) {
         return;
       }
@@ -78,10 +140,16 @@ const GoogleSignInButton: React.FC<Props> = ({
         return;
       }
 
-      const google = window.google;
-      if (!google?.accounts?.id) {
+      let googleIdentityClient: GoogleIdentityClient;
+      try {
+        googleIdentityClient = await waitForGoogleAccounts();
+      } catch (e) {
         if (!isDisposed) {
-          setError('Google 로그인 모듈을 초기화하지 못했습니다.');
+          setError(
+            e instanceof Error
+              ? e.message
+              : 'Google 로그인 모듈을 초기화하지 못했습니다.'
+          );
         }
         return;
       }
@@ -90,37 +158,42 @@ const GoogleSignInButton: React.FC<Props> = ({
         setError('');
       }
 
-      google.accounts.id.initialize({
-        client_id: clientId,
-        callback: async (response: GoogleCredentialResponse) => {
-          if (disabled || isDisposed) {
-            return;
-          }
-          const credential = response.credential;
-          if (!credential) {
-            if (!isDisposed) {
-              setError('Google 인증 정보가 누락되었습니다.');
+      if (initializedClientId !== clientId) {
+        googleIdentityClient.initialize({
+          client_id: clientId,
+          callback: async (response: GoogleCredentialResponse) => {
+            if (disabled || isDisposed) {
+              return;
             }
-            return;
-          }
-          try {
-            await onCredential(credential);
-          } catch (e) {
-            if (!isDisposed) {
-              setError(
-                e instanceof Error ? e.message : 'Google 로그인에 실패했습니다.'
-              );
+            const credential = response.credential;
+            if (!credential) {
+              if (!isDisposed) {
+                setError('Google 인증 정보가 누락되었습니다.');
+              }
+              return;
             }
-          }
-        },
-      });
+            try {
+              await onCredential(credential);
+            } catch (e) {
+              if (!isDisposed) {
+                setError(
+                  e instanceof Error
+                    ? e.message
+                    : 'Google 로그인에 실패했습니다.'
+                );
+              }
+            }
+          },
+        });
+        initializedClientId = clientId;
+      }
 
       if (isDisposed || !buttonShellRef.current) {
         return;
       }
 
       container.innerHTML = '';
-      google.accounts.id.renderButton(container, {
+      googleIdentityClient.renderButton(container, {
         type: 'standard',
         theme: 'outline',
         size: 'large',
@@ -132,8 +205,11 @@ const GoogleSignInButton: React.FC<Props> = ({
 
     return () => {
       isDisposed = true;
+      if (container) {
+        container.innerHTML = '';
+      }
     };
-  }, [clientId, disabled, onCredential]);
+  }, [blockedReason, clientId, disabled, onCredential]);
 
   return (
     <div>
@@ -142,7 +218,10 @@ const GoogleSignInButton: React.FC<Props> = ({
         className={`${BUTTON_SHELL_CLASS_NAME} ${disabled ? 'pointer-events-none opacity-60' : ''}`}
       />
       {error && (
-        <p className="mt-2 text-xs text-red-600" role="alert">
+        <p
+          className={`mt-2 text-xs ${blockedReason ? 'text-gray-500' : 'text-red-600'}`}
+          role={blockedReason ? 'status' : 'alert'}
+        >
           {error}
         </p>
       )}

@@ -189,7 +189,7 @@ def validate_epub_bytes(epub_bytes: bytes) -> EPUBValidationResult:
                             EPUBValidationIssue(
                                 level="warning",
                                 code="MATHML_PROPERTY_MISSING",
-                                message="MathML이 포함된 XHTML 문서에 OPF properties=\"mathml\" 선언이 없습니다.",
+                                message='MathML이 포함된 XHTML 문서에 OPF properties="mathml" 선언이 없습니다.',
                                 path=joined,
                             )
                         )

@@ -77,26 +77,22 @@ const LoginPage: React.FC = () => {
         body: body.toString(),
       });
 
-      const payload = await parseJsonSafely<{ access_token?: string }>(
-        response
-      );
+      await parseJsonSafely(response);
 
       if (!response.ok) {
         throw new Error('로그인에 실패했습니다. 계정 정보를 확인해주세요.');
       }
 
-      if (!payload?.access_token) {
+      const profile = await fetchCurrentUserProfile();
+      if (!profile) {
         throw new Error(
-          '로그인 응답이 올바르지 않습니다. 잠시 후 다시 시도해주세요.'
+          '로그인 상태를 확인하지 못했습니다. 다시 시도해주세요.'
         );
       }
-
-      localStorage.setItem('auth_token', payload.access_token);
-      const profile = await fetchCurrentUserProfile();
       dispatch({ type: 'SET_AUTHENTICATED', payload: true });
       dispatch({
         type: 'SET_USER',
-        payload: profile ? buildUserFromProfile(profile) : null,
+        payload: buildUserFromProfile(profile),
       });
       navigate(redirectPath, { replace: true });
     } catch (error) {
@@ -127,25 +123,22 @@ const LoginPage: React.FC = () => {
 
       const payload = await parseJsonSafely<{
         detail?: string;
-        access_token?: string;
       }>(response);
 
       if (!response.ok) {
         throw new Error(payload?.detail || 'Google 로그인에 실패했습니다.');
       }
 
-      if (!payload?.access_token) {
+      const profile = await fetchCurrentUserProfile();
+      if (!profile) {
         throw new Error(
-          '로그인 서버 응답 형식이 올바르지 않습니다. 잠시 후 다시 시도해주세요.'
+          '로그인 상태를 확인하지 못했습니다. 다시 시도해주세요.'
         );
       }
-
-      localStorage.setItem('auth_token', payload.access_token);
-      const profile = await fetchCurrentUserProfile();
       dispatch({ type: 'SET_AUTHENTICATED', payload: true });
       dispatch({
         type: 'SET_USER',
-        payload: profile ? buildUserFromProfile(profile) : null,
+        payload: buildUserFromProfile(profile),
       });
       navigate(redirectPath, { replace: true });
     } catch (error) {
@@ -183,25 +176,21 @@ const LoginPage: React.FC = () => {
           <p className="mt-2 text-center text-sm text-gray-600">
             무료 변환은 로그인 후 이용할 수 있습니다.
           </p>
-          <p className="mt-2 text-center text-xs text-gray-500">
-            데모 계정: 무료 `testuser / testpass`, 구독 `premiumuser /
-            testpass`, 운영 `onlycan17@gmail.com / testpass`
-          </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
               <label htmlFor="email" className="sr-only">
-                이메일 주소
+                이메일 또는 아이디
               </label>
               <input
                 id="email"
                 name="email"
-                type="email"
-                autoComplete="email"
+                type="text"
+                autoComplete="username"
                 required
                 className="relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="이메일 주소"
+                placeholder="이메일 또는 아이디"
                 value={formData.email}
                 onChange={handleChange}
               />

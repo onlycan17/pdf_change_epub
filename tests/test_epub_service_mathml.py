@@ -32,4 +32,6 @@ def test_epub_generator_marks_mathml_documents_and_preserves_math_tags() -> None
 
     assert 'properties="mathml"' in opf_text
     assert '<math xmlns="http://www.w3.org/1998/Math/MathML"' in chapter_text
-    assert not any(issue.code == "MATHML_PROPERTY_MISSING" for issue in validation.warnings)
+    assert not any(
+        issue.code == "MATHML_PROPERTY_MISSING" for issue in validation.warnings
+    )

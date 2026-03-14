@@ -3,6 +3,8 @@ from typing import Optional, List
 from urllib.parse import urlparse
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.auth_session import DEFAULT_API_KEY, DEFAULT_SECRET_KEY
+
 ENV_FILE = ".env"
 
 
@@ -138,8 +140,8 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://localhost:6379/2"
 
     # 보안 설정
-    secret_key: str = "your-secret-key-here"
-    security_api_key: str = "your-api-key-here"
+    secret_key: str = DEFAULT_SECRET_KEY
+    security_api_key: str = DEFAULT_API_KEY
     access_token_expire_minutes: int = 7 * 24 * 60
     algorithm: str = "HS256"
 
@@ -256,6 +258,16 @@ class Settings(BaseSettings):
         self.secret_key = os.getenv(
             "APP_SECRET_KEY", os.getenv("SECRET_KEY", self.secret_key)
         )
+        environment = os.getenv("ENVIRONMENT", "").strip().lower()
+        if environment == "production":
+            if self.secret_key == DEFAULT_SECRET_KEY:
+                raise ValueError(
+                    "운영 환경에서는 APP_SECRET_KEY를 기본값으로 사용할 수 없습니다."
+                )
+            if self.security_api_key == DEFAULT_API_KEY:
+                raise ValueError(
+                    "운영 환경에서는 SECURITY_API_KEY를 기본값으로 사용할 수 없습니다."
+                )
 
         self.stripe_secret_key = os.getenv(
             "APP_STRIPE_SECRET_KEY", self.stripe_secret_key

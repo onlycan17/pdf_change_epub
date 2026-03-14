@@ -120,3 +120,79 @@ async def test_correct_chunk_entries_reports_progress_and_stats() -> None:
     assert service.last_run_stats["total_attempts"] == 2
     assert service.last_run_stats["last_used_model"] == "deepseek/deepseek-v3.2"
     assert service.last_run_stats["fallback_used"] is False
+
+
+@pytest.mark.asyncio
+async def test_reflow_document_text_returns_raw_text_when_disabled() -> None:
+    service = TextContextCorrector()
+    service.enabled = False
+
+    original = "첫 문단\n\n둘째 문단"
+
+    result = await service.reflow_document_text(original)
+
+    assert result == original
+
+
+@pytest.mark.asyncio
+async def test_reflow_document_text_uses_segment_context_and_progress() -> None:
+    service = TextContextCorrector()
+    service.enabled = True
+    service.document_segment_chars = 18
+    service.max_context_chars = 8
+
+    seen_segments = []
+    progress_events = []
+
+    async def fake_request_document_reflow(
+        *,
+        current_text: str,
+        prev_tail: str,
+        next_head: str,
+        mode: str,
+    ) -> str:
+        seen_segments.append((current_text, prev_tail, next_head, mode))
+        return f"[{mode}]{current_text.strip()}"
+
+    service._request_document_reflow = fake_request_document_reflow  # type: ignore[method-assign]
+
+    async def on_progress(processed: int, total: int) -> None:
+        progress_events.append((processed, total))
+
+    source = "첫 문단은 길게 이어집니다.\n\n둘째 문단도 이어집니다.\n\n셋째 문단입니다."
+    result = await service.reflow_document_text(
+        source,
+        on_segment_progress=on_progress,
+    )
+
+    assert result.count("[plain]") == 3
+    assert progress_events == [(1, 3), (2, 3), (3, 3)]
+    assert seen_segments[0][1] == ""
+    assert seen_segments[0][3] == "plain"
+    assert "둘째 문단" in seen_segments[0][2]
+    assert "이어집니다." in seen_segments[1][1]
+    assert service.last_run_stats["total_chunks"] == 3
+    assert service.last_run_stats["total_attempts"] == 3
+
+
+@pytest.mark.asyncio
+async def test_reflow_document_text_falls_back_to_original_segment() -> None:
+    service = TextContextCorrector()
+    service.enabled = True
+    service.document_segment_chars = 20
+
+    async def failing_request_document_reflow(
+        *,
+        current_text: str,
+        prev_tail: str,
+        next_head: str,
+        mode: str,
+    ) -> str:
+        raise RuntimeError("reflow failed")
+
+    service._request_document_reflow = failing_request_document_reflow  # type: ignore[method-assign]
+
+    source = "첫 문단입니다.\n\n둘째 문단입니다."
+    result = await service.reflow_document_text(source, mode="markdown")
+
+    assert result == source

@@ -135,10 +135,11 @@ async def root():
     Returns:
         dict: 애플리케이션 정보
     """
+    settings = get_settings()
     return {
         "message": "Welcome to PDF to EPUB Converter",  # 기본값
         "version": "1.0.0",  # 기본값
-        "docs_url": "/docs",
+        "docs_url": None if settings.is_production else "/docs",
     }
 
 

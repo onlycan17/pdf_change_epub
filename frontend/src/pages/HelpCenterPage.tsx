@@ -46,8 +46,12 @@ const HelpCenterPage: FC = () => {
               key={item.question}
               className="rounded-2xl border border-slate-100 bg-slate-50 px-5 py-4"
             >
-              <h3 className="text-lg font-semibold text-slate-900">{item.question}</h3>
-              <p className="mt-2 text-sm leading-7 text-slate-600">{item.answer}</p>
+              <h3 className="text-lg font-semibold text-slate-900">
+                {item.question}
+              </h3>
+              <p className="mt-2 text-sm leading-7 text-slate-600">
+                {item.answer}
+              </p>
             </article>
           ))}
         </div>
@@ -55,7 +59,9 @@ const HelpCenterPage: FC = () => {
 
       <section className="grid gap-6 md:grid-cols-2">
         <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-bold text-slate-900">문제가 생겼을 때 체크할 것</h2>
+          <h2 className="text-xl font-bold text-slate-900">
+            문제가 생겼을 때 체크할 것
+          </h2>
           <ul className="mt-4 list-disc space-y-2 pl-5 text-sm leading-7 text-slate-600">
             <li>PDF가 정상적으로 열리는지</li>
             <li>파일 크기와 업로드 제한을 넘지 않는지</li>
@@ -65,9 +71,12 @@ const HelpCenterPage: FC = () => {
         </article>
 
         <article className="rounded-3xl border border-cyan-200 bg-cyan-50 p-6 shadow-sm">
-          <h2 className="text-xl font-bold text-slate-900">계속 도움이 필요하신가요?</h2>
+          <h2 className="text-xl font-bold text-slate-900">
+            계속 도움이 필요하신가요?
+          </h2>
           <p className="mt-3 text-sm leading-7 text-slate-700">
-            파일명, 발생 시각, 어떤 단계에서 멈췄는지까지 알려주시면 문제를 더 빨리 재현할 수 있습니다.
+            파일명, 발생 시각, 어떤 단계에서 멈췄는지까지 알려주시면 문제를 더
+            빨리 재현할 수 있습니다.
           </p>
           <Link
             to="/contact"

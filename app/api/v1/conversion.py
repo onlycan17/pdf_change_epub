@@ -11,11 +11,24 @@ from io import BytesIO
 from datetime import datetime, timezone
 import zipfile
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse, StreamingResponse  # type: ignore
 
+from app.core.auth_session import (
+    extract_access_token,
+    is_privileged_email,
+)
 from app.core.config import Settings, get_settings
-from app.core.dependencies import api_key_header
+from app.core.dependencies import get_api_key
 from app.api.v1.auth import verify_token
 from app.repositories.user_repository import get_user_repository
 from app.services.pdf_service import (
@@ -57,7 +70,6 @@ from app.models.conversion import (
 # 로거 설정
 logger = logging.getLogger(__name__)
 
-PRIVILEGED_EMAIL = "onlycan17@gmail.com"
 STANDARD_UPLOAD_LIMIT_BYTES = 25 * 1024 * 1024
 LARGE_UPLOAD_LIMIT_BYTES = 500 * 1024 * 1024
 FREE_DAILY_CONVERSION_LIMIT = 2
@@ -182,7 +194,7 @@ async def _ensure_ocr_runtime_ready(settings: Settings) -> None:
 
 def _resolve_upload_limit(_request: Request) -> tuple[int, str]:
     user = _resolve_request_user(_request)
-    if user["email"].lower() == PRIVILEGED_EMAIL:
+    if is_privileged_email(user["email"]):
         return LARGE_UPLOAD_LIMIT_BYTES, "privileged_500mb"
     return (
         get_plan(SUBSCRIPTION_PLAN_FREE).upload_limit_bytes,
@@ -200,11 +212,7 @@ def _format_limit_message(plan_code: str) -> str:
 
 
 def _extract_bearer_token(request: Request) -> str | None:
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return None
-    token = auth_header[7:].strip()
-    return token or None
+    return extract_access_token(request)
 
 
 def _resolve_request_user(request: Request) -> dict[str, str]:
@@ -258,9 +266,13 @@ def _resolve_request_auth(request: Request) -> dict[str, object]:
     subscription_active_raw = payload.get("subscription_active")
 
     plan = plan_raw if isinstance(plan_raw, str) and plan_raw else "free"
-    is_subscribed = bool(is_subscribed_raw) if isinstance(is_subscribed_raw, bool) else False
+    is_subscribed = (
+        bool(is_subscribed_raw) if isinstance(is_subscribed_raw, bool) else False
+    )
     subscription_active = (
-        bool(subscription_active_raw) if isinstance(subscription_active_raw, bool) else False
+        bool(subscription_active_raw)
+        if isinstance(subscription_active_raw, bool)
+        else False
     )
 
     return {
@@ -281,13 +293,30 @@ def _require_authenticated_user(request: Request) -> dict[str, str]:
 
 def _ensure_privileged_user(request: Request) -> dict[str, str]:
     user = _require_authenticated_user(request)
-    if user["email"].lower() != PRIVILEGED_EMAIL:
+    if not is_privileged_email(user["email"]):
         raise HTTPException(status_code=403, detail="권한이 없습니다.")
     return user
 
 
+def _ensure_job_access(request: Request, job) -> dict[str, str]:
+    user = _require_authenticated_user(request)
+    if is_privileged_email(user["email"]):
+        return user
+
+    owner_user_id = getattr(job, "owner_user_id", None)
+    if not isinstance(owner_user_id, str) or not owner_user_id:
+        raise HTTPException(
+            status_code=403, detail="작업 접근 권한을 확인할 수 없습니다."
+        )
+    if owner_user_id != user["id"]:
+        raise HTTPException(
+            status_code=403, detail="다른 사용자의 작업에는 접근할 수 없습니다."
+        )
+    return user
+
+
 def _is_free_user(auth: dict[str, object]) -> bool:
-    if (auth.get("email") or "").__str__().lower() == PRIVILEGED_EMAIL:
+    if is_privileged_email((auth.get("email") or "").__str__()):
         return False
 
     plan = auth.get("plan")
@@ -363,7 +392,7 @@ async def start_conversion(
     file: UploadFile = File(..., description="변환할 PDF 파일"),
     ocr_enabled: bool = Form(False, description="OCR 처리 활성화 여부"),
     translate_to_korean: bool = Form(False, description="영문 텍스트를 한글로 번역"),
-    api_key: str = Depends(api_key_header),
+    api_key: str | None = Depends(get_api_key),
     settings: Settings = Depends(get_settings),
 ):
     """PDF 파일 업로드 및 변환 시작 엔드포인트
@@ -377,6 +406,7 @@ async def start_conversion(
     Returns:
         Dict: 변환 작업 정보
     """
+    del api_key
     auth = _resolve_request_auth(request)
     if not auth.get("id") or not auth.get("email"):
         raise HTTPException(
@@ -421,6 +451,7 @@ async def start_conversion(
         filename=file.filename or "uploaded.pdf",
         file_size=len(pdf_bytes),
         ocr_enabled=ocr_enabled,
+        owner_user_id=str(auth["id"]),
         translate_to_korean=translate_to_korean,
         pdf_bytes=pdf_bytes,
     )
@@ -439,12 +470,12 @@ async def create_large_file_request(
     file: UploadFile = File(..., description="대용량 변환 요청 PDF"),
     request_note: str = Form("", description="요청사항"),
     bank_transfer_note: str = Form("", description="계좌이체 관련 내용"),
-    api_key: str = Depends(api_key_header),
+    api_key: str | None = Depends(get_api_key),
 ):
     del api_key
 
     user = _require_authenticated_user(request)
-    if user["email"].lower() == PRIVILEGED_EMAIL:
+    if is_privileged_email(user["email"]):
         raise HTTPException(
             status_code=400,
             detail="관리자 계정은 일반 요청 대신 대용량 요청 처리 페이지를 사용하세요.",
@@ -485,7 +516,7 @@ async def list_large_file_requests(
     requester_email: str = Query("", description="요청자 이메일 필터"),
     status: str = Query("", description="요청 상태 필터"),
     keyword: str = Query("", description="요청사항/첨부명 검색 키워드"),
-    api_key: str = Depends(api_key_header),
+    api_key: str | None = Depends(get_api_key),
 ):
     del api_key
 
@@ -512,7 +543,7 @@ async def list_large_file_requests(
 async def download_large_file_request_attachment(
     request_id: str,
     request: Request,
-    api_key: str = Depends(api_key_header),
+    api_key: str | None = Depends(get_api_key),
 ):
     del api_key
 
@@ -522,7 +553,9 @@ async def download_large_file_request_attachment(
     if record is None:
         raise HTTPException(status_code=404, detail="요청을 찾을 수 없습니다.")
 
-    safe_attachment_path = _resolve_safe_attachment_path(record, service.get_storage_dir())
+    safe_attachment_path = _resolve_safe_attachment_path(
+        record, service.get_storage_dir()
+    )
     if not safe_attachment_path.exists():
         raise HTTPException(status_code=404, detail="첨부 파일을 찾을 수 없습니다.")
 
@@ -540,7 +573,7 @@ async def start_large_file_request_conversion(
     file: UploadFile | None = File(None, description="관리자가 업로드한 변환용 PDF"),
     ocr_enabled: bool = Form(False, description="OCR 처리 활성화 여부"),
     translate_to_korean: bool = Form(False, description="영문 텍스트를 한글로 번역"),
-    api_key: str = Depends(api_key_header),
+    api_key: str | None = Depends(get_api_key),
     settings: Settings = Depends(get_settings),
 ):
     del api_key
@@ -572,7 +605,9 @@ async def start_large_file_request_conversion(
             request_record, service.get_storage_dir()
         )
         if not safe_attachment_path.exists():
-            raise HTTPException(status_code=404, detail="원본 첨부 파일을 찾을 수 없습니다.")
+            raise HTTPException(
+                status_code=404, detail="원본 첨부 파일을 찾을 수 없습니다."
+            )
         with open(safe_attachment_path, "rb") as attached_pdf:
             pdf_bytes = attached_pdf.read()
 
@@ -585,6 +620,7 @@ async def start_large_file_request_conversion(
         filename=source_filename,
         file_size=len(pdf_bytes),
         ocr_enabled=ocr_enabled,
+        owner_user_id=request_record.requester_user_id,
         translate_to_korean=translate_to_korean,
         pdf_bytes=pdf_bytes,
     )
@@ -606,7 +642,7 @@ async def start_large_file_request_conversion(
 # 변환 상태 조회 엔드포인트
 @router.get("/status/{conversion_id}", response_model=ConversionStatusResponse)
 async def get_conversion_status(
-    conversion_id: str, api_key: str = Depends(api_key_header)
+    request: Request, conversion_id: str, api_key: str | None = Depends(get_api_key)
 ):
     """변환 상태 조회 엔드포인트
 
@@ -617,11 +653,13 @@ async def get_conversion_status(
     Returns:
         Dict: 변환 상태 정보
     """
+    del api_key
     try:
         async_queue_service = get_async_queue_service()
         job = await async_queue_service.get_status(conversion_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="변환 작업을 찾을 수 없습니다.")
+    _ensure_job_access(request, job)
 
     detail = _job_to_detail(job)
 
@@ -632,7 +670,11 @@ async def get_conversion_status(
 
 # 변환 결과 다운로드 엔드포인트
 @router.get("/download/{conversion_id}")
-async def download_result(conversion_id: str, api_key: str = Depends(api_key_header)):
+async def download_result(
+    request: Request,
+    conversion_id: str,
+    api_key: str | None = Depends(get_api_key),
+):
     """변환 결과 EPUB 파일 다운로드 엔드포인트
 
     Args:
@@ -642,10 +684,12 @@ async def download_result(conversion_id: str, api_key: str = Depends(api_key_hea
     Returns:
         StreamingResponse: EPUB 파일 스트리밍 응답
     """
+    del api_key
     # 비동기 작업 큐 서비스에서 결과 조회
     async_queue_service = get_async_queue_service()
     try:
         job = await async_queue_service.get_status(conversion_id)
+        _ensure_job_access(request, job)
         if job.state.value != "completed" or not job.result_bytes:
             raise HTTPException(status_code=404, detail="결과가 준비되지 않았습니다.")
         epub_content = job.result_bytes
@@ -678,12 +722,13 @@ async def download_result(conversion_id: str, api_key: str = Depends(api_key_hea
 
 @router.get("/download-sample")
 async def download_sample_result(
-    filename: str = "sample.epub", api_key: str = Depends(api_key_header)
+    filename: str = "sample.epub", api_key: str | None = Depends(get_api_key)
 ):
     """샘플 EPUB 파일 다운로드 엔드포인트.
 
     변환 ID가 없거나 실제 결과가 준비되지 않은 경우 프론트엔드의 폴백 다운로드로 사용.
     """
+    del api_key
     conversion_id = str(uuid.uuid4())
     epub_content = create_mock_epub(conversion_id)
     safe_filename = (
@@ -704,7 +749,8 @@ async def download_sample_result(
 # 지원 언어 목록 엔드포인트
 @router.get("/languages", response_model=SupportedLanguagesResponse)
 async def get_supported_languages(
-    api_key: str = Depends(api_key_header), settings: Settings = Depends(get_settings)
+    api_key: str | None = Depends(get_api_key),
+    settings: Settings = Depends(get_settings),
 ):
     """지원 언어 목록 조회 엔드포인트
 
@@ -715,6 +761,7 @@ async def get_supported_languages(
     Returns:
         Dict: 지원 언어 목록
     """
+    del api_key
     supported_languages = [
         LanguageInfo(
             code="ko",
@@ -743,7 +790,11 @@ async def get_supported_languages(
 
 # 변환 작업 취소 엔드포인트
 @router.delete("/cancel/{conversion_id}", response_model=ConversionOperationResponse)
-async def cancel_conversion(conversion_id: str, api_key: str = Depends(api_key_header)):
+async def cancel_conversion(
+    request: Request,
+    conversion_id: str,
+    api_key: str | None = Depends(get_api_key),
+):
     """변환 작업 취소 엔드포인트
 
     Args:
@@ -753,8 +804,11 @@ async def cancel_conversion(conversion_id: str, api_key: str = Depends(api_key_h
     Returns:
         Dict: 취소 결과
     """
+    del api_key
     async_queue_service = get_async_queue_service()
     try:
+        job = await async_queue_service.get_status(conversion_id)
+        _ensure_job_access(request, job)
         success = await async_queue_service.cancel_conversion(conversion_id)
         if not success:
             raise HTTPException(status_code=404, detail="변환 작업을 찾을 수 없습니다.")
@@ -769,10 +823,17 @@ async def cancel_conversion(conversion_id: str, api_key: str = Depends(api_key_h
 
 # 실패한 작업 재시도(수동)
 @router.post("/retry/{conversion_id}", response_model=ConversionOperationResponse)
-async def retry_conversion(conversion_id: str, api_key: str = Depends(api_key_header)):
+async def retry_conversion(
+    request: Request,
+    conversion_id: str,
+    api_key: str | None = Depends(get_api_key),
+):
     """실패한 변환 작업을 수동으로 재시도합니다."""
+    del api_key
     async_queue_service = get_async_queue_service()
     try:
+        current_job = await async_queue_service.get_status(conversion_id)
+        _ensure_job_access(request, current_job)
         job = await async_queue_service.retry_conversion(conversion_id)
     except KeyError:
         raise HTTPException(
@@ -789,7 +850,7 @@ async def retry_conversion(conversion_id: str, api_key: str = Depends(api_key_he
 @router.post("/analyze", response_model=PdfAnalysisResponse)
 async def analyze_pdf_structure(
     file: UploadFile = File(..., description="분석할 PDF 파일"),
-    api_key: str = Depends(api_key_header),
+    api_key: str | None = Depends(get_api_key),
 ):
     """PDF 구조 및 유형 분석 엔드포인트
 
@@ -869,7 +930,7 @@ async def extract_pdf_metadata(
     include_content_analysis: bool = Form(
         False, description="내용 기반 제목 추출 포함 여부"
     ),
-    api_key: str = Depends(api_key_header),
+    api_key: str | None = Depends(get_api_key),
 ):
     """PDF 메타데이터 추출 엔드포인트
 
@@ -938,7 +999,7 @@ async def extract_pdf_metadata(
 # 변환 작업 목록 조회 엔드포인트
 @router.get("/list", response_model=ConversionListResponse)
 async def list_conversions(
-    limit: int = 10, offset: int = 0, api_key: str = Depends(api_key_header)
+    limit: int = 10, offset: int = 0, api_key: str | None = Depends(get_api_key)
 ):
     """변환 작업 목록 조회 엔드포인트
 
@@ -989,7 +1050,7 @@ async def list_conversions(
 # 변환 설정 정보 엔드포인트
 @router.get("/settings", response_model=ConversionSettingsResponse)
 async def get_conversion_settings_info(
-    api_key: str = Depends(api_key_header),
+    api_key: str | None = Depends(get_api_key),
     settings_data: ConversionSettingsDict = Depends(get_conversion_settings),
 ):
     """변환 설정 정보 조회 엔드포인트

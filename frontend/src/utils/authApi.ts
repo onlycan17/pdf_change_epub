@@ -1,9 +1,5 @@
 import type { User } from '@/types';
-import {
-  clearAuthTokens,
-  getAuthToken,
-  getCurrentPlan,
-} from '@utils/subscription';
+import { clearAuthTokens, getCurrentPlan } from '@utils/subscription';
 
 const API_KEY = import.meta.env.VITE_API_KEY || 'your-api-key-here';
 
@@ -30,16 +26,13 @@ const buildDisplayName = (email: string): string => {
 
 export const fetchCurrentUserProfile =
   async (): Promise<CurrentUserProfile | null> => {
-    const token = getAuthToken();
-    if (!token) {
-      return null;
-    }
+    const headers: Record<string, string> = {
+      'X-API-Key': API_KEY,
+    };
 
     const response = await fetch('/api/v1/auth/me', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'X-API-Key': API_KEY,
-      },
+      credentials: 'same-origin',
+      headers,
     });
 
     if (!response.ok) {
@@ -69,10 +62,20 @@ export const clearSession = (): void => {
   clearAuthTokens();
 };
 
-export const isPrivilegedEmail = (
-  email: string | null | undefined
-): boolean => {
-  return (email || '').trim().toLowerCase() === 'onlycan17@gmail.com';
+export const logoutCurrentSession = async (): Promise<void> => {
+  const headers: Record<string, string> = {
+    'X-API-Key': API_KEY,
+  };
+
+  try {
+    await fetch('/api/v1/auth/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers,
+    });
+  } finally {
+    clearAuthTokens();
+  }
 };
 
 export const registerUser = async ({
