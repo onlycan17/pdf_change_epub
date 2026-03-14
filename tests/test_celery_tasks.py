@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import ANY, patch, AsyncMock, MagicMock
 
 from app.tasks.conversion_tasks import (
     start_conversion,
@@ -55,6 +55,7 @@ class TestConversionTasks:
                 filename="test.pdf",
                 file_size=len(sample_pdf_content),
                 ocr_enabled=True,
+                owner_user_id="user-123",
                 pdf_bytes=sample_pdf_content.hex(),  # 실제 파일 대신 픽스처를 사용
             )
 
@@ -88,7 +89,16 @@ class TestConversionTasks:
                 "attempts": mock_job.attempts,
             },
         }
-        mock_orch.run_to_completion.assert_awaited_once()
+        mock_orch.run_to_completion.assert_awaited_once_with(
+            conversion_id="conv-1",
+            filename="test.pdf",
+            file_size=len(sample_pdf_content),
+            ocr_enabled=True,
+            owner_user_id="user-123",
+            translate_to_korean=False,
+            pdf_bytes=sample_pdf_content,
+            status_callback=ANY,
+        )
 
     def test_cleanup_old_jobs_success(self):
         """

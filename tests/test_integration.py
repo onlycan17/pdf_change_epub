@@ -17,6 +17,12 @@ def _api_key() -> str:
     return config_module.get_settings().SECURITY_API_KEY
 
 
+class _AlwaysAllowFreeUsageService:
+    def try_consume(self, user_id: str) -> bool:
+        del user_id
+        return True
+
+
 def _auth_headers(*, user_id: str = "testuser", email: str = "testuser@example.com"):
     token = create_access_token(
         {
@@ -58,9 +64,14 @@ class TestConversionIntegration:
         return b"%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n"
 
     def test_start_conversion_endpoint(
-        self, test_client, mock_async_queue_service, sample_pdf_content
+        self, test_client, mock_async_queue_service, sample_pdf_content, monkeypatch
     ):
         """변환 시작 엔드포인트 테스트"""
+        monkeypatch.setattr(
+            "app.api.v1.conversion.get_free_usage_limit_service",
+            lambda _db_url: _AlwaysAllowFreeUsageService(),
+        )
+
         # Mock successful job creation
         mock_job = ConversionJob(
             conversion_id="test-123",
@@ -116,9 +127,13 @@ class TestConversionIntegration:
         )
 
     def test_start_conversion_returns_503_when_queue_unavailable(
-        self, test_client, mock_async_queue_service, sample_pdf_content
+        self, test_client, mock_async_queue_service, sample_pdf_content, monkeypatch
     ):
         """변환 시작 - 큐 미가동 시 503 응답 테스트"""
+        monkeypatch.setattr(
+            "app.api.v1.conversion.get_free_usage_limit_service",
+            lambda _db_url: _AlwaysAllowFreeUsageService(),
+        )
         mock_async_queue_service.start_conversion.side_effect = QueueUnavailableError()
 
         pdf_file = BytesIO(sample_pdf_content)
