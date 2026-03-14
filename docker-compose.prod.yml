@@ -59,6 +59,7 @@ services:
       context: .
       dockerfile: docker/caddy.Dockerfile
       args:
+        VITE_API_KEY: ${VITE_API_KEY}
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID}
         APP_GOOGLE_CLIENT_ID: ${APP_GOOGLE_CLIENT_ID}
     depends_on:
