@@ -180,6 +180,7 @@ class AsyncQueueService:
         filename: str,
         file_size: int,
         ocr_enabled: bool,
+        owner_user_id: Optional[str],
         translate_to_korean: bool,
         pdf_bytes: bytes,
         error: Exception,
@@ -201,6 +202,7 @@ class AsyncQueueService:
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
+            owner_user_id=owner_user_id,
             translate_to_korean=translate_to_korean,
             pdf_bytes=pdf_bytes,
         )
@@ -561,6 +563,7 @@ class AsyncQueueService:
                 filename=filename,
                 file_size=file_size,
                 ocr_enabled=ocr_enabled,
+                owner_user_id=owner_user_id,
                 translate_to_korean=translate_to_korean,
                 pdf_bytes=pdf_bytes,
                 error=e,

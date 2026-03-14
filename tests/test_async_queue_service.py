@@ -87,6 +87,55 @@ class TestAsyncQueueService:
         mock_start.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_start_conversion_preserves_owner_when_queue_falls_back_to_direct(
+        self,
+    ):
+        service = AsyncQueueService()
+        service._initialized = True
+        service.use_celery = True
+        service._allow_direct_fallback = True
+        service.store = AsyncMock()
+
+        expected_job = ConversionJob(
+            conversion_id="cid-fallback-owner",
+            filename="doc.pdf",
+            file_size=123,
+            ocr_enabled=True,
+            owner_user_id="user-123",
+            state=JobState.PENDING,
+            progress=0,
+        )
+
+        with patch.object(
+            service,
+            "_queue_conversion_job",
+            AsyncMock(side_effect=RuntimeError("queue down")),
+        ), patch.object(
+            service.orchestrator,
+            "start",
+            AsyncMock(return_value=expected_job),
+        ) as mock_start:
+            job = await service.start_conversion(
+                conversion_id="cid-fallback-owner",
+                filename="doc.pdf",
+                file_size=123,
+                ocr_enabled=True,
+                owner_user_id="user-123",
+                pdf_bytes=b"%PDF-1.4",
+            )
+
+        assert job is expected_job
+        mock_start.assert_awaited_once_with(
+            conversion_id="cid-fallback-owner",
+            filename="doc.pdf",
+            file_size=123,
+            ocr_enabled=True,
+            owner_user_id="user-123",
+            translate_to_korean=False,
+            pdf_bytes=b"%PDF-1.4",
+        )
+
+    @pytest.mark.asyncio
     async def test_get_status_updates_from_celery(self):
         service = AsyncQueueService()
         service._initialized = True
