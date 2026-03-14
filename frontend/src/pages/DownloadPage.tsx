@@ -32,7 +32,6 @@ const DownloadPage: React.FC = () => {
     100 * 1024,
     Math.round(originalFileSize * 0.75)
   );
-
   const formatFileSize = (size: number): string => {
     if (size < 1024 * 1024) {
       return `${Math.round(size / 1024)}KB`;
@@ -47,6 +46,29 @@ const DownloadPage: React.FC = () => {
 
     return `${minutes}분 ${seconds.toString().padStart(2, '0')}초`;
   };
+
+  const conversionDetails = [
+    {
+      label: '원본 파일',
+      value: originalFileName,
+      meta: formatFileSize(originalFileSize),
+    },
+    {
+      label: '변환된 파일',
+      value: convertedFileName,
+      meta: formatFileSize(convertedFileSize),
+    },
+    {
+      label: '변환 품질',
+      value: '고품질',
+      meta: '텍스트와 레이아웃을 함께 정리합니다.',
+    },
+    {
+      label: '변환 시간',
+      value: formatDuration(durationSec),
+      meta: '완료된 작업 기준 측정값입니다.',
+    },
+  ];
 
   const triggerBrowserDownload = (blob: Blob, fileName: string) => {
     const url = URL.createObjectURL(blob);
@@ -212,32 +234,26 @@ const DownloadPage: React.FC = () => {
             </div>
           )}
 
-          <div className="bg-gray-50 rounded-lg p-4 mb-6">
-            <h3 className="font-semibold text-gray-900 mb-2">변환 정보</h3>
-            <div className="grid md:grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-gray-600">원본 파일:</span>
-                <span className="ml-2 text-gray-900">
-                  {originalFileName} ({formatFileSize(originalFileSize)})
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-600">변환된 파일:</span>
-                <span className="ml-2 text-gray-900">
-                  {convertedFileName} ({formatFileSize(convertedFileSize)})
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-600">변환 품질:</span>
-                <span className="ml-2 text-gray-900">고품질</span>
-              </div>
-              <div>
-                <span className="text-gray-600">변환 시간:</span>
-                <span className="ml-2 text-gray-900">
-                  {formatDuration(durationSec)}
-                </span>
-              </div>
-            </div>
+          <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-left shadow-sm">
+            <h3 className="mb-4 text-center text-lg font-semibold text-gray-900">
+              변환 정보
+            </h3>
+            <ul className="space-y-3" aria-label="변환 정보 목록">
+              {conversionDetails.map((detail) => (
+                <li
+                  key={detail.label}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                >
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    {detail.label}
+                  </p>
+                  <p className="break-words text-sm font-semibold text-slate-900">
+                    {detail.value}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">{detail.meta}</p>
+                </li>
+              ))}
+            </ul>
           </div>
 
           <div className="flex justify-center space-x-4">
