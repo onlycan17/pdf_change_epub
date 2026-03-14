@@ -8,6 +8,7 @@ FRONTEND_DIST_DIR="$FRONTEND_DIR/dist"
 WEB_ROOT_DIR="/var/www/pdf-epub/dist"
 VENV_UVICORN="$ROOT_DIR/venv/bin/uvicorn"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.prod.yml"
+COMPOSE_WRAPPER="$ROOT_DIR/scripts/compose.sh"
 BACKEND_LOG="/tmp/pdf_epub_backend_prod.log"
 BACKEND_PORT="8000"
 HEALTH_URL="https://www.pdf-epub.kr/health"
@@ -24,7 +25,7 @@ Usage: scripts/prod_restart.sh [options]
 Options:
   --mode <start|stop|restart>  Control mode (default: restart)
   --host                        Force host-based mode
-  --docker                      Force docker-compose mode
+  --docker                      Force Docker Compose mode
   --dry-run                     Print commands without executing
   -h, --help                    Show help
 
@@ -78,17 +79,24 @@ run_cmd() {
   fi
 }
 
+compose_available() {
+  [[ -f "$COMPOSE_WRAPPER" ]] || return 1
+  bash "$COMPOSE_WRAPPER" version >/dev/null 2>&1
+}
+
+compose_cmd() {
+  bash "$COMPOSE_WRAPPER" -f "$COMPOSE_FILE" "$@"
+}
+
 detect_mode() {
   if [[ -n "$FORCE_MODE" ]]; then
     echo "$FORCE_MODE"
     return
   fi
 
-  if command -v docker >/dev/null 2>&1 && [[ -f "$COMPOSE_FILE" ]]; then
-    if docker compose -f "$COMPOSE_FILE" ps >/dev/null 2>&1; then
-      echo "docker"
-      return
-    fi
+  if [[ -f "$COMPOSE_FILE" ]] && compose_available; then
+    echo "docker"
+    return
   fi
 
   echo "host"
@@ -164,25 +172,28 @@ run_host_mode() {
 
 run_docker_mode() {
   echo "[INFO] Mode: docker"
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "[ERROR] docker command not found"
-    exit 1
-  fi
   if [[ ! -f "$COMPOSE_FILE" ]]; then
     echo "[ERROR] Missing compose file: $COMPOSE_FILE"
+    exit 1
+  fi
+  if ! compose_available; then
+    echo "[ERROR] Docker Compose command unavailable. Expected $COMPOSE_WRAPPER to resolve either 'docker compose' or 'docker-compose'."
     exit 1
   fi
 
   case "$MODE" in
     start)
-      run_cmd "docker compose -f '$COMPOSE_FILE' up -d --build"
+      stop_host_backend
+      run_cmd "bash '$COMPOSE_WRAPPER' -f '$COMPOSE_FILE' up -d --build"
       ;;
     stop)
-      run_cmd "docker compose -f '$COMPOSE_FILE' down"
+      run_cmd "bash '$COMPOSE_WRAPPER' -f '$COMPOSE_FILE' down"
+      stop_host_backend
       ;;
     restart)
-      run_cmd "docker compose -f '$COMPOSE_FILE' down"
-      run_cmd "docker compose -f '$COMPOSE_FILE' up -d --build"
+      stop_host_backend
+      run_cmd "bash '$COMPOSE_WRAPPER' -f '$COMPOSE_FILE' down"
+      run_cmd "bash '$COMPOSE_WRAPPER' -f '$COMPOSE_FILE' up -d --build"
       ;;
   esac
 
