@@ -84,18 +84,30 @@ class TestOCRSettings:
         assert settings.language == "ko"
         assert settings.paddle_ocr_model == "korean"
         assert settings.max_workers == 4
+        assert settings.engine == "paddle"
+        assert settings.fallback_engine == "tesseract"
+        assert settings.llm_correction_threshold == 0.8
+        assert settings.llm_max_pages_per_document == 5
 
     def test_env_override(self, monkeypatch):
         """환경 변수로 OCR 설정 변경 테스트"""
         monkeypatch.setenv("OCR_ENABLED", "false")
         monkeypatch.setenv("OCR_LANGUAGE", "en")
         monkeypatch.setenv("OCR_MAX_WORKERS", "8")
+        monkeypatch.setenv("OCR_ENGINE", "tesseract")
+        monkeypatch.setenv("OCR_FALLBACK_ENGINE", "paddle")
+        monkeypatch.setenv("OCR_LLM_CORRECTION_THRESHOLD", "0.6")
+        monkeypatch.setenv("OCR_LLM_MAX_PAGES_PER_DOCUMENT", "2")
 
         settings = OCRSettings()
 
         assert settings.enabled is False
         assert settings.language == "en"
         assert settings.max_workers == 8
+        assert settings.engine == "tesseract"
+        assert settings.fallback_engine == "paddle"
+        assert settings.llm_correction_threshold == 0.6
+        assert settings.llm_max_pages_per_document == 2
 
 
 class TestLLMSettings:

@@ -2,6 +2,7 @@ import pytest
 import logging
 from types import MethodType
 
+import app.services.agent_service as agent_service_module
 from app.services.agent_service import (
     AgentMessage,
     AgentType,
@@ -245,6 +246,80 @@ async def test_multimodal_agent_falls_back_to_gemini_when_primary_fails() -> Non
         "qwen/qwen3.5-flash-02-23",
         "google/gemini-3.1-flash-lite-preview",
     ]
+
+
+@pytest.mark.asyncio
+async def test_ocr_agent_falls_back_to_tesseract_when_primary_engine_unavailable(
+    monkeypatch,
+) -> None:
+    seen = []
+
+    class FakeEngine:
+        def __init__(self, name: str, should_fail: bool) -> None:
+            self.engine_name = name
+            self.should_fail = should_fail
+
+        def validate(self) -> None:
+            seen.append(self.engine_name)
+            if self.should_fail:
+                raise ValueError(f"{self.engine_name} unavailable")
+
+    def fake_create_ocr_engine(engine_name: str, language: str) -> FakeEngine:
+        assert language == "kor+eng"
+        return FakeEngine(engine_name, should_fail=engine_name == "paddle")
+
+    monkeypatch.setattr(
+        agent_service_module, "create_ocr_engine", fake_create_ocr_engine
+    )
+
+    agent = OCRAgent()
+
+    assert await agent.validate() is True
+    assert agent.ocr_engine is not None
+    assert agent.ocr_engine.engine_name == "tesseract"
+    assert seen == ["paddle", "tesseract"]
+
+
+@pytest.mark.asyncio
+async def test_scan_pdf_processor_applies_llm_only_to_low_confidence_ocr() -> None:
+    processor = ScanPDFProcessor()
+    processor.settings.ocr.llm_correction_threshold = 0.8
+    processor.settings.ocr.llm_max_pages_per_document = 1
+
+    class FakeMultimodalAgent:
+        async def correct_ocr_text(
+            self,
+            *,
+            image_bytes: bytes,
+            ocr_text: str,
+            image_format: str = "jpeg",
+        ) -> tuple[str, str, bool]:
+            assert image_bytes == b"img"
+            assert image_format == "png"
+            return ("교정된 문장", "fake-model", False)
+
+    processor.multimodal_agent = FakeMultimodalAgent()  # type: ignore[assignment]
+
+    corrected = await processor._apply_low_confidence_llm_correction(  # type: ignore[attr-defined]
+        image_info={"page": 1, "image_bytes": b"img", "format": "png"},
+        content={"text": "틀린 문장", "confidence": 0.4},
+    )
+    skipped_by_limit = await processor._apply_low_confidence_llm_correction(  # type: ignore[attr-defined]
+        image_info={"page": 2, "image_bytes": b"img", "format": "png"},
+        content={"text": "또 다른 문장", "confidence": 0.3},
+    )
+    skipped_by_confidence = await processor._apply_low_confidence_llm_correction(  # type: ignore[attr-defined]
+        image_info={"page": 3, "image_bytes": b"img", "format": "png"},
+        content={"text": "이미 충분히 정확", "confidence": 0.95},
+    )
+
+    assert corrected["text"] == "교정된 문장"
+    assert corrected["llm_corrected"] is True
+    assert corrected["llm_correction_model"] == "fake-model"
+    assert skipped_by_limit["text"] == "또 다른 문장"
+    assert "llm_corrected" not in skipped_by_limit
+    assert skipped_by_confidence["text"] == "이미 충분히 정확"
+    assert "llm_corrected" not in skipped_by_confidence
 
 
 def test_ocr_agent_reconstructs_paragraphs_from_tesseract_layout() -> None:

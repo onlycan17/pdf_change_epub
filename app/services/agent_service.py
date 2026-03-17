@@ -15,8 +15,10 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from enum import Enum
 
 import httpx
+from PIL import Image
 
 from app.core.config import Settings, get_settings
+from app.services.ocr_engines import BaseOCREngine, create_ocr_engine
 from app.services.pdf_service import PDFAnalyzer, PDFExtractor, PDFType
 
 logger = logging.getLogger(__name__)
@@ -68,6 +70,8 @@ class OCRResult:
     confidence: float
     bounding_boxes: Optional[List[Dict[str, Any]]] = None
     equation_images: Optional[List[Dict[str, Any]]] = None
+    engine: Optional[str] = None
+    llm_corrected: bool = False
 
 
 @dataclass
@@ -176,6 +180,28 @@ class MultimodalLLMAgent(BaseAgent):
             self.logger.exception("이미지 분석 실패: %s", error_detail)
             raise ValueError(f"이미지 분석 중 오류 발생: {error_detail}") from e
 
+    async def correct_ocr_text(
+        self,
+        *,
+        image_bytes: bytes,
+        ocr_text: str,
+        image_format: str = "jpeg",
+    ) -> tuple[str, str, bool]:
+        """저신뢰 OCR 결과를 이미지와 함께 다시 보정합니다."""
+        if not ocr_text.strip():
+            return "", "", False
+
+        image_base64 = base64.b64encode(image_bytes).decode()
+        image_mime_type = self._resolve_image_mime_type(image_format)
+        corrected, _result, model_used, fallback_used = (
+            await self._request_ocr_correction(
+                image_base64=image_base64,
+                image_mime_type=image_mime_type,
+                ocr_text=ocr_text,
+            )
+        )
+        return corrected, model_used, fallback_used
+
     async def _request_analysis(
         self, *, image_base64: str, context: str, image_mime_type: str
     ) -> tuple[str, Dict[str, Any], str, bool]:
@@ -215,6 +241,44 @@ class MultimodalLLMAgent(BaseAgent):
 
         raise RuntimeError(" / ".join(errors) or "all multimodal models failed")
 
+    async def _request_ocr_correction(
+        self,
+        *,
+        image_base64: str,
+        image_mime_type: str,
+        ocr_text: str,
+    ) -> tuple[str, Dict[str, Any], str, bool]:
+        errors: List[str] = []
+        tried_models: List[str] = []
+
+        for model_name in [self.model_name, self.fallback_model_name]:
+            if not model_name:
+                continue
+
+            tried_models.append(model_name)
+            try:
+                result = await self._request_multimodal_prompt_with_model(
+                    model_name=model_name,
+                    prompt=self._build_ocr_correction_prompt(ocr_text),
+                    image_base64=image_base64,
+                    image_mime_type=image_mime_type,
+                )
+                corrected = self._strip_markdown_fence(
+                    str(result["choices"][0]["message"]["content"])
+                )
+                if not corrected.strip():
+                    raise ValueError("empty response")
+                fallback_used = (
+                    model_name == self.fallback_model_name
+                    and len(tried_models) > 1
+                    and bool(self.fallback_model_name)
+                )
+                return corrected, result, model_name, fallback_used
+            except Exception as exc:
+                errors.append(f"{model_name}: {_format_exception_message(exc)}")
+
+        raise RuntimeError(" / ".join(errors) or "all multimodal models failed")
+
     async def _request_analysis_with_model(
         self,
         *,
@@ -223,13 +287,28 @@ class MultimodalLLMAgent(BaseAgent):
         context: str,
         image_mime_type: str,
     ) -> Dict[str, Any]:
+        return await self._request_multimodal_prompt_with_model(
+            model_name=model_name,
+            prompt=self._build_prompt(context),
+            image_base64=image_base64,
+            image_mime_type=image_mime_type,
+        )
+
+    async def _request_multimodal_prompt_with_model(
+        self,
+        *,
+        model_name: str,
+        prompt: str,
+        image_base64: str,
+        image_mime_type: str,
+    ) -> Dict[str, Any]:
         payload = {
             "model": model_name,
             "messages": [
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": self._build_prompt(context)},
+                        {"type": "text", "text": prompt},
                         {
                             "type": "image_url",
                             "image_url": {
@@ -306,6 +385,30 @@ class MultimodalLLMAgent(BaseAgent):
 
         return base_prompt
 
+    def _build_ocr_correction_prompt(self, ocr_text: str) -> str:
+        return f"""아래 이미지를 보고 OCR 원문에서 잘못 읽힌 부분만 바로잡아 주세요.
+
+[원칙]
+- 의미를 새로 추측해 덧붙이지 마세요.
+- 이미지에서 확인되는 텍스트만 반영하세요.
+- 제목, 문단, 줄바꿈은 가능한 한 유지하세요.
+- 확실하지 않은 부분은 원문을 유지하세요.
+- 출력은 보정된 본문만 반환하세요.
+
+[OCR 원문]
+{ocr_text}
+"""
+
+    def _strip_markdown_fence(self, text: str) -> str:
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.strip("`")
+            if "\n" in cleaned:
+                cleaned = cleaned.split("\n", 1)[1]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        return cleaned.strip()
+
     def _parse_analysis_result(
         self, raw_result: str, page_number: int
     ) -> ImageAnalysisResult:
@@ -354,31 +457,19 @@ class MultimodalLLMAgent(BaseAgent):
 
 
 class OCRAgent(BaseAgent):
-    """PaddleOCR 연동 에이전트"""
+    """OCR 엔진 선택 및 실행 에이전트"""
 
     def __init__(self, settings: Optional[Settings] = None):
         super().__init__(AgentType.OCR, settings)
-        self.language = "kor+eng"  # 기본값
-        self.ocr_engine: None = None
+        self.language = self.settings.ocr_language
+        self.primary_engine_name = self.settings.ocr.engine
+        self.fallback_engine_name = self.settings.ocr.fallback_engine
+        self.ocr_engine: BaseOCREngine | None = None
 
     async def validate(self) -> bool:
         """OCR 엔진 초기화 및 검증"""
-        import pytesseract
-
-        try:
-            _ = pytesseract.get_tesseract_version()
-            langs = set(pytesseract.get_languages(config=""))
-
-            required = [p for p in self.language.split("+") if p]
-            missing = [p for p in required if p not in langs]
-            if missing:
-                raise ValueError(
-                    f"Tesseract language data missing: {', '.join(missing)} (available: {', '.join(sorted(langs))})"
-                )
-            return True
-        except Exception as e:
-            # Raise so the orchestrator can surface a useful message.
-            raise ValueError(f"Tesseract OCR init failed: {e}")
+        self.ocr_engine = self._resolve_engine()
+        return True
 
     async def process(self, message: AgentMessage) -> AgentMessage:
         """이미지에서 텍스트 추출"""
@@ -405,6 +496,7 @@ class OCRAgent(BaseAgent):
                 confidence=result.get("confidence", 0.0),
                 bounding_boxes=result.get("bounding_boxes", []),
                 equation_images=result.get("equation_images", []),
+                engine=result.get("engine"),
             )
 
             return AgentMessage(
@@ -412,6 +504,7 @@ class OCRAgent(BaseAgent):
                 content=ocr_result,
                 metadata={
                     "language": self.language,
+                    "engine": result.get("engine"),
                     "processing_time": message.timestamp,
                 },
             )
@@ -425,97 +518,81 @@ class OCRAgent(BaseAgent):
         """OCR 실행"""
         import io
         from PIL import Image
-        import pytesseract
 
         try:
-            # 바이트 데이터를 PIL 이미지로 변환
             image = Image.open(io.BytesIO(image_data))
-
-            def _run_tesseract() -> Dict[str, Any]:
-                data = pytesseract.image_to_data(
-                    image,
-                    lang=self.language,
-                    output_type=pytesseract.Output.DICT,
-                )
-                n = int(data.get("level") and len(data["level"]) or 0)
-                boxes: List[Dict[str, Any]] = []
-                confidences: List[float] = []
-
-                for i in range(n):
-                    text = str(data.get("text", [""] * n)[i]).strip()
-                    if not text:
-                        continue
-
-                    conf_raw = str(data.get("conf", ["-1"] * n)[i]).strip()
-                    try:
-                        conf = float(conf_raw)
-                    except ValueError:
-                        conf = -1.0
-
-                    left = int(float(data.get("left", [0] * n)[i]))
-                    top = int(float(data.get("top", [0] * n)[i]))
-                    width = int(float(data.get("width", [0] * n)[i]))
-                    height = int(float(data.get("height", [0] * n)[i]))
-                    bbox = [
-                        [left, top],
-                        [left + width, top],
-                        [left + width, top + height],
-                        [left, top + height],
-                    ]
-
-                    if conf >= 0:
-                        confidences.append(conf)
-
-                    boxes.append(
-                        {
-                            "text": text,
-                            "bbox": bbox,
-                            "confidence": max(conf, 0.0) / 100.0 if conf >= 0 else 0.0,
-                        }
-                    )
-
-                avg_conf = (
-                    (sum(confidences) / len(confidences)) / 100.0
-                    if confidences
-                    else 0.0
-                )
-                document = self._build_ocr_document(data, n)
-                equation_images = self._extract_equation_images(
-                    image,
-                    document["line_records"],
-                )
-                marker_by_line = {
-                    image_info["line_key"]: image_info["marker"]
-                    for image_info in equation_images
-                    if isinstance(image_info.get("line_key"), tuple)
-                    and isinstance(image_info.get("marker"), str)
-                }
-                return {
-                    "text": self._render_ocr_document(
-                        document["paragraph_records"],
-                        document["page_width"],
-                        marker_by_line=marker_by_line,
-                    ),
-                    "confidence": avg_conf,
-                    "bounding_boxes": boxes,
-                    "equation_images": [
-                        {
-                            "marker": image_info["marker"],
-                            "image_bytes": image_info["image_bytes"],
-                            "format": image_info["format"],
-                            "page_number": image_info["page_number"],
-                            "alt_text": image_info["alt_text"],
-                        }
-                        for image_info in equation_images
-                    ],
-                }
-
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, _run_tesseract)
+            return await loop.run_in_executor(None, self._run_ocr_sync, image)
 
         except Exception as e:
             self.logger.exception("OCR 실행 실패: %s", _format_exception_message(e))
-            return {"text": "", "confidence": 0.0, "bounding_boxes": []}
+            return {
+                "text": "",
+                "confidence": 0.0,
+                "bounding_boxes": [],
+                "equation_images": [],
+                "engine": self.ocr_engine.engine_name if self.ocr_engine else None,
+            }
+
+    def _run_ocr_sync(self, image: Image.Image) -> Dict[str, Any]:
+        engine = self.ocr_engine or self._resolve_engine()
+        self.ocr_engine = engine
+        engine_result = engine.run(image)
+        paragraph_records = self._build_ocr_paragraph_records(
+            engine_result.line_records
+        )
+        equation_images = self._extract_equation_images(
+            image, engine_result.line_records
+        )
+        marker_by_line = {
+            image_info["line_key"]: image_info["marker"]
+            for image_info in equation_images
+            if isinstance(image_info.get("line_key"), tuple)
+            and isinstance(image_info.get("marker"), str)
+        }
+        rendered_text = self._render_ocr_document(
+            paragraph_records,
+            engine_result.page_width,
+            marker_by_line=marker_by_line,
+        )
+        return {
+            "text": rendered_text or engine_result.text,
+            "confidence": engine_result.confidence,
+            "bounding_boxes": engine_result.bounding_boxes,
+            "equation_images": [
+                {
+                    "marker": image_info["marker"],
+                    "image_bytes": image_info["image_bytes"],
+                    "format": image_info["format"],
+                    "page_number": image_info["page_number"],
+                    "alt_text": image_info["alt_text"],
+                }
+                for image_info in equation_images
+            ],
+            "engine": engine_result.engine,
+        }
+
+    def _resolve_engine(self) -> BaseOCREngine:
+        errors: List[str] = []
+        for engine_name in [self.primary_engine_name, self.fallback_engine_name]:
+            if not engine_name:
+                continue
+            try:
+                engine = create_ocr_engine(engine_name, self.language)
+                engine.validate()
+                if engine_name != self.primary_engine_name:
+                    self.logger.warning(
+                        "기본 OCR 엔진을 사용할 수 없어 폴백 엔진으로 전환합니다.",
+                        extra={
+                            "primary_engine": self.primary_engine_name,
+                            "fallback_engine": engine_name,
+                        },
+                    )
+                return engine
+            except Exception as exc:
+                errors.append(f"{engine_name}: {_format_exception_message(exc)}")
+
+        raise ValueError(" / ".join(errors) or "No OCR engine available")
 
     def _reconstruct_ocr_text(self, data: Dict[str, Any], count: int) -> str:
         document = self._build_ocr_document(data, count)
@@ -537,28 +614,6 @@ class OCRAgent(BaseAgent):
             "line_records": line_records,
             "paragraph_records": paragraph_records,
         }
-
-    def _render_ocr_document(
-        self,
-        paragraph_records: List[Dict[str, Any]],
-        page_width: int,
-        *,
-        marker_by_line: Optional[Dict[tuple[int, int, int], str]] = None,
-    ) -> str:
-        ordered_paragraphs = self._order_paragraph_records(
-            paragraph_records, page_width
-        )
-        rendered_paragraphs = [
-            self._render_ocr_paragraph(
-                paragraph,
-                page_width,
-                marker_by_line=marker_by_line or {},
-            )
-            for paragraph in ordered_paragraphs
-        ]
-        return "\n\n".join(
-            paragraph for paragraph in rendered_paragraphs if paragraph.strip()
-        )
 
     def _build_ocr_tokens(
         self, data: Dict[str, Any], count: int
@@ -642,6 +697,28 @@ class OCRAgent(BaseAgent):
 
         lines.sort(key=lambda item: (int(item.get("top", 0)), int(item.get("left", 0))))
         return lines
+
+    def _render_ocr_document(
+        self,
+        paragraph_records: List[Dict[str, Any]],
+        page_width: int,
+        *,
+        marker_by_line: Optional[Dict[tuple[int, int, int], str]] = None,
+    ) -> str:
+        ordered_paragraphs = self._order_paragraph_records(
+            paragraph_records, page_width
+        )
+        rendered_paragraphs = [
+            self._render_ocr_paragraph(
+                paragraph,
+                page_width,
+                marker_by_line=marker_by_line or {},
+            )
+            for paragraph in ordered_paragraphs
+        ]
+        return "\n\n".join(
+            paragraph for paragraph in rendered_paragraphs if paragraph.strip()
+        )
 
     def _build_ocr_paragraph_records(
         self, lines: List[Dict[str, Any]]
@@ -1217,6 +1294,8 @@ class ScanPDFProcessor:
         self.settings = settings or get_settings()
         self.logger = logging.getLogger(__name__)
         self.progress_callback = progress_callback
+        self._low_confidence_correction_lock = asyncio.Lock()
+        self._low_confidence_corrections_used = 0
 
         # 에이전트 초기화
         self.multimodal_agent: Optional[MultimodalLLMAgent]
@@ -1274,6 +1353,7 @@ class ScanPDFProcessor:
     async def process_scanned_pdf(self, pdf_content: bytes) -> SynthesisResult:
         """스캔 PDF 처리 전체 워크플로우"""
         try:
+            self._low_confidence_corrections_used = 0
             # PDF 분석
             analysis_result = self.pdf_analyzer.analyze_pdf(pdf_content)
 
@@ -1391,6 +1471,10 @@ class ScanPDFProcessor:
                 content = asdict(content)
 
         if isinstance(content, dict):
+            content = await self._apply_low_confidence_llm_correction(
+                image_info=image_info,
+                content=content,
+            )
             equation_images = content.get("equation_images", [])
             if isinstance(equation_images, list):
                 for equation_image in equation_images:
@@ -1423,6 +1507,60 @@ class ScanPDFProcessor:
             "content": content,
             "metadata": result_message.metadata,
         }
+
+    async def _apply_low_confidence_llm_correction(
+        self,
+        *,
+        image_info: Dict[str, Any],
+        content: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if self.multimodal_agent is None:
+            return content
+
+        original_text = str(content.get("text", "")).strip()
+        confidence = float(content.get("confidence", 0.0) or 0.0)
+        threshold = float(self.settings.ocr.llm_correction_threshold)
+        if not original_text or confidence >= threshold:
+            return content
+
+        if not await self._reserve_low_confidence_correction_slot():
+            return content
+
+        try:
+            corrected_text, model_used, fallback_used = (
+                await self.multimodal_agent.correct_ocr_text(
+                    image_bytes=image_info["image_bytes"],
+                    ocr_text=original_text,
+                    image_format=str(image_info.get("format", "jpeg")),
+                )
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "저신뢰 OCR LLM 보정 실패",
+                extra={"page": image_info.get("page"), "error": str(exc)},
+            )
+            return content
+
+        if not corrected_text.strip():
+            return content
+
+        updated_content = dict(content)
+        updated_content["text"] = corrected_text.strip()
+        updated_content["llm_corrected"] = True
+        updated_content["llm_correction_model"] = model_used
+        updated_content["llm_correction_fallback_used"] = fallback_used
+        return updated_content
+
+    async def _reserve_low_confidence_correction_slot(self) -> bool:
+        max_pages = int(self.settings.ocr.llm_max_pages_per_document)
+        if max_pages <= 0:
+            return False
+
+        async with self._low_confidence_correction_lock:
+            if self._low_confidence_corrections_used >= max_pages:
+                return False
+            self._low_confidence_corrections_used += 1
+            return True
 
     async def _process_image_with_llm(
         self, image_info: Dict[str, Any]

@@ -72,6 +72,10 @@ class OCRSettings(BaseSettings):
     language: str = "ko"
     paddle_ocr_model: str = "korean"
     max_workers: int = 4
+    engine: str = "paddle"
+    fallback_engine: str = "tesseract"
+    llm_correction_threshold: float = 0.8
+    llm_max_pages_per_document: int = 5
 
     model_config = SettingsConfigDict(env_prefix="OCR_")
 

@@ -88,7 +88,7 @@ def start_conversion(
     filename: str,
     file_size: int,
     ocr_enabled: bool,
-    owner_user_id: str = "",
+    owner_user_id: str | None = None,
     pdf_bytes: str = "",
     pdf_path: str = "",
     translate_to_korean: bool = False,
@@ -125,6 +125,7 @@ def start_conversion(
                 "source_filename": filename,
                 "file_size": file_size,
                 "ocr_enabled": ocr_enabled,
+                "owner_user_id": owner_user_id,
                 "translate_to_korean": translate_to_korean,
             },
         )

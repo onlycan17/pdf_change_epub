@@ -23,6 +23,7 @@ pdfminer.six==20231228
 PyMuPDF==1.24.6
 
 # OCR 처리
+paddleocr==2.10.0
 pytesseract==0.3.10
 
 # EPUB 생성

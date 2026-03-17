@@ -33,12 +33,15 @@ class TestAsyncQueueService:
             filename="doc.pdf",
             file_size=123,
             ocr_enabled=True,
+            owner_user_id="user-1",
             pdf_bytes=b"%PDF-1.4",
         )
 
         service.store.create.assert_called_once()
         service.store.update.assert_called_once()
         assert job.celery_task_id == "celery-task-1"
+        send_task_kwargs = service.celery_app.send_task.call_args.kwargs["kwargs"]
+        assert send_task_kwargs["owner_user_id"] == "user-1"
 
     @pytest.mark.asyncio
     async def test_start_conversion_raises_when_queue_required_but_unavailable(self):
@@ -326,6 +329,7 @@ class TestAsyncQueueService:
             filename="retry.pdf",
             file_size=len(source_pdf),
             ocr_enabled=True,
+            owner_user_id="owner-1",
             state=JobState.FAILED,
             progress=0,
             source_pdf_bytes=source_pdf,
@@ -346,7 +350,7 @@ class TestAsyncQueueService:
                 filename="retry.pdf",
                 file_size=len(source_pdf),
                 ocr_enabled=True,
-                owner_user_id=None,
+                owner_user_id="owner-1",
                 translate_to_korean=False,
                 pdf_bytes=source_pdf,
             )
