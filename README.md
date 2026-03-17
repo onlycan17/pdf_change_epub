@@ -20,7 +20,7 @@ PDF 문서를 EPUB 전자책으로 변환하는 웹 서비스입니다.
 
 ## 기술 스택
 - 백엔드: FastAPI, Pydantic, Celery, Redis
-- PDF/OCR/EPUB: pypdf, pdfminer.six, PyMuPDF, PaddleOCR, ebooklib
+- PDF/OCR/EPUB: pypdf, pdfminer.six, PyMuPDF, PaddleOCR, Tesseract, ebooklib
 - 프론트엔드: React 18, TypeScript, Vite, ESLint, Prettier
 
 ## 빠른 시작
@@ -80,6 +80,7 @@ cd ..
 cp .env.example .env
 ```
 `OPENROUTER_API_KEY`를 설정하면 문맥 보정(1차: `deepseek/deepseek-v3.2`, 2차: `nvidia/nemotron-3-nano-30b-a3b`)이 활성화됩니다.
+스캔 PDF는 `PaddleOCR 우선, Tesseract 폴백` 구조로 동작하며, OCR 신뢰도가 낮은 페이지만 멀티모달 LLM이 추가 보정합니다.
 
 Google 로그인을 사용한다면 백엔드용 `APP_GOOGLE_CLIENT_ID`와 프론트 빌드용 `VITE_GOOGLE_CLIENT_ID`를 함께 설정하세요.
 
