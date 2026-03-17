@@ -146,7 +146,7 @@ def start_conversion(
             filename=filename,
             file_size=file_size,
             ocr_enabled=ocr_enabled,
-            owner_user_id=owner_user_id,
+            owner_user_id=owner_user_id or None,
             translate_to_korean=translate_to_korean,
             pdf_bytes=raw,
             status_callback=publish_task_state,

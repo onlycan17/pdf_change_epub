@@ -6,7 +6,7 @@
 자동화 스크립트:
 
 ```bash
-chmod +x scripts/prod_restart.sh scripts/prod_start.sh scripts/prod_stop.sh
+chmod +x scripts/prod_restart.sh scripts/prod_start.sh scripts/prod_stop.sh scripts/compose.sh
 ```
 
 간편 명령:
@@ -18,9 +18,13 @@ scripts/prod_start.sh
 # 중지
 scripts/prod_stop.sh
 
-# 재기동
+# 재기동 (기본: Docker 기반 운영)
 scripts/prod_restart.sh --mode restart
 ```
+
+기본 동작은 `docker-compose.prod.yml` 기반의 Docker 재배포입니다.
+스크립트는 내부적으로 `scripts/compose.sh`를 사용해 환경에 따라
+`docker compose` 또는 `docker-compose`를 자동 선택합니다.
 
 `--host` 모드의 `start`/`restart`는 자동으로 아래를 수행합니다.
 
@@ -46,16 +50,20 @@ lsof -iTCP:8000 -sTCP:LISTEN -t | xargs -r ps -fp
 
 ### 판정 기준
 
-- Docker 명령이 없거나 컨테이너가 없고 `caddy`만 active이면:
-  - **호스트 기반 운영** (이 문서의 1번 절차 사용)
-- `docker compose -f docker-compose.prod.yml ps`에 `web`, `caddy` 등이 있으면:
-  - **Docker 기반 운영** (이 문서의 2번 절차 사용)
+- `scripts/compose.sh -f docker-compose.prod.yml ps`가 동작하고
+  `web`, `caddy` 등이 보이면:
+  - **Docker 기반 운영** (이 문서의 2번 절차 사용, 현재 기본값)
+- Compose 명령을 사용할 수 없고 `caddy`만 active이면:
+  - **호스트 기반 운영** (이 문서의 1번 절차는 예외 대응용)
 
 ---
 
-## 1) 호스트 기반 운영 (현재 서버 기준 권장)
+## 1) 호스트 기반 운영 (예외 대응용)
 
-현재 확인된 운영 구조:
+호스트 기반 운영은 Docker Compose를 사용할 수 없거나,
+긴급 우회가 필요한 경우에만 사용합니다.
+
+현재 구조 예시:
 
 - 프록시: `caddy` (systemd)
 - 백엔드: `uvicorn` (포트 8000)
@@ -130,46 +138,45 @@ curl -sS -o /dev/null -w "%{http_code}\n" https://www.pdf-epub.kr/health
 
 ---
 
-## 2) Docker 기반 운영 (필요 시)
+## 2) Docker 기반 운영 (현재 운영 기본값)
 
 `docker-compose.prod.yml`을 사용하는 경우 절차입니다.
 
-중요: 운영/배포에는 `docker-compose` v1 대신 **Compose v2 플러그인**(`docker compose`)을 사용하세요.
-일부 최신 Docker Engine 조합에서 `docker-compose` v1.29.2는 컨테이너 recreate 과정에서
-`KeyError: 'ContainerConfig'`로 실패할 수 있습니다.
+중요: 운영 명령은 직접 `docker compose` / `docker-compose`를 쓰기보다
+`scripts/compose.sh`를 사용하세요. 이 스크립트가 환경에 맞는 Compose 명령을 선택합니다.
+일부 환경에서는 `docker compose` 플러그인이 없고 `docker-compose`만 동작할 수 있습니다.
 
 ```bash
-docker compose version
+scripts/compose.sh version
 ```
 
 ### 2-1. 시작
 
 ```bash
 cd /home/jinseok/workspaces/sideprojects/pdf_change_epub
-docker compose -f docker-compose.prod.yml up -d --build
+scripts/compose.sh -f docker-compose.prod.yml up -d --build
 ```
 
 ### 2-2. 중지
 
 ```bash
 cd /home/jinseok/workspaces/sideprojects/pdf_change_epub
-docker compose -f docker-compose.prod.yml down
+scripts/compose.sh -f docker-compose.prod.yml down
 ```
 
 ### 2-3. 재기동
 
 ```bash
 cd /home/jinseok/workspaces/sideprojects/pdf_change_epub
-docker compose -f docker-compose.prod.yml down
-docker compose -f docker-compose.prod.yml up -d --build
+scripts/prod_restart.sh --mode restart
 ```
 
 ### 2-4. 상태 검증
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs --tail=100 web
-docker compose -f docker-compose.prod.yml logs --tail=100 caddy
+scripts/compose.sh -f docker-compose.prod.yml ps
+scripts/compose.sh -f docker-compose.prod.yml logs --tail=100 web
+scripts/compose.sh -f docker-compose.prod.yml logs --tail=100 caddy
 curl -I https://www.pdf-epub.kr/
 curl -sS -o /dev/null -w "%{http_code}\n" https://www.pdf-epub.kr/health
 ```
@@ -222,9 +229,10 @@ scripts/prod_restart.sh --mode restart
 옵션:
 
 ```bash
-scripts/prod_restart.sh --mode start --host
-scripts/prod_restart.sh --mode stop --host
+scripts/prod_restart.sh --mode start
+scripts/prod_restart.sh --mode stop
 scripts/prod_restart.sh --mode restart --docker
+scripts/prod_restart.sh --mode restart --host
 scripts/prod_restart.sh --mode restart --dry-run
 ```
 
@@ -245,4 +253,6 @@ nohup /home/jinseok/workspaces/sideprojects/pdf_change_epub/venv/bin/uvicorn app
 - 운영 중에는 `pkill -f uvicorn` 명령이 다른 uvicorn 프로세스까지 종료할 수 있으므로,
   서버에 다중 프로젝트가 있으면 프로세스 경로를 함께 확인하고 종료하세요.
 - `/health`는 GET 기준으로 검증하세요. 환경에 따라 HEAD는 `405`가 나올 수 있습니다.
+- Docker 운영으로 전환한 뒤에는 호스트의 `127.0.0.1:8000` 검사는 의미가 없을 수 있습니다.
+  외부 도메인 기준 또는 `scripts/compose.sh ... logs` 기준으로 확인하세요.
 - Caddy 재기동은 root 권한이 필요할 수 있습니다.

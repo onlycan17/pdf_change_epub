@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from app.core.config import Settings, get_settings
-from app.services.conversion_epub_renderer import (
+from .conversion_epub_renderer import (
     build_epub_image_assets,
     build_scan_math_image_assets,
     extract_content_flow_pages,
