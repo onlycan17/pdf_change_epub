@@ -167,19 +167,21 @@ const DownloadPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">변환 완료</h1>
-        <p className="text-gray-600">
+    <div className="mx-auto max-w-4xl">
+      <div className="mb-8 text-center">
+        <h1 className="mb-4 text-2xl font-bold text-gray-900 sm:text-3xl">
+          변환 완료
+        </h1>
+        <p className="mx-auto max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
           PDF 파일이 성공적으로 EPUB으로 변환되었습니다.
         </p>
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+      <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-8">
         <div className="text-center">
-          <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-green-100 sm:h-24 sm:w-24">
             <svg
-              className="w-12 h-12 text-green-600"
+              className="h-10 w-10 text-green-600 sm:h-12 sm:w-12"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -194,20 +196,20 @@ const DownloadPage: React.FC = () => {
             </svg>
           </div>
 
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
+          <h2 className="mb-2 break-words text-lg font-semibold text-gray-900 sm:text-xl">
             {convertedFileName}
           </h2>
-          <p className="text-gray-600 mb-6">
+          <p className="mb-6 text-sm leading-6 text-gray-600 sm:text-base">
             파일 크기: {formatFileSize(convertedFileSize)} · 변환 시간:{' '}
             {formatDuration(durationSec)}
           </p>
 
-          <div className="flex justify-center mb-8">
+          <div className="mb-8 flex justify-center">
             <button
               type="button"
               onClick={handleDownload}
               disabled={isDownloading}
-              className="bg-blue-600 text-white px-6 py-3 rounded-md font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+              className="touch-target w-full rounded-md bg-blue-600 px-6 py-3 font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
             >
               {isDownloading ? '다운로드 준비 중...' : 'EPUB 파일 다운로드'}
             </button>
@@ -256,7 +258,7 @@ const DownloadPage: React.FC = () => {
             </ul>
           </div>
 
-          <div className="flex justify-center space-x-4">
+          <div className="flex flex-col items-center justify-center gap-3 text-sm sm:flex-row sm:gap-4">
             <Link
               to="/upload"
               className="text-blue-600 hover:text-blue-700 font-medium"
