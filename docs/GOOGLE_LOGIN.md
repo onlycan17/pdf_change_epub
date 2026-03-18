@@ -14,7 +14,16 @@
 
 프론트(브라우저, Vite):
 - `VITE_GOOGLE_CLIENT_ID`: 구글 로그인 버튼 초기화에 사용
+- `VITE_GOOGLE_ALLOWED_ORIGINS`: 선택 사항. 허용할 접속 주소를 쉼표로 구분해 지정
 - `VITE_API_KEY`: 기존과 동일(백엔드 `SECURITY_API_KEY`와 일치)
+
+로컬 개발 참고:
+- `VITE_GOOGLE_ALLOWED_ORIGINS`가 비어 있더라도 개발 환경에서는 아래 기본 주소를 자동 허용합니다.
+  - `http://localhost:3000`
+  - `http://127.0.0.1:3000`
+  - `http://localhost:5173`
+  - `http://127.0.0.1:5173`
+- 운영 환경에서는 허용 원본을 명시적으로 설정하는 방식을 유지합니다.
 
 ## Google Cloud Console 설정(필수)
 
@@ -36,7 +45,8 @@ Google Identity Services는 현재 접속한 **출처(origin)** 가 OAuth 클라
 예시(개발):
 - `http://localhost:3000`
 - `http://127.0.0.1:3000`
-- `http://localhost:8080`
+- `http://localhost:5173`
+- `http://127.0.0.1:5173`
 
 주의:
 - `http://`는 일반적으로 `localhost` 외에는 허용되지 않습니다. 운영은 `https://`를 사용하세요.
@@ -54,9 +64,9 @@ Console: `APIs & Services` -> `OAuth consent screen`
 3) 프론트가 `POST /api/v1/auth/google`로 `id_token`을 전달
 4) 백엔드가 `id_token`을 검증(위조 방지)하고 사용자 정보(email, sub 등) 추출
 5) 백엔드가 우리 서비스용 JWT를 발급해 응답
-6) 프론트가 JWT를 `localStorage`에 저장하고 `/upload`로 이동
+6) 백엔드가 인증 쿠키를 설정하고, 프론트는 현재 사용자 정보를 다시 조회한 뒤 `/upload` 등 다음 화면으로 이동
 
 ## 보안 주의
 - `APP_GOOGLE_CLIENT_ID`는 공개되어도 큰 문제는 없지만, 운영에서는 정확히 설정해야 검증이 안전합니다.
 - `APP_SECRET_KEY`(JWT 서명키)는 절대 노출되면 안 됩니다.
-- 이 구현은 "로그인"까지만 포함하며, 사용자 DB 저장/계정 연결(회원가입) 기능은 후속 확장 포인트입니다.
+- 현재 구현은 Google 사용자 정보를 내부 사용자 저장소에 반영하고, 이후 일반 로그인과 동일한 인증 상태로 처리합니다.
