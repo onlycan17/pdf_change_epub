@@ -17,6 +17,12 @@ const GOOGLE_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
 const BUTTON_SHELL_CLASS_NAME =
   'flex h-11 w-full items-center justify-center overflow-hidden rounded-md border border-gray-300 bg-white shadow-sm transition-opacity';
 const GOOGLE_READY_TIMEOUT_MS = 5_000;
+const DEV_FALLBACK_ALLOWED_ORIGINS = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+] as const;
 
 let initializedClientId: string | null = null;
 
@@ -67,6 +73,22 @@ const parseAllowedOrigins = (rawValue: string | undefined): Set<string> => {
   );
 };
 
+const resolveAllowedOrigins = (
+  rawValue: string | undefined,
+  isDev: boolean
+): Set<string> => {
+  const configuredOrigins = parseAllowedOrigins(rawValue);
+  if (configuredOrigins.size > 0) {
+    return configuredOrigins;
+  }
+
+  if (!isDev) {
+    return configuredOrigins;
+  }
+
+  return new Set(DEV_FALLBACK_ALLOWED_ORIGINS);
+};
+
 const GoogleSignInButton: React.FC<Props> = ({
   onCredential,
   disabled = false,
@@ -80,8 +102,9 @@ const GoogleSignInButton: React.FC<Props> = ({
   );
   const allowedOrigins = useMemo(
     () =>
-      parseAllowedOrigins(
-        import.meta.env.VITE_GOOGLE_ALLOWED_ORIGINS as string | undefined
+      resolveAllowedOrigins(
+        import.meta.env.VITE_GOOGLE_ALLOWED_ORIGINS as string | undefined,
+        import.meta.env.DEV
       ),
     []
   );
@@ -95,9 +118,6 @@ const GoogleSignInButton: React.FC<Props> = ({
     }
 
     if (allowedOrigins.size === 0) {
-      if (import.meta.env.DEV) {
-        return '개발 환경에서는 허용 원본 설정 후 Google 로그인을 사용할 수 있습니다.';
-      }
       return '';
     }
 

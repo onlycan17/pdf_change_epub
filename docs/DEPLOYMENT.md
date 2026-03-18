@@ -7,26 +7,23 @@
 ## 아키텍처 개요
 
 ```
-┌─────────────────┐       ┌──────────────────────────┐
-│   FastAPI       │  API  │   Supabase (Managed)     │
-│   (API Server)  │◄────►│ - Postgres (RLS 적용)   │
-│                 │       │ - Storage (PDF/EPUB)     │
-│                 │       │ - Auth / Edge Functions  │
-│ - /api/v1/...    │       └──────────────────────────┘
-│ - Webhooks       │
-└─────────────────┘
-        │
-        │Celery Queue
-        ▼
-┌─────────────────┐
-│   Celery        │
-│   Workers       │
-│                 │
-│ - PDF 분석      │
-│ - OCR 처리      │
-│ - EPUB 생성     │
-│ - 결과 저장     │
-└─────────────────┘
+┌──────────────────┐        ┌──────────────────┐
+│  React / Vite    │  API   │    FastAPI       │
+│  Frontend        │◄──────►│    Backend       │
+│  (3000)          │        │    (8000)        │
+└──────────────────┘        └────────┬─────────┘
+                                      │
+                                      │ Queue / Cache
+                                      ▼
+                              ┌──────────────────┐
+                              │ Redis + Celery   │
+                              │ Worker / Beat    │
+                              └────────┬─────────┘
+                                       │
+                     ┌─────────────────┴─────────────────┐
+                     │                                   │
+                     ▼                                   ▼
+              SQLite / PostgreSQL                 uploads/ results/
 ```
 
 ## 사전 요구사항
@@ -43,31 +40,28 @@
 #### 백엔드 설정
 
 ```bash
-# 1. 백엔드 디렉토리로 이동
-cd backend
+# 1. 프로젝트 루트에서 Python 가상 환경 생성
+python -m venv .venv
 
-# 2. Python 가상 환경 생성
-python -m venv venv
-
-# 3. 가상 환경 활성화
-source venv/bin/activate  # Linux/Mac
+# 2. 가상 환경 활성화
+source .venv/bin/activate  # Linux/Mac
 # 또는
-venv\Scripts\activate     # Windows
+.venv\Scripts\activate     # Windows
 
-# 4. 의존성 설치
+# 3. 의존성 설치
 pip install -r requirements.txt
 
-# 5. 환경 변수 설정
+# 4. 환경 변수 설정
 cp .env.example .env
 # .env 파일에 필요한 변수 설정
 
-# 6. Celery Worker 실행 (별도 터미널)
+# 5. Celery Worker 실행 (별도 터미널)
 celery -A app.celery_config:celery_app worker --loglevel=info --concurrency=4
 
-# 7. Celery Beat 실행 (별도 터미널)
+# 6. Celery Beat 실행 (별도 터미널)
 celery -A app.celery_config:celery_app beat --loglevel=info
 
-# 8. 개발 서버 실행
+# 7. 개발 서버 실행
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -88,6 +82,21 @@ cp .env.example .env
 npm run dev
 ```
 
+#### 통합 개발 실행 스크립트
+
+프로젝트에는 백엔드, 프론트엔드, Redis/Postgres, Celery 워커까지 함께 띄우는 스크립트가 포함되어 있습니다.
+
+```bash
+chmod +x scripts/dev_up.sh scripts/dev_down.sh
+./scripts/dev_up.sh
+```
+
+개발 환경 종료:
+
+```bash
+./scripts/dev_down.sh
+```
+
 ### 2. Docker 개발 환경
 
 ```bash
@@ -106,6 +115,10 @@ docker-compose restart celery_worker
 # 5. Celery Flower 모니터링 대시보드 접속
 # http://localhost:5555
 ```
+
+참고:
+- `docker-compose.yml`에는 `web`, `db`, `redis`, `celery_worker`, `celery_beat`, `celery_flower` 서비스가 정의되어 있습니다.
+- 프론트엔드 개발 서버는 Compose에 포함되어 있지 않으므로, 개발 중 UI 수정은 별도로 `cd frontend && npm run dev`를 실행하는 방식이 더 편합니다.
 
 ## 프로덕션 환경 설정
 

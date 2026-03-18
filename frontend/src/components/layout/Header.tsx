@@ -29,6 +29,18 @@ const Header: React.FC = () => {
     void run();
   }, [dispatch, state.isAuthenticated]);
 
+  useEffect(() => {
+    setIsMenuOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    document.body.style.overflow = isMenuOpen ? 'hidden' : '';
+
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isMenuOpen]);
+
   const handleLogout = async () => {
     await logoutCurrentSession();
     dispatch({ type: 'SET_USER', payload: null });
@@ -54,18 +66,23 @@ const Header: React.FC = () => {
   const isActive = (path: string) => location.pathname === path;
 
   return (
-    <header className="bg-white shadow-sm border-b border-gray-200">
-      <nav className="container mx-auto px-4 py-4">
+    <header className="sticky top-0 z-40 bg-white/95 shadow-sm border-b border-gray-200 backdrop-blur">
+      <nav className="mx-auto w-full max-w-7xl px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex items-center justify-between">
-          {/* Logo */}
-          <Link to="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+          <Link to="/" className="flex items-center gap-2 sm:gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600">
               <span className="text-white font-bold text-sm">P2E</span>
             </div>
-            <span className="text-xl font-bold text-gray-900">PDF to EPUB</span>
+            <div className="min-w-0">
+              <span className="block text-base font-bold leading-tight text-gray-900 sm:text-xl">
+                PDF to EPUB
+              </span>
+              <span className="hidden text-xs text-gray-500 sm:block">
+                작은 화면에서도 읽기 쉬운 전자책 변환
+              </span>
+            </div>
           </Link>
 
-          {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-8">
             {navigation.map((item) => (
               <Link
@@ -82,7 +99,6 @@ const Header: React.FC = () => {
             ))}
           </div>
 
-          {/* User Actions */}
           <div className="hidden md:flex items-center space-x-4">
             {state.isAuthenticated ? (
               <>
@@ -118,83 +134,106 @@ const Header: React.FC = () => {
             )}
           </div>
 
-          {/* Mobile menu button */}
           <button
             type="button"
-            className="md:hidden p-2 rounded-md text-gray-700 hover:text-blue-600 hover:bg-gray-50"
+            className="touch-target md:hidden inline-flex items-center justify-center rounded-lg border border-gray-200 px-3 text-sm font-medium text-gray-700 transition hover:border-blue-200 hover:text-blue-600 hover:bg-blue-50"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
+            aria-expanded={isMenuOpen}
+            aria-controls="mobile-navigation"
             aria-label={isMenuOpen ? '메뉴 닫기' : '메뉴 열기'}
           >
+            <span className="mr-2">{isMenuOpen ? '닫기' : '메뉴'}</span>
             <svg
-              className="w-6 h-6"
+              className="h-5 w-5"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
               <title>{isMenuOpen ? '메뉴 닫기' : '메뉴 열기'}</title>
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 6h16M4 12h16M4 18h16"
-              />
+              {isMenuOpen ? (
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              ) : (
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
+              )}
             </svg>
           </button>
         </div>
 
-        {/* Mobile Navigation */}
         {isMenuOpen && (
-          <div className="md:hidden mt-4 space-y-2">
-            {navigation.map((item) => (
-              <Link
-                key={item.name}
-                to={item.href}
-                className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                  isActive(item.href)
-                    ? 'text-blue-600 bg-blue-50'
-                    : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
-                }`}
-                onClick={() => setIsMenuOpen(false)}
-              >
-                {item.name}
-              </Link>
-            ))}
-            <div className="pt-4 border-t border-gray-200 space-y-2">
-              {state.isAuthenticated ? (
-                <>
+          <div className="md:hidden">
+            <button
+              type="button"
+              className="fixed inset-0 top-[61px] z-40 bg-slate-950/20 backdrop-blur-[1px]"
+              aria-label="메뉴 닫기"
+              onClick={() => setIsMenuOpen(false)}
+            />
+            <div
+              id="mobile-navigation"
+              className="animate-fade-in absolute inset-x-4 top-full z-50 mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
+            >
+              <div className="space-y-2">
+                {navigation.map((item) => (
                   <Link
-                    to="/profile"
-                    className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50"
+                    key={item.name}
+                    to={item.href}
+                    className={`touch-target flex items-center rounded-xl px-4 py-3 text-base font-medium transition-colors ${
+                      isActive(item.href)
+                        ? 'bg-blue-50 text-blue-600'
+                        : 'text-gray-700 hover:bg-gray-50 hover:text-blue-600'
+                    }`}
                     onClick={() => setIsMenuOpen(false)}
                   >
-                    프로필
+                    {item.name}
                   </Link>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50"
-                  >
-                    로그아웃
-                  </button>
-                </>
-              ) : (
-                <>
-                  <Link
-                    to="/login"
-                    className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    로그인
-                  </Link>
-                  <Link
-                    to="/register"
-                    className="block px-3 py-2 rounded-md text-base font-medium text-blue-600 hover:bg-blue-50"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    회원가입
-                  </Link>
-                </>
-              )}
+                ))}
+              </div>
+              <div className="mt-4 border-t border-gray-200 pt-4 space-y-2">
+                {state.isAuthenticated ? (
+                  <>
+                    <Link
+                      to="/profile"
+                      className="touch-target flex items-center rounded-xl px-4 py-3 text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-blue-600"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      프로필
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="touch-target flex w-full items-center rounded-xl px-4 py-3 text-left text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-blue-600"
+                    >
+                      로그아웃
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      to="/login"
+                      className="touch-target flex items-center rounded-xl px-4 py-3 text-base font-medium text-gray-700 hover:bg-gray-50 hover:text-blue-600"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      로그인
+                    </Link>
+                    <Link
+                      to="/register"
+                      className="touch-target flex items-center justify-center rounded-xl bg-blue-600 px-4 py-3 text-base font-medium text-white hover:bg-blue-700"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      회원가입
+                    </Link>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         )}

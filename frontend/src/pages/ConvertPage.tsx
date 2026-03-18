@@ -166,19 +166,21 @@ const ConvertPage: React.FC = () => {
     progress >= 100 ? '완료' : progress >= 80 ? '진행 중' : '대기 중';
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">변환 진행 중</h1>
-        <p className="text-gray-600">
+    <div className="mx-auto max-w-4xl">
+      <div className="mb-8 text-center">
+        <h1 className="mb-4 text-2xl font-bold text-gray-900 sm:text-3xl">
+          변환 진행 중
+        </h1>
+        <p className="mx-auto max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
           PDF 파일이 EPUB으로 변환되고 있습니다. 잠시만 기다려주세요.
         </p>
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+      <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-8">
         <div className="text-center">
-          <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
+          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 sm:h-24 sm:w-24">
             <svg
-              className="w-12 h-12 text-blue-600"
+              className="h-10 w-10 text-blue-600 sm:h-12 sm:w-12"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -192,33 +194,34 @@ const ConvertPage: React.FC = () => {
             </svg>
           </div>
 
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
+          <h2 className="mb-2 break-words text-lg font-semibold text-gray-900 sm:text-xl">
             {fileName} 변환 중
           </h2>
-          <p className="text-gray-600 mb-6">
+          <p className="mb-6 text-sm text-gray-600 sm:text-base">
             파일 크기: {formatFileSize(fileSize)}
           </p>
 
-          {/* Progress Bar */}
           <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
             <div
               className="bg-blue-600 h-2 rounded-full"
               style={{ width: `${progress}%` }}
-            ></div>
+            />
           </div>
 
-          <p className="text-sm text-gray-500 mb-2">{progress}% 완료</p>
+          <p className="mb-2 text-sm text-gray-500">{progress}% 완료</p>
           <p className="text-sm text-gray-500">
             예상 남은 시간: 약 {remainingMin}분 {remainingSec}초
           </p>
-          <p className="text-sm text-blue-600 mt-2">{statusMessage}</p>
+          <p className="mt-2 text-sm leading-6 text-blue-600">
+            {statusMessage}
+          </p>
           {isPolling && (
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="mt-1 text-xs text-gray-500">
               서버 상태를 1초마다 확인 중...
             </p>
           )}
           {llmUsedModel && (
-            <p className="text-xs text-indigo-600 mt-1">
+            <p className="mt-1 text-xs leading-5 text-indigo-600">
               문맥 보정 모델: {llmUsedModel}
               {llmFallbackUsed ? ' (폴백 사용)' : ''}
               {llmAttemptCount > 0 ? ` · 시도 ${llmAttemptCount}회` : ''}
@@ -236,44 +239,50 @@ const ConvertPage: React.FC = () => {
             </div>
           )}
 
-          <div className="mt-8 space-y-4">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">텍스트 추출</span>
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-left">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                텍스트 추출
+              </p>
               <span
                 className={
                   textStatus === '완료'
-                    ? 'text-green-600'
+                    ? 'mt-2 block text-sm font-semibold text-green-600'
                     : textStatus === '진행 중'
-                      ? 'text-blue-600'
-                      : 'text-gray-400'
+                      ? 'mt-2 block text-sm font-semibold text-blue-600'
+                      : 'mt-2 block text-sm font-semibold text-gray-400'
                 }
               >
                 {textStatus}
               </span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">이미지 처리</span>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-left">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                이미지 처리
+              </p>
               <span
                 className={
                   imageStatus === '완료'
-                    ? 'text-green-600'
+                    ? 'mt-2 block text-sm font-semibold text-green-600'
                     : imageStatus === '진행 중'
-                      ? 'text-blue-600'
-                      : 'text-gray-400'
+                      ? 'mt-2 block text-sm font-semibold text-blue-600'
+                      : 'mt-2 block text-sm font-semibold text-gray-400'
                 }
               >
                 {imageStatus}
               </span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">EPUB 생성</span>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-left">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                EPUB 생성
+              </p>
               <span
                 className={
                   epubStatus === '완료'
-                    ? 'text-green-600'
+                    ? 'mt-2 block text-sm font-semibold text-green-600'
                     : epubStatus === '진행 중'
-                      ? 'text-blue-600'
-                      : 'text-gray-400'
+                      ? 'mt-2 block text-sm font-semibold text-blue-600'
+                      : 'mt-2 block text-sm font-semibold text-gray-400'
                 }
               >
                 {epubStatus}
