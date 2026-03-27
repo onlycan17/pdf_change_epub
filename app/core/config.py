@@ -77,6 +77,11 @@ class OCRSettings(BaseSettings):
     llm_correction_threshold: float = 0.8
     llm_max_pages_per_document: int = 5
 
+    # GLM-OCR 전용 설정 (셀프호스팅 추론 서버 연결)
+    glm_api_host: str = "localhost"
+    glm_api_port: int = 8080
+    glm_layout_device: str = "cuda:0"
+
     model_config = SettingsConfigDict(env_prefix="OCR_")
 
 

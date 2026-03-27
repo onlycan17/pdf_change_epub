@@ -231,6 +231,10 @@ def create_ocr_engine(engine_name: str, language: str) -> BaseOCREngine:
         return PaddleOCREngine(language)
     if normalized == "tesseract":
         return TesseractOCREngine(language)
+    if normalized == "glm":
+        from app.services.glm_ocr_engine import GlmOCREngine
+
+        return GlmOCREngine(language)
     raise ValueError(f"Unsupported OCR engine: {engine_name}")
 
 
